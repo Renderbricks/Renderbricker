@@ -4,6 +4,15 @@ The panel is in the 3D Viewport sidebar (press N), tab **Renderbricker**. Its he
 add-on version. Defaults in brackets. The
 tooltips in Blender say the same in short.
 
+## Start Guide
+
+**Start Guide** at the top of the panel replaces the panel by a guide through the workflow in eight
+steps: save the scene, choose the parts, settings, Apply, Check, compare with the import, render, and
+what next. Every step explains its functions in bullet points and shows only its own controls; a
+status line says what is still open (red) or done (green, with a tick), the action of the step is
+highlighted, and **Next** is highlighted once the step is done. **Back** and the **×** in the step
+header work any time.
+
 ## Settings
 
 | Setting | Default | What it does |
@@ -11,7 +20,7 @@ tooltips in Blender say the same in short.
 | **All / Selected / Collection** | All | Which mesh objects Apply, Check, On/Off, Levels and Remove work on: every mesh object in the scene, the selected ones, or the ones in a chosen collection and its child collections (the field below *Collection*; when it is empty, the collection active in the Outliner is taken). Only the links in scope switch to the copy; other links of the same part keep the original until they are converted too. *Convert headless* always converts the whole scene. |
 | **Variant** | A – Mecabricks normals | **A:** the subdivision interpolates the custom normals of the import – the shading stays as Mecabricks made it, logos on studs look soft. **B – geometric normals:** normals of the smoothed surface, creased edges sharp – crisper logos, but the shading of the import is not kept. |
 | **Viewport** level | 1 | Subdivision shown in the viewport. 0 shows the original mesh (no viewport copy is stored – the file gets about a fifth smaller). Levels already baked switch at once, others are computed the first time (with a progress bar). |
-| **Render** level | 2 | Subdivision used for rendering; the checks use this level. |
+| **Render** level | 2 | Subdivision used for rendering; the checks use this level. 2 is enough even for close-ups. Raising a level above 2 asks first – *Cancel* (or Esc) keeps the old level – and the panel shows a warning while it is above 2: every level multiplies the faces by three to four, so memory, file size and conversion time grow a lot for a small visible gain. |
 | **Use several cores** | on | Apply on larger scenes (about 40 meshes and more) runs in background Blenders on several cores and loads the result into this scene. The scene is saved first. The number of Blenders follows the free memory. |
 | **Cache file next to the scene** | on | The subdivided copies are kept in `<scene>_rbcache.blend` next to the scene and linked into it, so the scene file stays about as large as the import. Needs a saved scene. Switching it off takes the copies back into the scene file; switching it on writes them out again. |
 

@@ -45,6 +45,9 @@ Contents: [0 Install](#0-install-the-add-on) · [1 Open and save](#step-1-open-a
 
 **Check:** in the 3D viewport, press **N** – the sidebar has a tab **Renderbricker**.
 
+> **Start Guide** at the top of the panel leads through the steps below inside Blender, one step
+> at a time with the explanations.
+
 ---
 
 ## Step 1: Open and save the scene

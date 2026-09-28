@@ -169,6 +169,10 @@ class MECSUB_OT_render(bpy.types.Operator):
     def _done(self):
         _swap_back()
         _RENDER_OP[0] = False
+        try:
+            bpy.context.scene.mecsub.wt_rendered = True
+        except (AttributeError, ReferenceError):
+            pass
         return {'FINISHED'}
 
 
@@ -207,11 +211,27 @@ def _start_levels():
     return None
 
 
+_LEVEL_GUARD = [False]      # the update itself resets a level
+_LEVEL_OK = [False]         # a level above 2 confirmed in the dialog is being set
+
+
 def _levels_update(self, context):
     """Viewport / Render changed: switch at once where the copies exist,
-    compute missing ones with the progress bar (run 40)."""
-    if self.running:
+    compute missing ones with the progress bar (run 40). Raising a level above 2 asks first
+    (user, 2026-09-28): until it is confirmed the old value stays, Cancel keeps it."""
+    if self.running or _LEVEL_GUARD[0]:
         return
+    for which in ("view", "render"):
+        new, old = getattr(self, which + "_level"), getattr(self, "prev_" + which + "_level")
+        if new > 2 and new > old and not _LEVEL_OK[0] and not bpy.app.background:
+            _LEVEL_GUARD[0] = True
+            try:
+                setattr(self, which + "_level", old)
+            finally:
+                _LEVEL_GUARD[0] = False
+            _ask_level(which, new)
+            return
+    self.prev_view_level, self.prev_render_level = self.view_level, self.render_level
     if not any(m.get("rb_original") for m in bpy.data.meshes if m.library is None):
         return                                   # nothing applied yet: the values count for Apply
     if not bpy.app.background:              # always with the progress bar (Dungeon: 2,769 meshes, run 72)
@@ -224,6 +244,45 @@ def _levels_update(self, context):
     else:
         for me, obs in groups:
             core.set_levels(me, self.view_level, self.render_level, obs)
+
+
+def _ask_level(which, value):
+    """The question for a level above 2 (from a timer: an update callback must not open a dialog)."""
+    def ask():
+        wm = bpy.context.window_manager
+        for win in wm.windows:
+            area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
+            if area:
+                with bpy.context.temp_override(window=win, area=area):
+                    bpy.ops.mecsub.level_confirm('INVOKE_DEFAULT', which=which, value=value)
+                return None
+        return None
+    bpy.app.timers.register(ask, first_interval=0.01)
+
+
+class MECSUB_OT_level_confirm(bpy.types.Operator):
+    bl_idname = "mecsub.level_confirm"
+    bl_label = "Subdivision level above 2"
+    bl_description = "Confirm a subdivision level above 2"
+    bl_options = {'INTERNAL'}
+    which: StringProperty(default="render")
+    value: IntProperty(default=3)
+
+    def invoke(self, context, event):
+        name = "Viewport" if self.which == "view" else "Render"
+        return context.window_manager.invoke_confirm(
+            self, event, title=f"{name} level {self.value}?",
+            message="Each level has 3-4 times the faces: much more memory and time, little visible gain. "
+                    "2 is enough for close-ups.",
+            confirm_text=f"Use level {self.value}", icon='WARNING')
+
+    def execute(self, context):
+        _LEVEL_OK[0] = True
+        try:
+            setattr(context.scene.mecsub, self.which + "_level", self.value)
+        finally:
+            _LEVEL_OK[0] = False
+        return {'FINISHED'}
 
 
 _SWITCHING = [False]
@@ -337,9 +396,12 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
     view_level: IntProperty(name="Viewport", default=1, min=0, max=4, update=_levels_update,
                             description="Subdivision shown in the viewport (0: the original mesh - no viewport copy "
                                         "is stored, the file gets about a fifth smaller). Levels already baked "
-                                        "switch at once, others are computed the first time")
+                                        "switch at once, others are computed the first time. Above 2 rarely makes sense")
     render_level: IntProperty(name="Render", default=2, min=1, max=4, update=_levels_update,
-                              description="Subdivision used for rendering (the checks use this level)")
+                              description="Subdivision used for rendering (the checks use this level). 2 is enough even for "
+                                          "close-ups; every further level multiplies the faces by three to four")
+    prev_view_level: IntProperty(default=1)     # the confirmed levels (question above 2)
+    prev_render_level: IntProperty(default=2)
     use_cores: bpy.props.BoolProperty(
         name="Use several cores", default=True,
         description="Apply on larger scenes (about 40 meshes and more) runs in background Blenders on "
@@ -355,6 +417,13 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
     subdiv_state: StringProperty(default="NONE")         # refresh_state(): ON / OFF / MIXED / NONE
     progress: bpy.props.FloatProperty(default=0.0, min=0.0, max=1.0, subtype='FACTOR')
     progress_text: StringProperty(default="")
+    # guide for new users (user, 2026-09-28): step card instead of the full panel
+    wt_active: bpy.props.BoolProperty(default=False)
+    wt_step: IntProperty(default=0, min=0)
+    wt_checked: bpy.props.BoolProperty(default=False)      # Check ran after the last Apply
+    wt_bad: IntProperty(default=0)                         # parts with problems in that Check
+    wt_compared: bpy.props.BoolProperty(default=False)     # switched OFF and back ON
+    wt_rendered: bpy.props.BoolProperty(default=False)     # rendered through the add-on
 
 
 # ---------------------------------------------------------------- operators
@@ -616,6 +685,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         self.t0 = time.time()
         self.fans = self.unresolved = self.folds = self.done = 0
         s.problems.clear()
+        s.wt_checked = False
         self.cache_part, self.tail_pending = None, None
         self.tail = [("writing the cache file" if s.use_cache and bpy.data.filepath else "finishing the copies",
                       self._cache_phase)]
@@ -839,6 +909,7 @@ class MECSUB_OT_check(_Stepped, bpy.types.Operator):
         s = context.scene.mecsub
         s.summary = (("Check cancelled: " if self.cancelled else "Check: ")
                      + f"{self.checked} meshes, {self.bad} with problems")
+        s.wt_checked, s.wt_bad = not self.cancelled and self.checked > 0, self.bad
         self.report({'INFO'} if not self.bad else {'WARNING'}, s.summary)
 
 
@@ -917,6 +988,7 @@ class MECSUB_OT_toggle(bpy.types.Operator):
                 if on:
                     o.pop("rb_off", None)
                     core.point_links([o], me, "view")
+                    context.scene.mecsub.wt_compared = True
                 else:
                     o["rb_off"] = True
                     o.data = me
@@ -1343,6 +1415,258 @@ def start_script(path):
 VERSION = ".".join(str(x) for x in bl_info["version"])
 
 
+# ---------------------------------------------------------------- guide for new users
+def draw_summary(L, s):
+    """Result of the last operator and the problem list (select button per entry)."""
+    if not s.summary or s.running:
+        return
+    box = L.box()
+    for part in s.summary.split(", "):
+        box.label(text=part)
+    for p in list(s.problems)[:12]:
+        r = box.row()
+        r.label(text=f"{p.obj}: {p.info}", icon='ERROR')
+        r.operator("mecsub.select", text="", icon='RESTRICT_SELECT_OFF').obj = p.obj
+    if len(s.problems) > 12:
+        box.label(text=f"... {len(s.problems) - 12} more")
+
+
+def bullets(layout, items, context, prefix="•  "):
+    """Explanations as bullet points, wrapped to the sidebar width."""
+    import textwrap
+    width = context.region.width if context.region else 300
+    chars = max(20, int(width / (7.5 * context.preferences.system.ui_scale)))
+    col = layout.column(align=True)
+    col.scale_y = 0.8
+    for text in items:
+        for line in textwrap.wrap(text, chars, initial_indent=prefix, subsequent_indent=" " * len(prefix)):
+            col.label(text=line)
+
+
+def status(layout, ok, text):
+    row = layout.row()
+    row.alert = not ok
+    row.label(text=text, icon='CHECKMARK' if ok else 'INFO')
+
+
+def draw_levels(L, s, context):
+    """Viewport / render level with a warning above 2 (user, 2026-09-28): every level multiplies the
+    faces by three to four - level 3 costs a lot of memory and time for hardly visible gain."""
+    col = L.column(align=True)
+    col.label(text="Subdivision levels")
+    col.prop(s, "view_level")
+    col.prop(s, "render_level")
+    if s.view_level > 2 or s.render_level > 2:
+        box = L.box()
+        box.alert = True
+        bullets(box, ("Levels above 2 multiply the faces again by three to four: memory, file size and "
+                      "conversion time grow a lot, the visible gain is small. 2 is enough for close-ups.",),
+                context, prefix="")
+
+
+def scope_state(context):
+    """(ok, text) for the choice of parts - cheap enough for draw(): stops at the first mesh."""
+    s = context.scene.mecsub
+    if s.scope == 'SELECTED':
+        ok = any(o.type == 'MESH' for o in context.selected_objects)
+        return ok, "Parts selected" if ok else "Select the parts to convert"
+    if s.scope == 'COLLECTION':
+        if s.collection is None:
+            return False, "Choose a collection"
+        ok = any(o.type == 'MESH' for o in s.collection.all_objects)
+        return ok, f"Parts in {s.collection.name}" if ok else "The collection has no parts"
+    ok = any(o.type == 'MESH' for o in context.scene.objects)
+    return ok, "All parts of the scene" if ok else "The scene has no parts"
+
+
+def _g_save(L, context, s):
+    import os
+    if bpy.data.filepath:
+        L.operator("wm.save_mainfile", text="Save", icon='FILE_TICK')
+    else:
+        L.operator("wm.save_as_mainfile", text="Save As...", icon='FILE_TICK', depress=True)
+    ok = bool(bpy.data.filepath)
+    status(L, ok, f"Saved: {os.path.basename(bpy.data.filepath)}" if ok else "Not saved yet")
+    return ok
+
+
+def _g_parts(L, context, s):
+    col = L.column(align=True)
+    col.prop(s, "scope", expand=True)
+    if s.scope == 'COLLECTION':
+        col.prop(s, "collection", text="", icon='OUTLINER_COLLECTION')
+    ok, text = scope_state(context)
+    status(L, ok, text)
+    return ok
+
+
+def _g_settings(L, context, s):
+    L.prop(s, "variant", text="")
+    draw_levels(L, s, context)
+    L.prop(s, "use_cores")
+    L.prop(s, "use_cache")
+    return True
+
+
+def _g_apply(L, context, s):
+    ok = s.subdiv_state in ("ON", "MIXED")
+    row = L.row()
+    row.scale_y = 1.3
+    row.operator("mecsub.apply", icon='MOD_SUBSURF', depress=not ok)
+    status(L, ok, "Parts converted" if ok else "Press Apply")
+    draw_summary(L, s)
+    return ok
+
+
+def _g_check(L, context, s):
+    ok = s.wt_checked
+    row = L.row()
+    row.scale_y = 1.3
+    row.operator("mecsub.check", icon='VIEWZOOM', depress=not ok)
+    if ok:
+        status(L, s.wt_bad == 0, "No problems found" if s.wt_bad == 0
+               else f"{s.wt_bad} parts with problems - see the list")
+    else:
+        status(L, False, "Press Check")
+    draw_summary(L, s)
+    return ok
+
+
+def _g_compare(L, context, s):
+    state = s.subdiv_state
+    label, icon = {"ON": ("Subdivision: ON", 'CHECKBOX_HLT'), "OFF": ("Subdivision: OFF", 'CHECKBOX_DEHLT'),
+                   "MIXED": ("Subdivision: partly on", 'CHECKBOX_HLT')}.get(state, ("Subdivision: -", 'CHECKBOX_DEHLT'))
+    ok = s.wt_compared and state == "ON"
+    row = L.row()
+    row.scale_y = 1.3
+    row.operator("mecsub.toggle", icon=icon, text=label, depress=(state == "ON"))
+    status(L, ok, "Compared - subdivision is on" if ok else
+           ("Switch it back ON" if state == "OFF" else "Switch OFF, look, switch back ON"))
+    return ok
+
+
+def _g_render(L, context, s):
+    ok = s.wt_rendered
+    row = L.row()
+    row.scale_y = 1.3
+    op = row.operator("mecsub.render", text="Render Image (F12)", icon='RENDER_STILL', depress=not ok)
+    op.use_viewport = True
+    status(L, ok, "Rendered with the render level" if ok else "Press F12 or the button")
+    return ok
+
+
+def _g_next(L, context, s):
+    L.operator("mecsub.headless", icon='CONSOLE')
+    L.operator("wm.url_open", text="Documentation", icon='HELP').url = \
+        "https://github.com/Renderbricks/Renderbricker#documentation"
+    return True
+
+
+GUIDE = (
+    ("Save the scene", _g_save, (
+        "Renderbricker writes the subdivided parts into a cache file next to the scene - so the scene "
+        "needs a file first.",
+        "Save it under the name you want to keep.")),
+    ("Choose the parts", _g_parts, (
+        "All: every part of the scene.",
+        "Selected: only the objects selected in the viewport or the Outliner.",
+        "Collection: the parts in one collection and its child collections - handy for converting a "
+        "large scene piece by piece.",
+        "Parts outside the choice stay as imported.")),
+    ("Settings", _g_settings, (
+        "Variant A keeps the shading of the Mecabricks import (soft logos on the studs); B computes it "
+        "from the smoothed surface (crisper logos).",
+        "Viewport level: how smooth the parts look while you work. 1 keeps the viewport fast.",
+        "Render level: how smooth they are in the render. 2 is enough even for close-ups.",
+        "Use several cores: larger scenes are converted in parallel background Blenders.",
+        "Cache file: the smoothed parts are stored in <scene>_rbcache.blend next to the scene, so the "
+        "scene file stays small.",
+        "The defaults suit most scenes.")),
+    ("Apply", _g_apply, (
+        "Apply decides for every edge of every part whether the real brick is sharp or round there, "
+        "and sets a crease on the sharp ones.",
+        "It then bakes the smoothed result into a copy of each part mesh; all bricks of the same kind "
+        "share that copy.",
+        "The imported mesh stays unchanged in the file - you can always go back.",
+        "Esc cancels. With the cache file on, the scene is saved at the end.")),
+    ("Check", _g_check, (
+        "Check looks for folded faces and gaps along seams in the smoothed parts.",
+        "The arrow next to a listed part selects it and frames it in the viewport.",
+        "Folds can come from faces that are already broken in the import - render a close-up before "
+        "you worry.")),
+    ("Compare with the import", _g_compare, (
+        "The button switches every brick between the smoothed copy (ON) and the imported mesh (OFF).",
+        "Switch OFF and back ON: sharp edges of the real part stay sharp, round shapes like studs and "
+        "tires turn round.")),
+    ("Render", _g_render, (
+        "F12 (image) and Ctrl+F12 (animation) switch the bricks to the render level while rendering "
+        "and back to the viewport level afterwards.",
+        "The Render menu has the same: Render Image / Animation (Renderbricker levels).")),
+    ("Done - what next", _g_next, (
+        "Save As under another name or folder: the panel then offers Move cache here or Copy cache "
+        "here, so the new file gets its cache.",
+        "Large scenes: Convert headless converts in a terminal window and writes a new file; the open "
+        "scene stays unchanged.",
+        "Remove takes the scene back to the plain import.",
+        "Start the guide again any time from the top of the panel.")),
+)
+
+
+def draw_guide(L, context):
+    s = context.scene.mecsub
+    i = min(s.wt_step, len(GUIDE) - 1)
+    title, draw, text = GUIDE[i]
+    head = L.row()
+    head.label(text=f"Step {i + 1} of {len(GUIDE)}: {title}")
+    head.operator("mecsub.guide_exit", text="", icon='X')
+    bullets(L.box(), text, context)
+    body = L.column()
+    body.enabled = not s.running
+    ready = draw(body, context, s)
+    nav = L.row(align=True)
+    nav.enabled = not s.running
+    if i > 0:
+        nav.operator("mecsub.guide_nav", text="Back", icon='TRIA_LEFT').delta = -1
+    if i < len(GUIDE) - 1:
+        nav.operator("mecsub.guide_nav", text="Next", icon='TRIA_RIGHT', depress=bool(ready)).delta = 1
+    else:
+        nav.operator("mecsub.guide_exit", text="Finish", icon='CHECKMARK', depress=True)
+
+
+class MECSUB_OT_guide_start(bpy.types.Operator):
+    bl_idname = "mecsub.guide_start"
+    bl_label = "Start Guide"
+    bl_description = "Step-by-step guide through the workflow, with an explanation for every step"
+
+    def execute(self, context):
+        s = context.scene.mecsub
+        s.wt_active, s.wt_step = True, 0
+        s.wt_compared = s.wt_rendered = False
+        return {'FINISHED'}
+
+
+class MECSUB_OT_guide_nav(bpy.types.Operator):
+    bl_idname = "mecsub.guide_nav"
+    bl_label = "Guide step"
+    bl_description = "Go to the previous or next step of the guide"
+    delta: IntProperty(default=1)
+
+    def execute(self, context):
+        s = context.scene.mecsub
+        s.wt_step = max(0, min(s.wt_step + self.delta, len(GUIDE) - 1))
+        return {'FINISHED'}
+
+
+class MECSUB_OT_guide_exit(bpy.types.Operator):
+    bl_idname = "mecsub.guide_exit"
+    bl_label = "Exit guide"
+    bl_description = "Close the guide and show the full panel"
+
+    def execute(self, context):
+        context.scene.mecsub.wt_active = False
+        return {'FINISHED'}
+
+
 class MECSUB_PT_panel(bpy.types.Panel):
     bl_label = f"Renderbricker {VERSION}"   # version in the header (runs 41/42); the rules version stays internal (user, 2026-09-28)
     bl_space_type = 'VIEW_3D'
@@ -1359,6 +1683,12 @@ class MECSUB_PT_panel(bpy.types.Panel):
             else:
                 box.label(text=f"{s.progress * 100:.0f} %  {s.progress_text}")
             box.label(text="Esc: cancel", icon='CANCEL')
+        if s.wt_active:
+            draw_guide(L, context)
+            return
+        row = L.row()
+        row.scale_y = 1.3
+        row.operator("mecsub.guide_start", icon='HELP')
         body = L.column()
         body.enabled = not s.running
         col = body.column(align=True)
@@ -1366,10 +1696,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         if s.scope == 'COLLECTION':
             col.prop(s, "collection", text="", icon='OUTLINER_COLLECTION')
         body.prop(s, "variant", text="")
-        col = body.column(align=True)
-        col.label(text="Subdivision levels")
-        col.prop(s, "view_level")
-        col.prop(s, "render_level")
+        draw_levels(body, s, context)
         body.operator("mecsub.apply", icon='MOD_SUBSURF')
         body.prop(s, "use_cores")
         body.prop(s, "use_cache")
@@ -1395,16 +1722,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         body.operator("mecsub.remove", icon='X')
         body.separator()
         body.operator("mecsub.headless", icon='CONSOLE')
-        if s.summary and not s.running:
-            box = L.box()
-            for part in s.summary.split(", "):
-                box.label(text=part)
-            for p in list(s.problems)[:12]:
-                r = box.row()
-                r.label(text=f"{p.obj}: {p.info}", icon='ERROR')
-                r.operator("mecsub.select", text="", icon='RESTRICT_SELECT_OFF').obj = p.obj
-            if len(s.problems) > 12:
-                box.label(text=f"... {len(s.problems) - 12} more")
+        draw_summary(L, s)
         col = L.column(align=True)
         col.scale_y = 0.8
         for line in COPYRIGHT.split(" – "):         # holder on its own line, the name is never split
@@ -1451,7 +1769,8 @@ class MECSUB_PT_about(bpy.types.Panel):
 
 classes = (MECSUB_Problem, MECSUB_Settings, MECSUB_OT_apply, MECSUB_OT_check, MECSUB_OT_levels, MECSUB_OT_toggle,
            MECSUB_OT_remove, MECSUB_OT_select, MECSUB_OT_headless, MECSUB_PT_panel, MECSUB_OT_move_cache, MECSUB_OT_copy_cache,
-           MECSUB_OT_cache_switch, MECSUB_OT_render, MECSUB_PT_about)
+           MECSUB_OT_cache_switch, MECSUB_OT_render, MECSUB_PT_about,
+           MECSUB_OT_guide_start, MECSUB_OT_guide_nav, MECSUB_OT_guide_exit, MECSUB_OT_level_confirm)
 
 
 @persistent

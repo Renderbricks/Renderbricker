@@ -1,7 +1,8 @@
 # Quick start
 
 The shortest way from a Mecabricks scene to smooth, render-ready parts. Each line is one click or
-one decision; the [tutorial](TUTORIAL.md) explains every step with pictures.
+one decision; the [tutorial](TUTORIAL.md) explains every step with pictures. New to the add-on? Press
+**Start Guide** at the top of the panel – it leads through the same steps inside Blender.
 
 | # | In Blender | You see |
 |---|---|---|
