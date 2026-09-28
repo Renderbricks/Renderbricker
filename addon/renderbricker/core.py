@@ -2832,6 +2832,20 @@ def _parallel(users, weight, total_w, jobs):
     return skipped, failed
 
 
+LOG = opt("--log", "")       # headless conversion with the add-on's option Log file
+
+
+def say(msg):
+    """A result line: to the console (the start script shows it) and, with --log, into the log file."""
+    print(msg, flush=True)
+    if LOG:
+        try:
+            with open(LOG, "a", encoding="utf-8") as fh:
+                fh.write(f"  - {msg}\n")
+        except OSError:
+            pass
+
+
 def main():
     if __name__ != "__main__":      # imported (add-on, tools): no automatic run
         return
@@ -2885,28 +2899,43 @@ def main():
         flush()
         json.dump(reps, open(out_json, "w", encoding="utf-8"), default=str)     # written last: worker done
         return
-    print(f"MESHES {len(users)}", flush=True)      # for the progress line of the batch scripts
+    if LOG:
+        import datetime
+        try:
+            with open(LOG, "a", encoding="utf-8") as fh:
+                fh.write(f"=== {datetime.datetime.now():%Y-%m-%d %H:%M:%S}  Convert headless  "
+                         f"(Blender {bpy.app.version_string})\nscene: {bpy.data.filepath}\nresult: {TARGET}\n"
+                         f"settings: viewport {VIEW_LEVEL}, render {RENDER_LEVEL}, variant "
+                         f"{'A' if SHADING == 'mecabricks' else 'B'}\n")
+        except OSError:
+            pass
+    say(f"MESHES {len(users)}")      # for the progress line of the batch scripts
     jobs = resolve_jobs(opt("--jobs", "1"), len(users)) if bpy.data.filepath else 1
     if jobs > 1:
         skipped, failed = _parallel(users, weight, total_w, jobs)
     else:
         skipped, failed, _r = _run_meshes(users, list(users), weight, total_w, True)
     if skipped:
-        print(f"SKIPPED for memory: {len(skipped)} meshes ({', '.join(skipped[:5])}) - close other programs and run again",
-              flush=True)
+        say(f"SKIPPED for memory: {len(skipped)} meshes ({', '.join(skipped[:5])}) - close other programs and run again")
     if failed:
-        print(f"Errors in {len(failed)} meshes ({', '.join(failed[:5])}) - left as imported", flush=True)
+        say(f"Errors in {len(failed)} meshes ({', '.join(failed)}) - left as imported")
     cache = opt("--cache", "")
     pending = any(m.get("rb_original") and m.library is None and m.override_library is None for m in bpy.data.meshes)
     if cache and (CACHE_WRITTEN[0] is None or pending):   # not yet (all) by the workers' merge
         import time
         t_c = time.time()
         n = write_cache(cache)
-        print(f"CACHE {n} copies in {cache} ({time.time() - t_c:.0f} s)", flush=True)
+        say(f"CACHE {n} copies in {cache} ({time.time() - t_c:.0f} s)")
     if TARGET:
         import time
         t_s = time.time()
         bpy.ops.wm.save_as_mainfile(filepath=TARGET, copy=True, compress=True)   # copies are large (run 38)
-        print(f"SAVED {TARGET} ({time.time() - t_s:.0f} s)", flush=True)
+        say(f"SAVED {TARGET} ({time.time() - t_s:.0f} s)")
+    if LOG:
+        try:
+            with open(LOG, "a", encoding="utf-8") as fh:
+                fh.write("\n")
+        except OSError:
+            pass
 
 main()

@@ -338,6 +338,37 @@ def refresh_state(context=None):
     return st
 
 
+def log_path():
+    import os
+    return os.path.splitext(bpy.data.filepath)[0] + "_renderbricker.log" if bpy.data.filepath else ""
+
+
+def write_log(context, label):
+    """Append the result of an operator to <scene>_renderbricker.log (option Log file, user 2026-09-28):
+    date, add-on and Blender version, scene, settings, the summary and the full problem list."""
+    s = context.scene.mecsub
+    path = log_path()
+    if not s.use_log or not path or not s.summary:
+        return
+    import datetime
+    scope = {"ALL": "all parts", "SELECTED": "selected parts",
+             "COLLECTION": f"collection {s.collection.name if s.collection else '-'}"}[s.scope]
+    lines = [f"=== {datetime.datetime.now():%Y-%m-%d %H:%M:%S}  {label}  "
+             f"(Renderbricker {VERSION}, Blender {bpy.app.version_string})",
+             f"scene: {bpy.data.filepath}",
+             f"settings: {scope}, variant {s.variant}, viewport {s.view_level}, render {s.render_level}, "
+             f"several cores {'on' if s.use_cores else 'off'}, cache file {'on' if s.use_cache else 'off'}"]
+    lines += [f"  - {part}" for part in s.summary.split(", ")]
+    if len(s.problems):
+        lines.append(f"problems ({len(s.problems)}):")
+        lines += [f"  - {p.obj}: {p.info}" for p in s.problems]
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n\n")
+    except OSError as e:
+        s.summary += f", log not written: {e}"
+
+
 def save_after_cache(op, context):
     """After Apply / Levels wrote the cache file the scene is saved (user, run 74): the file
     on disk must link the copies that are now in the cache - an unsaved scene pointed to
@@ -411,6 +442,11 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         description="The subdivided copies are kept in <scene>_rbcache.blend next to the scene and "
                     "linked into it (as library overrides that carry the scene's materials): the scene file "
                     "stays about as large as the import. Needs a saved scene")
+    use_log: bpy.props.BoolProperty(
+        name="Log file", default=False,
+        description="Write the results of Apply, Check and Convert headless into <scene>_renderbricker.log "
+                    "next to the scene (appended, with date, settings and the full problem list). "
+                    "Needs a saved scene")
     summary: StringProperty(default="")
     problems: CollectionProperty(type=MECSUB_Problem)
     running: bpy.props.BoolProperty(default=False)
@@ -539,6 +575,7 @@ class _Stepped:
         self.finish(context)
         refresh_state(context)                 # before saving: it sets a scene property
         save_after_cache(self, context)
+        write_log(context, self.label)
         return {'FINISHED'}
 
     def invoke(self, context, event):
@@ -659,6 +696,7 @@ class _Stepped:
         refresh_state(context)                 # before saving: it sets a scene property
         if not err:
             save_after_cache(self, context)
+        write_log(context, self.label)
         redraw(context)
         return {'FINISHED'}
 
@@ -1349,6 +1387,8 @@ class MECSUB_OT_headless(bpy.types.Operator):
                 "--shading", "mecabricks" if s.variant == 'A' else "geometric", "--jobs", "auto"]
         if s.use_cache:
             args += ["--cache", core.cache_path_for(out)]
+        if s.use_log:
+            args += ["--log", log_path()]
         script = write_headless_script(os.path.join(folder, name), stem, blend, out, args)
         how = start_script(script)
         s.summary = (f"Headless conversion started in a terminal: {os.path.basename(script)}, result: {os.path.basename(out)}"
@@ -1420,15 +1460,19 @@ def draw_summary(L, s):
     """Result of the last operator and the problem list (select button per entry)."""
     if not s.summary or s.running:
         return
+    import bpy as _bpy
     box = L.box()
-    for part in s.summary.split(", "):
-        box.label(text=part)
-    for p in list(s.problems)[:12]:
-        r = box.row()
-        r.label(text=f"{p.obj}: {p.info}", icon='ERROR')
-        r.operator("mecsub.select", text="", icon='RESTRICT_SELECT_OFF').obj = p.obj
-    if len(s.problems) > 12:
-        box.label(text=f"... {len(s.problems) - 12} more")
+    bullets(box, s.summary.split(", "), _bpy.context)
+    if len(s.problems):
+        col = box.column(align=True)
+        col.scale_y = 0.9
+        for p in list(s.problems)[:12]:
+            r = col.row(align=True)
+            r.alert = True
+            r.label(text=f"•  {p.obj}: {p.info}")
+            r.operator("mecsub.select", text="", icon='RESTRICT_SELECT_OFF').obj = p.obj
+        if len(s.problems) > 12:
+            col.label(text=f"   ... {len(s.problems) - 12} more" + (" - all in the log file" if s.use_log else ""))
 
 
 def bullets(layout, items, context, prefix="•  "):
@@ -1505,6 +1549,7 @@ def _g_settings(L, context, s):
     draw_levels(L, s, context)
     L.prop(s, "use_cores")
     L.prop(s, "use_cache")
+    L.prop(s, "use_log")
     return True
 
 
@@ -1581,6 +1626,8 @@ GUIDE = (
         "Use several cores: larger scenes are converted in parallel background Blenders.",
         "Cache file: the smoothed parts are stored in <scene>_rbcache.blend next to the scene, so the "
         "scene file stays small.",
+        "Log file: the results of Apply, Check and Convert headless are also written into "
+        "<scene>_renderbricker.log, with the full list of problems.",
         "The defaults suit most scenes.")),
     ("Apply", _g_apply, (
         "Apply decides for every edge of every part whether the real brick is sharp or round there, "
@@ -1700,6 +1747,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         body.operator("mecsub.apply", icon='MOD_SUBSURF')
         body.prop(s, "use_cores")
         body.prop(s, "use_cache")
+        body.prop(s, "use_log")
         st = core.cache_state()
         if st is not None:
             import os

@@ -22,6 +22,7 @@ header work any time.
 | **Viewport** level | 1 | Subdivision shown in the viewport. 0 shows the original mesh (no viewport copy is stored – the file gets about a fifth smaller). Levels already baked switch at once, others are computed the first time (with a progress bar). |
 | **Render** level | 2 | Subdivision used for rendering; the checks use this level. 2 is enough even for close-ups. Raising a level above 2 asks first – *Cancel* (or Esc) keeps the old level – and the panel shows a warning while it is above 2: every level multiplies the faces by three to four, so memory, file size and conversion time grow a lot for a small visible gain. |
 | **Use several cores** | on | Apply on larger scenes (about 40 meshes and more) runs in background Blenders on several cores and loads the result into this scene. The scene is saved first. The number of Blenders follows the free memory. |
+| **Log file** | off | Appends the results of Apply, Check and Convert headless to `<scene>_renderbricker.log` next to the scene: date, add-on and Blender version, settings, the summary and the full problem list (the panel shows the first 12 problems). Needs a saved scene. |
 | **Cache file next to the scene** | on | The subdivided copies are kept in `<scene>_rbcache.blend` next to the scene and linked into it, so the scene file stays about as large as the import. Needs a saved scene. Switching it off takes the copies back into the scene file; switching it on writes them out again. |
 
 ## Buttons
@@ -48,8 +49,21 @@ line (`blender -b … -f`) switch the level as well.
 |---|---|
 | `<scene>.blend` | Your scene; with the cache on it links the copies and stays small. |
 | `<scene>_rbcache.blend` | The subdivided copies. Keep it next to the scene; when you move or rename the scene, move or rename the cache with it, or use *Move cache here* after *Save As*. |
+| `<scene>_renderbricker.log` | The log of Apply, Check and Convert headless (option *Log file*); new entries are appended. |
 | `<scene>_subdiv_<version>.blend` | Result of *Convert headless* (plus its own `_rbcache.blend`). Earlier results are never overwritten. |
 | `<scene>_subdiv_<version>.bat / .sh / .command` | The start script of *Convert headless*; it can be run again by hand. |
+
+## Converting again
+
+- **Apply on a converted scene** runs the rules again for every part in scope and replaces the
+  copies by new ones – the result is the same as before (same copies, no duplicates, the cache file is
+  rewritten and the scene saved). It takes as long as the first Apply. To change only the smoothness,
+  change the viewport or render level instead: that switches or computes copies without running the
+  rules again.
+- **Convert headless on a converted scene** opens the saved scene in the background, goes back from
+  the copies to the imported meshes and converts them again. It writes a new file
+  `<scene>_subdiv_<version>.blend` with its own cache file; the open scene and its cache stay
+  unchanged, and earlier results are never overwritten (a number is added).
 
 ## About
 

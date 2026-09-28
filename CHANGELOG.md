@@ -15,6 +15,8 @@ First release – in preparation; improvements are added here until it is publis
 - Apply and headless conversion on several cores; progress bars for all long steps; the scene is saved after the cache was written.
 - Start Guide: a step-by-step guide through the workflow (save, choose the parts, settings, Apply, Check, compare, render, what next), every step explained in bullet points, with its own controls and a status line; the next action is highlighted.
 - Raising a subdivision level above 2 asks first (Cancel keeps the old level) and the panel shows a warning while it is above 2.
+- Option Log file: the results of Apply, Check and Convert headless are appended to `<scene>_renderbricker.log` next to the scene, with date, settings and the full problem list.
+- The results in the panel are listed as compact bullet points.
 - Scope All, Selected or Collection (a chosen collection with its child collections) for Apply, Check, On/Off, levels and Remove.
 - "Subdivision: ON / OFF" switches all links between copy and original and shows the current state.
 - Checks after every conversion: original untouched, folds, seam gaps.
