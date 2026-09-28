@@ -598,14 +598,6 @@ def camera_collections(s):
     return [it.collection for it in s.collections if it.render and it.collection is not None]
 
 
-def _scope_update(self, context):
-    """Collection chosen with an empty list: take the active collection of the Outliner."""
-    if self.scope == 'COLLECTION' and not scope_collections(self):
-        c = context.collection
-        if c is not None and c != context.scene.collection:
-            self.collections.add().collection = c
-
-
 def _collection_render_update(self, context):
     """A collection marked or unmarked for the camera while it is on: show and frame the new choice."""
     sc = context.scene
@@ -696,7 +688,7 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         ('ALL', "All", "Every mesh object in the scene"),
         ('SELECTED', "Selected", "Selected mesh objects only"),
         ('COLLECTION', "Collection", "Mesh objects in the chosen collection and its child collections")],
-        default='ALL', update=_scope_update)
+        default='ALL')        # Collection starts with an empty list (user, 2026-09-28)
     collections: CollectionProperty(type=MECSUB_CollectionItem)
     collections_index: IntProperty(default=0)
     collection: PointerProperty(type=bpy.types.Collection, name="Collection",       # scenes from before: taken over
@@ -1930,8 +1922,8 @@ GUIDE = (
     ("Choose the parts", _g_parts, (
         "All: every part of the scene.",
         "Selected: only the objects selected in the viewport or the Outliner.",
-        "Collection: the parts in the collections of the list and their child collections - + adds the "
-        "collection active in the Outliner. Handy for converting a large scene piece by piece.",
+        "Collection: the parts in the collections of the list and their child collections - the list "
+        "starts empty, + adds the collection active in the Outliner. Handy for converting a large scene piece by piece.",
         "The camera icon of a collection marks it for the render camera: with the camera on, only the "
         "marked collections are shown and rendered.",
         "Parts outside the choice stay as imported.")),
