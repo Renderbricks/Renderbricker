@@ -18,6 +18,8 @@ scripts/core/              rules (mecabricks_subdiv.py), import, batch, verifica
 docs/RULES.md              rule set – every rule with its origin (part, run); version = RULES_VERSION
 01_Sources … 06_User       local model data, not in git
 _CLAUDE_/                  local R&D: journals, runs, logs, backups, tools (own local git history)
+_dev/                      private test repo Renderbricker-CI (own git): platform tests Linux/macOS/Windows,
+                           fixture + fingerprint reference; `python _dev/ci/run_all.py --blender <exe> --addon addon --work <dir>`
 ```
 
 ## Rules of work
