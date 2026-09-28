@@ -2333,15 +2333,20 @@ class MECSUB_PT_panel(bpy.types.Panel):
         if st is not None:
             import os
             box = body.box()
+            col = box.column(align=True)        # two lines: at the default sidebar width one line was cut
+            name = os.path.basename(st[1])      # (tutorial pictures, 2026-09-29)
             if not st[3]:
-                box.label(text=f"Cache missing: {os.path.basename(st[1])}", icon='ERROR')
+                col.label(text="Cache missing:", icon='ERROR')
+                col.label(text=name, icon='BLANK1')
             elif st[1] != st[2]:
-                box.label(text=f"Cache of another scene: {os.path.basename(st[1])}", icon='ERROR')
-                row = box.row(align=True)
-                row.operator("mecsub.move_cache", icon='FILE_FOLDER', text="Move cache here")
-                row.operator("mecsub.copy_cache", icon='DUPLICATE', text="Copy cache here")
+                col.label(text="Cache of another scene:", icon='ERROR')
+                col.label(text=name, icon='BLANK1')
+                sub = box.column(align=True)
+                sub.operator("mecsub.move_cache", icon='FILE_FOLDER', text="Move cache here")
+                sub.operator("mecsub.copy_cache", icon='DUPLICATE', text="Copy cache here")
             else:
-                box.label(text=f"Cache: {os.path.basename(st[1])}", icon='FILE_BLEND')
+                col.label(text="Cache file:", icon='FILE_BLEND')
+                col.label(text=name, icon='BLANK1')
         row = body.row(align=True)
         row.operator("mecsub.check", icon='VIEWZOOM')
         state = s.subdiv_state

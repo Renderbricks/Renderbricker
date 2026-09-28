@@ -11,7 +11,7 @@ First release – in preparation; improvements are added here until it is publis
 
 - Rule-based creases for Mecabricks imports: seams welded in a temporary copy, hard edges, bevels, designed corners and hexagon sockets kept sharp, round shapes and polygonised circles smoothed; the imported meshes stay unchanged.
 - One subdivided copy per part, shared by all its links; separate viewport and render levels, F12 / Ctrl+F12 render with the render level.
-- Optional cache file next to the scene (copies linked as library overrides), with Move/Copy cache after Save As and switching the cache on and off.
+- Optional cache file next to the scene (copies linked as library overrides), with Move/Copy cache after Save As and switching the cache on and off; the panel shows the cache file on a line of its own and Move/Copy one below the other, readable at the default sidebar width.
 - Apply and headless conversion on several cores; progress bars for all long steps; the scene is saved after the cache was written.
 - Start Guide: a step-by-step guide through the workflow (save, choose the parts, settings, Apply, Check, compare, render, what next), every step explained in bullet points, with its own controls and a status line; the next action is highlighted.
 - Raising a subdivision level above 2 asks first (Cancel keeps the old level) and the panel shows a warning while it is above 2.
