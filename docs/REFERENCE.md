@@ -47,6 +47,8 @@ Renderbricks one – nothing of yours is overwritten:
   The first time, the camera is created with the direction and lens of the setup scene's camera and
   moved so that all visible parts fill the picture with a small margin (clip end 1000, more for very
   large scenes). Your world stays in the file even while it is not used.
+  The picture is landscape 16:9, or portrait 9:16 when the model is taller than its widest side
+  (the resolution of the setup scene is turned; *Top* and *Bottom* are always landscape).
   The 3D viewport switches to the camera view, the camera frame filling it (also with the view
   buttons below), with relationship lines off and statistics on.
 - **OFF** brings back your camera, world and render settings exactly as they were, and the viewport

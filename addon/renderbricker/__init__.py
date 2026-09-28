@@ -419,6 +419,7 @@ class MECSUB_OT_frame_camera(bpy.types.Operator):
     def execute(self, context):
         object_mode(context)
         cam, _made = core.render_camera(context.scene)
+        core.picture_orientation(context.scene, context.scene.get("rb_camera_view", "FRONT"))
         ok = core.frame_camera(context.scene, cam, context.evaluated_depsgraph_get())
         self.report({'INFO'}, "Renderbricker: " + ("camera Renderbricks framed" if ok else "no visible parts to frame"))
         return {'FINISHED'}

@@ -3079,6 +3079,9 @@ def frame_camera(scene, cam, depsgraph):
     r = float(np.linalg.norm(pts - c, axis=1).max())
     d = (Vector(loc) - Vector(c.tolist())).length
     cam.data.clip_end = max(CLIP_END, 2.0 * (d + r))     # very large scenes: nothing cut off
+    # very small scenes (NINJAGO City imported at scale 0.001: 0.6 units high): the near clip stays
+    # in front of the model
+    cam.data.clip_start = min(cam.data.clip_start, max(1e-4, 0.5 * (d - r)))
     return True
 
 
@@ -3117,16 +3120,35 @@ CAMERA_VIEWS = (("FRONT", "Front", 0.0), ("RIGHT", "Right", 90.0), ("BACK", "Bac
 TOP_ALIGNED = True      # Top / Bottom square to the model's axes, longer side across (user, 2026-09-28)
 
 
-def footprint(scene):
-    """Extent of all visible parts along world X and Y."""
+def model_extent(scene):
+    """Extent of all visible parts along world X, Y and Z."""
     import numpy as np
     obs = visible_meshes(scene)
     if not obs:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0
     pts = np.concatenate([np.array(o.bound_box) @ np.array(o.matrix_world)[:3, :3].T + np.array(o.matrix_world)[:3, 3]
                           for o in obs])
     ext = pts.max(0) - pts.min(0)
-    return float(ext[0]), float(ext[1])
+    return float(ext[0]), float(ext[1]), float(ext[2])
+
+
+def footprint(scene):
+    """Extent of all visible parts along world X and Y."""
+    return model_extent(scene)[:2]
+
+
+def picture_orientation(scene, view="FRONT"):
+    """Landscape or portrait from the model's proportions (user, 2026-09-28): taller than its widest
+    side -> portrait (9:16 from a 16:9 resolution), else landscape; Top and Bottom always landscape
+    (the longer side of the footprint lies across). Turns the render resolution; True for portrait."""
+    dx, dy, dz = model_extent(scene)
+    portrait = view not in ("TOP", "BOTTOM") and dz > max(dx, dy)
+    r = scene.render
+    long_side, short_side = max(r.resolution_x, r.resolution_y), min(r.resolution_x, r.resolution_y)
+    want = (short_side, long_side) if portrait else (long_side, short_side)
+    if (r.resolution_x, r.resolution_y) != want:
+        r.resolution_x, r.resolution_y = want
+    return portrait
 
 
 def aligned_yaw(scene, front_yaw):
@@ -3156,6 +3178,7 @@ def camera_view(scene, view, depsgraph=None):
     else:
         rot = (tilt, 0.0, yaw + math.radians(step))
     cam.rotation_euler = rot
+    picture_orientation(scene, view)
     dg = depsgraph or bpy.context.evaluated_depsgraph_get()
     dg.update()
     scene["rb_camera_view"] = view
@@ -3192,15 +3215,20 @@ def render_camera_on(scene, template="", depsgraph=None):
     scene.camera = cam
     if made:
         scene["rb_camera_view"] = "FRONT"
+    res_before = (scene.render.resolution_x, scene.render.resolution_y)
+    portrait = picture_orientation(scene, scene.get("rb_camera_view", "FRONT"))
+    turned = (scene.render.resolution_x, scene.render.resolution_y) != res_before
     framed = False
-    if made:
+    if made or turned:
         dg = depsgraph or bpy.context.evaluated_depsgraph_get()
         dg.update()
         framed = frame_camera(scene, cam, dg)
     scene["rb_render_on"] = True
     import os
     used = bool(template) and os.path.isfile(template)
-    return ("render camera on: camera Renderbricks" + (" created and framed" if framed else "")
+    return ("render camera on: camera Renderbricks" + (" created and framed" if made and framed else
+                                                       " framed" if framed else "")
+            + (", portrait 9:16" if portrait else ", landscape 16:9")
             + f", world {sky.name}" + (", render settings of the setup scene" if used else ""))
 
 
