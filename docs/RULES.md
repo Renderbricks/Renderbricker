@@ -1,7 +1,7 @@
 # Mecabricks → Subdivision Surface: Rule Set
 
-Version 3.2 · 2026-09-28 (W15, W5b) · implemented in `scripts/core/mecabricks_subdiv.py` (`process`, weld; the island rules up to 2.4 remain as `process_24`, `--method rules24`), checked by `scripts/core/verify_part.py` and `scripts/core/verify_generic.py`
-History and evidence: `JOURNAL_260924.md` (runs 1–45), renders in `renders/runNN_*`.
+Version 3.2 · 2026-09-28 (3.1: W15, 3.2: W5b) · implemented in `scripts/core/mecabricks_subdiv.py` (`process`, weld; the island rules up to 2.4 remain as `process_24`, `--method rules24`), checked by `scripts/core/verify_part.py` and `scripts/core/verify_generic.py`
+Every rule names the part and the development run in which it was found; the run records are kept with the project, not in this repository.
 
 The rules make imported Mecabricks parts subdividable (Catmull-Clark) without cracks, folds or lost detail. Each rule comes from a concrete finding; the column *Origin* names the part and run where it was found.
 
