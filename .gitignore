@@ -6,6 +6,7 @@
 /04_Curation/
 /05_Videos/
 /06_User/
+/07_Tutorial/
 *.blend
 *.blend1
 !/addon/renderbricker/setup/*.blend
