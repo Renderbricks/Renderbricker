@@ -3100,10 +3100,43 @@ def render_camera(scene, create=True, setup=None):
                     setattr(data, k, setup[k])
                 except (KeyError, TypeError, ValueError):
                     pass
+        cam["rb_base_rotation"] = tuple(cam.rotation_euler)     # the Front view of the six views
         made = True
     if cam is not None and cam.name not in scene.objects:
         scene.collection.objects.link(cam)
     return cam, made
+
+
+# the six views of the render camera (user, 2026-09-28): Front is the camera's direction as set up
+# (from the setup scene), Right / Back / Left orbit the model by 90° steps at the same tilt, Top and
+# Bottom look straight down and up; every view is framed again
+CAMERA_VIEWS = (("FRONT", "Front", 0.0), ("RIGHT", "Right", 90.0), ("BACK", "Back", 180.0),
+                ("LEFT", "Left", 270.0), ("TOP", "Top", None), ("BOTTOM", "Bottom", None))
+
+
+def camera_view(scene, view, depsgraph=None):
+    """Turn the camera "Renderbricks" to one of the six views and frame the model. Returns False
+    without the camera or visible parts."""
+    import math
+    cam = bpy.data.objects.get(CAMERA_NAME)
+    if cam is None or cam.type != 'CAMERA':
+        return False
+    base = tuple(cam.get("rb_base_rotation", ())) or tuple(cam.rotation_euler)
+    if "rb_base_rotation" not in cam:
+        cam["rb_base_rotation"] = base
+    tilt, yaw = base[0], base[2]
+    step = {k: d for k, _label, d in CAMERA_VIEWS}[view]
+    if view == "TOP":
+        rot = (0.0, 0.0, yaw)
+    elif view == "BOTTOM":
+        rot = (math.pi, 0.0, yaw)
+    else:
+        rot = (tilt, 0.0, yaw + math.radians(step))
+    cam.rotation_euler = rot
+    dg = depsgraph or bpy.context.evaluated_depsgraph_get()
+    dg.update()
+    scene["rb_camera_view"] = view
+    return frame_camera(scene, cam, dg)
 
 
 def render_camera_is_on(scene):
@@ -3134,6 +3167,8 @@ def render_camera_on(scene, template="", depsgraph=None):
     scene.world = sky
     cam, made = render_camera(scene, setup=cam_set)
     scene.camera = cam
+    if made:
+        scene["rb_camera_view"] = "FRONT"
     framed = False
     if made:
         dg = depsgraph or bpy.context.evaluated_depsgraph_get()

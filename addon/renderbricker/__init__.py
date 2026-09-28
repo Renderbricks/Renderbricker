@@ -385,12 +385,42 @@ class MECSUB_OT_frame_camera(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class MECSUB_OT_camera_view(bpy.types.Operator):
+    bl_idname = "mecsub.camera_view"
+    bl_label = "Camera view"
+    bl_description = ("Turn the camera \"Renderbricks\" around the model and frame it: Front is the view of the "
+                      "setup scene, Right / Back / Left go round in 90° steps, Top and Bottom look straight down "
+                      "and up")
+    bl_options = {'REGISTER', 'UNDO'}
+    view: EnumProperty(items=[(k, label, "") for k, label, _d in core.CAMERA_VIEWS], default="FRONT")
+
+    @classmethod
+    def poll(cls, context):
+        return core.render_camera_is_on(context.scene)
+
+    def execute(self, context):
+        object_mode(context)
+        ok = core.camera_view(context.scene, self.view, context.evaluated_depsgraph_get())
+        if not ok:
+            self.report({'WARNING'}, "Renderbricker: no camera or no visible parts to frame")
+        redraw(context)
+        return {'FINISHED'}
+
+
 def draw_render_camera(L, context):
-    on = core.render_camera_is_on(context.scene)
-    row = L.row(align=True)
+    sc = context.scene
+    on = core.render_camera_is_on(sc)
+    col = L.column(align=True)
+    row = col.row(align=True)
     row.operator("mecsub.render_camera", text=f"Render camera: {'ON' if on else 'OFF'}",
                  icon='OUTLINER_OB_CAMERA' if on else 'CAMERA_DATA', depress=on)
     row.operator("mecsub.frame_camera", text="", icon='VIEW_CAMERA')
+    if on:
+        current = sc.get("rb_camera_view", "")
+        for keys in (core.CAMERA_VIEWS[:4], core.CAMERA_VIEWS[4:]):
+            row = col.row(align=True)
+            for k, label, _d in keys:
+                row.operator("mecsub.camera_view", text=label, depress=(k == current)).view = k
 
 
 def log_path():
@@ -1744,7 +1774,9 @@ GUIDE = (
         "Render camera ON: the camera \"Renderbricks\" frames the whole model, a world \"Renderbricks Sky\" "
         "(Physical Sky) and the Renderbricks render settings are used. OFF brings your own camera, world and "
         "render settings back - nothing is overwritten.",
-        "The camera icon frames the model again, e.g. after adding parts.")),
+        "The camera icon frames the model again, e.g. after adding parts.",
+        "Front, Right, Back, Left, Top, Bottom turn the camera around the model: Front is the view of the "
+        "render setup, the others go round in 90° steps or look from above and below.")),
     ("Done - what next", _g_next, (
         "Save As under another name or folder: the panel then offers Move cache here or Copy cache "
         "here, so the new file gets its cache.",
@@ -1916,7 +1948,7 @@ classes = (MECSUB_Problem, MECSUB_Settings, MECSUB_OT_apply, MECSUB_OT_check, ME
            MECSUB_OT_remove, MECSUB_OT_select, MECSUB_OT_headless, MECSUB_PT_panel, MECSUB_OT_move_cache, MECSUB_OT_copy_cache,
            MECSUB_OT_cache_switch, MECSUB_OT_render, MECSUB_PT_about,
            MECSUB_OT_guide_start, MECSUB_OT_guide_nav, MECSUB_OT_guide_exit, MECSUB_OT_level_confirm,
-           MECSUB_OT_frame_camera, MECSUB_OT_render_camera)
+           MECSUB_OT_frame_camera, MECSUB_OT_render_camera, MECSUB_OT_camera_view)
 
 
 @persistent
