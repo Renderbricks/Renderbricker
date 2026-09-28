@@ -344,6 +344,37 @@ def setup_blend():
     return os.path.join(os.path.dirname(__file__), "setup", "renderbricks_setup.blend")
 
 
+_VIEW_BEFORE = {}           # 3D viewport -> its view (perspective / ortho) before Render camera ON
+
+
+def viewport_camera(context, on):
+    """Render camera ON (and the view buttons): the 3D viewport of the button looks through the camera;
+    OFF: back to the view it had before (user, 2026-09-28). Without a 3D viewport (scripts) nothing."""
+    area = context.area if context.area and context.area.type == 'VIEW_3D' else None
+    if area is None and context.screen:
+        area = next((a for a in context.screen.areas if a.type == 'VIEW_3D'), None)
+    if area is None:
+        return
+    r3d = area.spaces.active.region_3d
+    key = area.as_pointer()
+    if on:
+        if r3d.view_perspective != 'CAMERA':
+            _VIEW_BEFORE[key] = r3d.view_perspective
+        r3d.view_perspective = 'CAMERA'
+        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+        if region is not None:                  # the camera frame fills the viewport (Frame Camera Bounds)
+            try:
+                with context.temp_override(area=area, region=region):
+                    bpy.ops.view3d.view_center_camera()
+            except RuntimeError:
+                pass
+    else:
+        before = _VIEW_BEFORE.pop(key, None)
+        if r3d.view_perspective == 'CAMERA':
+            r3d.view_perspective = before or 'PERSP'
+    area.tag_redraw()
+
+
 class MECSUB_OT_render_camera(bpy.types.Operator):
     bl_idname = "mecsub.render_camera"
     bl_label = "Render camera"
@@ -358,8 +389,10 @@ class MECSUB_OT_render_camera(bpy.types.Operator):
         sc = context.scene
         if core.render_camera_is_on(sc):
             text = core.render_camera_off(sc)
+            viewport_camera(context, False)
         else:
             text = core.render_camera_on(sc, setup_blend(), context.evaluated_depsgraph_get())
+            viewport_camera(context, True)
         context.scene.mecsub.summary = text
         self.report({'INFO'}, "Renderbricker: " + text)
         redraw(context)
@@ -401,6 +434,7 @@ class MECSUB_OT_camera_view(bpy.types.Operator):
     def execute(self, context):
         object_mode(context)
         ok = core.camera_view(context.scene, self.view, context.evaluated_depsgraph_get())
+        viewport_camera(context, True)
         if not ok:
             self.report({'WARNING'}, "Renderbricker: no camera or no visible parts to frame")
         redraw(context)
