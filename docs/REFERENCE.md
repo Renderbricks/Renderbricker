@@ -56,7 +56,8 @@ Renderbricks one – nothing of yours is overwritten:
 - The **camera button** next to it frames the camera *Renderbricks* again, e.g. after adding parts.
 - **Front, Right, Back, Left, Top, Bottom** (shown while the render camera is on) turn the camera
   around the model and frame it: *Front* is the view of the render setup, *Right*, *Back* and *Left* go
-  round the model in 90° steps at the same tilt, *Top* and *Bottom* look straight down and up. The
+  round the model in 90° steps at the same tilt, *Top* and *Bottom* look straight down and up, square
+  to the model with its longer side across the picture and its front at the bottom. The
   current view is highlighted.
 
 Apply and Convert headless never change the camera, world or render settings.

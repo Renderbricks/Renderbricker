@@ -3114,6 +3114,30 @@ CAMERA_VIEWS = (("FRONT", "Front", 0.0), ("RIGHT", "Right", 90.0), ("BACK", "Bac
                 ("LEFT", "Left", 270.0), ("TOP", "Top", None), ("BOTTOM", "Bottom", None))
 
 
+TOP_ALIGNED = True      # Top / Bottom square to the model's axes, longer side across (user, 2026-09-28)
+
+
+def footprint(scene):
+    """Extent of all visible parts along world X and Y."""
+    import numpy as np
+    obs = visible_meshes(scene)
+    if not obs:
+        return 0.0, 0.0
+    pts = np.concatenate([np.array(o.bound_box) @ np.array(o.matrix_world)[:3, :3].T + np.array(o.matrix_world)[:3, 3]
+                          for o in obs])
+    ext = pts.max(0) - pts.min(0)
+    return float(ext[0]), float(ext[1])
+
+
+def aligned_yaw(scene, front_yaw):
+    """Top / Bottom: the camera square to the world axes with the longer side of the model across the
+    picture; of the two such directions the one closest to Front, so the front stays at the bottom."""
+    import math
+    dx, dy = footprint(scene)
+    cands = (0.0, math.pi) if dx >= dy else (math.pi / 2, 3 * math.pi / 2)
+    return min(cands, key=lambda a: abs(math.remainder(a - front_yaw, 2 * math.pi)))
+
+
 def camera_view(scene, view, depsgraph=None):
     """Turn the camera "Renderbricks" to one of the six views and frame the model. Returns False
     without the camera or visible parts."""
@@ -3126,10 +3150,9 @@ def camera_view(scene, view, depsgraph=None):
         cam["rb_base_rotation"] = base
     tilt, yaw = base[0], base[2]
     step = {k: d for k, _label, d in CAMERA_VIEWS}[view]
-    if view == "TOP":
-        rot = (0.0, 0.0, yaw)
-    elif view == "BOTTOM":
-        rot = (math.pi, 0.0, yaw)
+    if view in ("TOP", "BOTTOM"):
+        y = aligned_yaw(scene, yaw) if TOP_ALIGNED else yaw
+        rot = (0.0, 0.0, y) if view == "TOP" else (math.pi, 0.0, y)
     else:
         rot = (tilt, 0.0, yaw + math.radians(step))
     cam.rotation_euler = rot
