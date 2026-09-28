@@ -473,13 +473,66 @@ def draw_render_camera(L, context):
                 row.operator("mecsub.camera_view", text=label, depress=(k == current)).view = k
 
 
+LOG_SUFFIX = "_Renderbricker.log"       # capital R (user, 2026-09-28; before: _renderbricker.log)
+
+
 def log_path():
+    """<scene>_Renderbricker.log next to the scene; a log of the old name is renamed to it (on Windows
+    both names are the same file, elsewhere the log would be split in two)."""
     import os
-    return os.path.splitext(bpy.data.filepath)[0] + "_renderbricker.log" if bpy.data.filepath else ""
+    if not bpy.data.filepath:
+        return ""
+    base = os.path.splitext(bpy.data.filepath)[0]
+    new = base + LOG_SUFFIX
+    folder, name = os.path.split(new)
+    try:
+        old = next((f for f in os.listdir(folder or ".") if f.lower() == name.lower() and f != name), None)
+        if old:
+            os.rename(os.path.join(folder, old), new)
+    except OSError:
+        pass
+    return new
+
+
+def open_file(path):
+    """Open a file with the system's default program (Windows, macOS, Linux)."""
+    import os, sys, subprocess
+    if sys.platform.startswith("win"):
+        os.startfile(path)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path], start_new_session=True)
+
+
+class MECSUB_OT_open_log(bpy.types.Operator):
+    bl_idname = "mecsub.open_log"
+    bl_label = "Open log file"
+    bl_description = "Open <scene>_Renderbricker.log next to the scene in the system's text editor"
+
+    @classmethod
+    def poll(cls, context):
+        import os
+        return bool(bpy.data.filepath) and os.path.isfile(os.path.splitext(bpy.data.filepath)[0] + LOG_SUFFIX)
+
+    def execute(self, context):
+        path = log_path()
+        try:
+            open_file(path)
+        except OSError as e:
+            self.report({'ERROR'}, f"Renderbricker: log file not opened: {e}")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+def draw_log(L, s):
+    row = L.row(align=True)
+    row.prop(s, "use_log")
+    row.operator("mecsub.open_log", text="", icon='TEXT')
 
 
 def write_log(context, label):
-    """Append the result of an operator to <scene>_renderbricker.log (option Log file, user 2026-09-28):
+    """Append the result of an operator to <scene>_Renderbricker.log (option Log file, user 2026-09-28):
     date, add-on and Blender version, scene, settings, the summary and the full problem list."""
     s = context.scene.mecsub
     path = log_path()
@@ -672,7 +725,7 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
                     "stays about as large as the import. Needs a saved scene")
     use_log: bpy.props.BoolProperty(
         name="Log file", default=False,
-        description="Write the results of Apply, Check and Convert headless into <scene>_renderbricker.log "
+        description="Write the results of Apply, Check and Convert headless into <scene>_Renderbricker.log "
                     "next to the scene (appended, with date, settings and the full problem list). "
                     "Needs a saved scene")
     summary: StringProperty(default="")
@@ -1810,7 +1863,7 @@ def _g_settings(L, context, s):
     draw_levels(L, s, context)
     L.prop(s, "use_cores")
     L.prop(s, "use_cache")
-    L.prop(s, "use_log")
+    draw_log(L, s)
     return True
 
 
@@ -1891,7 +1944,7 @@ GUIDE = (
         "Cache file: the smoothed parts are stored in <scene>_rbcache.blend next to the scene, so the "
         "scene file stays small.",
         "Log file: the results of Apply, Check and Convert headless are also written into "
-        "<scene>_renderbricker.log, with the full list of problems.",
+        "<scene>_Renderbricker.log, with the full list of problems; the icon next to it opens it.",
 
         "The defaults suit most scenes.")),
     ("Apply", _g_apply, (
@@ -2015,7 +2068,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         body.operator("mecsub.apply", icon='MOD_SUBSURF')
         body.prop(s, "use_cores")
         body.prop(s, "use_cache")
-        body.prop(s, "use_log")
+        draw_log(body, s)
         draw_render_camera(body, context)
         st = core.cache_state()
         if st is not None:
@@ -2085,7 +2138,7 @@ class MECSUB_PT_about(bpy.types.Panel):
 
 
 classes = (MECSUB_Problem, MECSUB_CollectionItem, MECSUB_Settings, MECSUB_UL_collections,
-           MECSUB_OT_collection_add, MECSUB_OT_collection_remove, MECSUB_OT_apply, MECSUB_OT_check, MECSUB_OT_levels, MECSUB_OT_toggle,
+           MECSUB_OT_collection_add, MECSUB_OT_collection_remove, MECSUB_OT_open_log, MECSUB_OT_apply, MECSUB_OT_check, MECSUB_OT_levels, MECSUB_OT_toggle,
            MECSUB_OT_remove, MECSUB_OT_select, MECSUB_OT_headless, MECSUB_PT_panel, MECSUB_OT_move_cache, MECSUB_OT_copy_cache,
            MECSUB_OT_cache_switch, MECSUB_OT_render, MECSUB_PT_about,
            MECSUB_OT_guide_start, MECSUB_OT_guide_nav, MECSUB_OT_guide_exit, MECSUB_OT_level_confirm,
