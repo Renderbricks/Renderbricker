@@ -576,7 +576,10 @@ class MECSUB_CollectionItem(bpy.types.PropertyGroup):
 class MECSUB_UL_collections(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index=0):
         row = layout.row(align=True)
-        row.prop(item, "collection", text="", icon='OUTLINER_COLLECTION')
+        if item.collection is not None:     # a name, no field: its x only cleared the entry (user, 2026-09-28)
+            row.label(text=item.collection.name, icon='OUTLINER_COLLECTION')
+        else:                               # an empty entry: choose a collection
+            row.prop(item, "collection", text="", icon='OUTLINER_COLLECTION')
         row.prop(item, "render", text="", emboss=False,
                  icon='OUTLINER_OB_CAMERA' if item.render else 'CAMERA_DATA')
 
