@@ -480,7 +480,7 @@ class MECSUB_OT_samples(bpy.types.Operator):
         return {'FINISHED'}
 
 
-def draw_render_camera(L, context):
+def draw_render_camera(L, context, render_button=True):
     sc = context.scene
     on = core.render_camera_is_on(sc)
     col = L.column(align=True)
@@ -502,6 +502,11 @@ def draw_render_camera(L, context):
         row = col.row(align=True)
         for name, value in SAMPLE_LEVELS:
             row.operator("mecsub.samples", text=name, depress=(n == value)).samples = value
+    if on and render_button:
+        row = col.row(align=True)             # render through the camera (user, 2026-09-28)
+        row.scale_y = 1.3
+        op = row.operator("mecsub.render", text="Render (F12)", icon='RENDER_STILL')
+        op.use_viewport = True
 
 
 LOG_SUFFIX = "_Renderbricker.log"       # capital R (user, 2026-09-28; before: _renderbricker.log)
@@ -1929,7 +1934,7 @@ def _g_compare(L, context, s):
 
 def _g_render(L, context, s):
     ok = s.wt_rendered
-    draw_render_camera(L, context)
+    draw_render_camera(L, context, render_button=False)     # the step has its own render button
     row = L.row()
     row.scale_y = 1.3
     op = row.operator("mecsub.render", text="Render Image (F12)", icon='RENDER_STILL', depress=not ok)
