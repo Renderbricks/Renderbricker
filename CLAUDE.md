@@ -24,7 +24,8 @@ _CLAUDE_/                  local R&D: journals, runs, logs, backups, tools (own 
 
 - Never change geometry or topology of the imported meshes; only creases, attributes, copies.
 - A finding from a model becomes a rule in `docs/RULES.md` (with origin) and is checked on all models (scan, comparison sheets with reference photos of the part) before release.
-- Results and test files carry the add-on version (`_1-12-2`); older versions stay for comparison.
+- Results and test files carry the add-on version (`_1-0-0`); older versions stay for comparison. Public numbering starts at 1.0.0 (= internal 1.12.2, rules 3.2); results up to `_1-12-2` are from the internal numbering.
+- The repository gets release-relevant information only (code, rules, README, CHANGELOG); the chronological R&D record (journals, runs, CHRONOLOGY.md) stays local in `_CLAUDE_`.
 - UI features are tested in a real Blender window, not only headless (render thread, timers, undo).
 - Journal every working day in `_CLAUDE_/JOURNAL_<date>.md`, commit the local R&D history in `_CLAUDE_`.
 - `git push`, new releases, visibility changes: only after asking.

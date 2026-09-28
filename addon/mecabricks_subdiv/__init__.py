@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Renderbricks: Mecabricks Subdiv",
     "author": "virtualrepublic",
-    "version": (1, 12, 2),
+    "version": (1, 0, 0),
     "blender": (4, 2, 0),
     "location": "3D Viewport > Sidebar > Renderbricks",
     "description": "Creases and subdivision for imported Mecabricks parts: each mesh is processed once, "
