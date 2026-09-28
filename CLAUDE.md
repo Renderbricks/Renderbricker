@@ -1,11 +1,11 @@
 # Renderbricker
 
-Blender add-on "Renderbricks: Mecabricks Subdiv" plus batch pipeline: creases and baked subdivision copies for Mecabricks imports, the imported meshes stay untouched. Single user (Renderbricks), developed on Windows, supports Linux and macOS (platform tests in the private CI repo `Renderbricker-CI`), Blender 5.2 LTS / 5.3. In production use – results are compared version by version.
+Blender add-on "Renderbricker" (sidebar tab Renderbricks) plus batch pipeline: creases and baked subdivision copies for Mecabricks imports, the imported meshes stay untouched. Single user (Renderbricks), developed on Windows, supports Linux and macOS (platform tests in the private CI repo `Renderbricker-CI`), Blender 4.5 LTS or newer, developed with 5.2 LTS / 5.3. In production use – results are compared version by version.
 
 ## Stack and commands
 
 - **Language:** Python (Blender's interpreter for everything under `addon/` and the Blender-side scripts; system Python 3.10+ for `build_addon.py`, `convert_models.py`, `run_suite.py`)
-- **Build the add-on:** `python scripts/core/build_addon.py` – copies `scripts/core/mecabricks_subdiv.py` to `addon/mecabricks_subdiv/core.py` and zips to `addon/dist/`
+- **Build the add-on:** `python scripts/core/build_addon.py` – copies `scripts/core/mecabricks_subdiv.py` to `addon/renderbricker/core.py` and zips to `addon/dist/renderbricker-<version>.zip`
 - **Batch conversion:** `python scripts/core/convert_models.py [--models ...] [--stale|--force|--verify-only]`
 - **Rule test runs:** `python scripts/core/run_suite.py NN slug --parts <models>` → `_CLAUDE_/runs/runNN_slug/`
 - **Blender path:** `RENDERBRICKER_BLENDER`, else `_CLAUDE_/blender_path.txt`, else `blender` on PATH
@@ -13,7 +13,7 @@ Blender add-on "Renderbricks: Mecabricks Subdiv" plus batch pipeline: creases an
 ## Structure
 
 ```
-addon/mecabricks_subdiv/   add-on; core.py is generated – edit scripts/core/mecabricks_subdiv.py
+addon/renderbricker/       add-on; core.py is generated – edit scripts/core/mecabricks_subdiv.py
 scripts/core/              rules (mecabricks_subdiv.py), import, batch, verification
 docs/RULES.md              rule set – every rule with its origin (part, run); version = RULES_VERSION
 01_Sources … 06_User       local model data, not in git
@@ -34,10 +34,12 @@ _dev/                      private test repo Renderbricker-CI (own git): platfor
 
 ## Versioning and releases (same standard as Gaussian Render Capture, maintainer 2026-09-28)
 
-- **Semantic Versioning from 1.0.0:** PATCH fixes, MINOR features, MAJOR changes that break existing scenes or settings. The version is `bl_info["version"]` in `addon/mecabricks_subdiv/__init__.py`; a rules change in `scripts/core/mecabricks_subdiv.py` counts as an add-on change.
+- **Semantic Versioning from 1.0.0:** PATCH fixes, MINOR features, MAJOR changes that break existing scenes or settings. The version is `bl_info["version"]` in `addon/renderbricker/__init__.py`; a rules change in `scripts/core/mecabricks_subdiv.py` counts as an add-on change.
 - **Collect changes:** commit locally, build and install into Blender 5.2 and 5.3, CHANGELOG entry under `## [Unreleased]`. The maintainer decides when a version is published.
 - **Version bump only for changes to the add-on** (`addon/`, `scripts/core/mecabricks_subdiv.py`). README, docs, CHANGELOG, images never bump the version; they are pushed (after asking) without a release. Wording-only changes inside the add-on raise PATCH but are collected and published with the next functional release; such a version says "No functional changes – texts in the add-on and the documentation were revised in content and form."
 - **CHANGELOG and release notes list functional changes only** (English, format `## [X.Y.Z] – YYYY-MM-DD`). Release notes = the CHANGELOG section + an install line.
 - **Before a release:** candidate test – build the zip, install into 5.2 and 5.3, add-on test (Apply with cache, Save As / Move / Copy cache, reopen), window test for UI changes, batch on the test models. Then, after the maintainer's acceptance: push, tag `vX.Y.Z`, GitHub release.
 - The internal detail of every change goes into the local R&D record (`_CLAUDE_/JOURNAL_<date>.md`, `CHRONOLOGY.md`), not into the repository.
 - Commits here as `Renderbricks <330434884+Renderbricks@users.noreply.github.com>`.
+- Name and legal texts (maintainer 2026-09-28): the add-on is "Renderbricker" (package `renderbricker`, operators keep the `mecsub.` prefix and the scene property `mecsub`, so converted scenes keep their settings); the panel shows the copyright line, the About sub-panel the trademark note (Renderbricks® is a registered word mark in Germany – ® only with that note), links to renderbricks.com, Facebook, YouTube and the LEGO disclaimer verbatim. The README links www.mecabricks.com.
+- Screenshots, tutorial and documentation images are made with Blender 5.2.2 (the maintainer provides the reference scene in 5.2.2); compatibility stays 4.5 LTS or newer.

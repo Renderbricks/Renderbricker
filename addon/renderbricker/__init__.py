@@ -1,11 +1,13 @@
 bl_info = {
-    "name": "Renderbricks: Mecabricks Subdiv",
-    "author": "virtualrepublic",
+    "name": "Renderbricker",
+    "author": "Renderbricks® – Michael Klein",
     "version": (1, 0, 0),
-    "blender": (4, 2, 0),
+    "blender": (4, 5, 0),
     "location": "3D Viewport > Sidebar > Renderbricks",
     "description": "Creases and subdivision for imported Mecabricks parts: each mesh is processed once, "
                    "its links use the subdivided copy - the original mesh stays untouched",
+    "doc_url": "https://github.com/Renderbricks/Renderbricker",
+    "tracker_url": "https://github.com/Renderbricks/Renderbricker/issues",
     "category": "Object",
 }
 
@@ -143,7 +145,7 @@ class MECSUB_OT_render(bpy.types.Operator):
         try:
             r = bpy.ops.render.render('INVOKE_DEFAULT', animation=self.animation, use_viewport=self.use_viewport)
         except Exception as e:
-            self.report({'ERROR'}, f"Renderbricks: {e}")
+            self.report({'ERROR'}, f"Renderbricker: {e}")
             r = {'CANCELLED'}
         if 'RUNNING_MODAL' not in r and not bpy.app.is_job_running('RENDER'):
             return self._done()
@@ -167,8 +169,8 @@ class MECSUB_OT_render(bpy.types.Operator):
 
 def _render_menu(self, context):
     layout = self.layout
-    layout.operator(MECSUB_OT_render.bl_idname, text="Render Image (Renderbricks levels)", icon='RENDER_STILL')
-    op = layout.operator(MECSUB_OT_render.bl_idname, text="Render Animation (Renderbricks levels)", icon='RENDER_ANIMATION')
+    layout.operator(MECSUB_OT_render.bl_idname, text="Render Image (Renderbricker levels)", icon='RENDER_STILL')
+    op = layout.operator(MECSUB_OT_render.bl_idname, text="Render Animation (Renderbricker levels)", icon='RENDER_ANIMATION')
     op.animation = True
     layout.separator()
 
@@ -393,7 +395,7 @@ def show_step(context, label, st):
     s = context.scene.mecsub
     s.progress = max(0.0, min(1.0, st[0]))
     s.progress_text = f"{st[1]} ..."
-    context.workspace.status_text_set(f"Renderbricks {label}: {st[1]} ... {100 * s.progress:.0f} %")
+    context.workspace.status_text_set(f"Renderbricker {label}: {st[1]} ... {100 * s.progress:.0f} %")
     redraw(context)
 
 
@@ -437,7 +439,7 @@ class _Stepped:
                 self.finish(context)
                 s = context.scene.mecsub
                 s.summary = f"Stopped: {e}, " + s.summary
-                self.report({'ERROR'}, f"Renderbricks: stopped: {e}")
+                self.report({'ERROR'}, f"Renderbricker: stopped: {e}")
                 return {'CANCELLED'}
         self.finish(context)
         refresh_state(context)                 # before saving: it sets a scene property
@@ -497,7 +499,7 @@ class _Stepped:
         eta = "" if left is None else f"   about {fmt_time(left)} left"
         tick_done(self)
         s.progress_text = f"{self.i} / {n}{eta}"
-        context.workspace.status_text_set(f"Renderbricks {self.label}: {self.i} / {n}   {name}{eta}   (Esc: cancel)")
+        context.workspace.status_text_set(f"Renderbricker {self.label}: {self.i} / {n}   {name}{eta}   (Esc: cancel)")
         redraw(context)
         if self.i >= n:
             return self._tail(context)
@@ -538,7 +540,7 @@ class _Stepped:
         text, fn = self.tail_pending = tail.pop(0)
         s = context.scene.mecsub
         s.progress_text = f"{text} ..."
-        context.workspace.status_text_set(f"Renderbricks {self.label}: {text} ...")
+        context.workspace.status_text_set(f"Renderbricker {self.label}: {text} ...")
         redraw(context)
         return {'RUNNING_MODAL'}
 
@@ -558,7 +560,7 @@ class _Stepped:
         if err:
             what = "Stopped: " if "free memory" in err else "Stopped by an error at "
             s.summary = f"{what}{err}, " + s.summary
-            self.report({'ERROR'}, "Renderbricks: " + what + err)
+            self.report({'ERROR'}, "Renderbricker: " + what + err)
         refresh_state(context)                 # before saving: it sets a scene property
         if not err:
             save_after_cache(self, context)
@@ -677,14 +679,14 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         eta = "" if left is None else f"   about {fmt_time(left)} left"
         s.progress_text = f"{len(w.done)} / {n}   {self.jobs} cores{eta}"
         context.workspace.status_text_set(
-            f"Renderbricks Apply on {self.jobs} cores: {len(w.done)} / {n}{eta}   (Esc: cancel)")
+            f"Renderbricker Apply on {self.jobs} cores: {len(w.done)} / {n}{eta}   (Esc: cancel)")
         if not w.running():
             phase(f"workers ({self.jobs} Blenders)", self.t_start)
             self.merging = True
             what = ("writing the cache file and linking it" if s.use_cache and bpy.data.filepath
                     else "loading the copies into the scene")
             s.progress_text = f"{len(w.done)} / {n}   {what} ..."
-            context.workspace.status_text_set(f"Renderbricks Apply: {what} ...")
+            context.workspace.status_text_set(f"Renderbricker Apply: {what} ...")
         redraw(context)
         return {'RUNNING_MODAL'}
 
@@ -769,7 +771,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                     traceback.print_exc()
                     self.cache_part = f", cache file not written: {type(e).__name__}: {e}"
             s.summary += self.cache_part
-        self.report({'WARNING'} if self.cancelled else {'INFO'}, "Renderbricks: " + s.summary)
+        self.report({'WARNING'} if self.cancelled else {'INFO'}, "Renderbricker: " + s.summary)
 
 
 class MECSUB_OT_check(_Stepped, bpy.types.Operator):
@@ -893,7 +895,7 @@ class MECSUB_OT_toggle(bpy.types.Operator):
                     o["rb_off"] = True
                     o.data = me
         st = refresh_state(context)
-        self.report({'INFO'}, f"Renderbricks: subdivision {'on' if on else 'off'}"
+        self.report({'INFO'}, f"Renderbricker: subdivision {'on' if on else 'off'}"
                               + (" (other objects outside the scope differ)" if st == "MIXED" else ""))
         redraw(context)
         return {'FINISHED'}
@@ -965,7 +967,7 @@ class MECSUB_OT_move_cache(bpy.types.Operator):
         st = core.cache_state()
         s.running, s.progress = True, 0.5
         s.progress_text = f"moving the cache, {link_text(st[1] if st[3] else st[2])} ..."
-        context.workspace.status_text_set(f"Renderbricks: {s.progress_text}")
+        context.workspace.status_text_set(f"Renderbricker: {s.progress_text}")
         redraw(context)
         self.ticks = 0
         wm = context.window_manager
@@ -992,7 +994,7 @@ class MECSUB_OT_move_cache(bpy.types.Operator):
             s.summary, err = f"Moving the cache failed: {e}", True
         s.running = False
         context.workspace.status_text_set(None)
-        self.report({'ERROR'} if err else {'INFO'}, "Renderbricks: " + s.summary)
+        self.report({'ERROR'} if err else {'INFO'}, "Renderbricker: " + s.summary)
         redraw(context)
         return {'CANCELLED'} if err else {'FINISHED'}
 
@@ -1028,7 +1030,7 @@ class MECSUB_OT_cache_switch(bpy.types.Operator):
         self.phase = 0
         s.running, s.progress, s.progress_text = True, 0.0, ("writing the cache file" if self.target
                                                              else "taking the copies into the scene")
-        context.workspace.status_text_set(f"Renderbricks: {s.progress_text} ...")
+        context.workspace.status_text_set(f"Renderbricker: {s.progress_text} ...")
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.1, window=context.window)
         wm.modal_handler_add(self)
@@ -1093,7 +1095,7 @@ class MECSUB_OT_cache_switch(bpy.types.Operator):
         s.running = False
         s.summary = text if self.target else text + f" ({time.time() - t0:.0f} s)"
         context.workspace.status_text_set(None)
-        self.report({'ERROR'} if err else {'INFO'}, "Renderbricks: " + s.summary)
+        self.report({'ERROR'} if err else {'INFO'}, "Renderbricker: " + s.summary)
         redraw(context)
         return {'FINISHED'}
 
@@ -1163,7 +1165,7 @@ class MECSUB_OT_copy_cache(bpy.types.Operator):
         if not getattr(self, "linking", False):      # the link text stays for its tick
             s.progress = self.done_bytes / self.total
             s.progress_text = f"copying the cache file {self.done_bytes / 1e9:.1f} / {self.total / 1e9:.1f} GB"
-            context.workspace.status_text_set(f"Renderbricks: {s.progress_text}   (Esc: cancel)")
+            context.workspace.status_text_set(f"Renderbricker: {s.progress_text}   (Esc: cancel)")
             redraw(context)
         if self.thread.is_alive():
             return {'RUNNING_MODAL'}
@@ -1175,7 +1177,7 @@ class MECSUB_OT_copy_cache(bpy.types.Operator):
             self.linking = True
             s.progress = 0.99
             s.progress_text = link_text(self.tmp) + " ..."
-            context.workspace.status_text_set(f"Renderbricks: {s.progress_text}")
+            context.workspace.status_text_set(f"Renderbricker: {s.progress_text}")
             redraw(context)
             return {'RUNNING_MODAL'}
         os.replace(self.tmp, self.dst)
@@ -1190,7 +1192,7 @@ class MECSUB_OT_copy_cache(bpy.types.Operator):
         s.running = False
         context.workspace.status_text_set(None)
         s.summary = text
-        self.report({'ERROR'} if error else {'INFO'}, "Renderbricks: " + text)
+        self.report({'ERROR'} if error else {'INFO'}, "Renderbricker: " + text)
         redraw(context)
         return {'CANCELLED'} if error else {'FINISHED'}
 
@@ -1253,7 +1255,7 @@ class MECSUB_OT_headless(bpy.types.Operator):
         how = start_script(script)
         s.summary = (f"Headless conversion started in a terminal: {os.path.basename(script)}, result: {os.path.basename(out)}"
                      if how else f"Start script written, run it in a terminal: {script}")
-        self.report({'INFO'}, "Renderbricks: " + s.summary)
+        self.report({'INFO'}, "Renderbricker: " + s.summary)
         return {'FINISHED'}
 
 
@@ -1265,10 +1267,10 @@ def write_headless_script(base, stem, blend, out, args):
     """Start script for the headless conversion: <base>.bat (Windows), .command (macOS), .sh (Linux)."""
     import os, sys, shlex
     blender = bpy.app.binary_path
-    head = f"Renderbricks {VERSION} (rules {core.RULES_VERSION}): converting"
+    head = f"Renderbricker {VERSION} (rules {core.RULES_VERSION}): converting"
     if sys.platform.startswith("win"):
         q = lambda x: '"' + x.replace("%", "%%") + '"'
-        lines = ["@echo off", "chcp 65001 >nul", f"title Renderbricks {VERSION} headless: {stem}",
+        lines = ["@echo off", "chcp 65001 >nul", f"title Renderbricker {VERSION} headless: {stem}",
                  f"echo {head} {q(blend)}", f"echo Result: {q(out)}", "echo.",
                  " ".join([q(blender)] + [q(a) if (" " in a or os.sep in a) else a for a in args])
                  + " 2>&1 | findstr /B " + " ".join(f'/C:"{w}"' for w in HEADLESS_SHOW),
@@ -1278,7 +1280,7 @@ def write_headless_script(base, stem, blend, out, args):
             fh.write("\n".join(lines) + "\n")
         return path
     path = base + (".command" if sys.platform == "darwin" else ".sh")
-    lines = ["#!/bin/sh", f"# Renderbricks {VERSION} headless conversion of {stem}",
+    lines = ["#!/bin/sh", f"# Renderbricker {VERSION} headless conversion of {stem}",
              f"echo {shlex.quote(head + ' ' + blend)}", f"echo {shlex.quote('Result: ' + out)}", "echo",
              " ".join(shlex.quote(a) for a in [blender] + args)
              + " 2>&1 | grep -E " + shlex.quote("^(" + "|".join(HEADLESS_SHOW) + ")"),
@@ -1316,7 +1318,7 @@ VERSION = ".".join(str(x) for x in bl_info["version"])
 
 
 class MECSUB_PT_panel(bpy.types.Panel):
-    bl_label = f"Renderbricks {VERSION} · rules {core.RULES_VERSION}"   # both in the header (user, runs 41/42)
+    bl_label = f"Renderbricker {VERSION} · rules {core.RULES_VERSION}"   # both in the header (user, runs 41/42)
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "Renderbricks"
@@ -1375,11 +1377,50 @@ class MECSUB_PT_panel(bpy.types.Panel):
                 r.operator("mecsub.select", text="", icon='RESTRICT_SELECT_OFF').obj = p.obj
             if len(s.problems) > 12:
                 box.label(text=f"... {len(s.problems) - 12} more")
+        L.label(text=COPYRIGHT)
+
+
+COPYRIGHT = "© 2026 Renderbricks® – Michael Klein"
+TRADEMARK = "Renderbricks® is a registered trademark in Germany."
+DISCLAIMER = ("Renderbricks is about rendering digital LEGO®. LEGO is a trademark of the LEGO Group of companies "
+              "which does not sponsor, authorize or endorse this site.")
+LINKS = (("www.renderbricks.com", "https://www.renderbricks.com", 'URL'),
+         ("Facebook", "https://www.facebook.com/renderbricks", 'COMMUNITY'),
+         ("YouTube", "https://www.youtube.com/@renderbricks", 'PLAY'),
+         ("Renderbricker on GitHub", "https://github.com/Renderbricks/Renderbricker", 'HELP'))
+
+
+def wrapped(layout, text, context):
+    """Label lines that fit the sidebar width (a label does not wrap by itself)."""
+    import textwrap
+    width = context.region.width if context.region else 300
+    chars = max(20, int(width / (7.5 * context.preferences.system.ui_scale)))
+    col = layout.column(align=True)
+    col.scale_y = 0.8
+    for line in textwrap.wrap(text, chars):
+        col.label(text=line)
+
+
+class MECSUB_PT_about(bpy.types.Panel):
+    bl_label = "About"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "Renderbricks"
+    bl_parent_id = "MECSUB_PT_panel"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        L = self.layout
+        wrapped(L, TRADEMARK, context)
+        col = L.column(align=True)
+        for text, url, icon in LINKS:
+            col.operator("wm.url_open", text=text, icon=icon).url = url
+        wrapped(L, DISCLAIMER, context)
 
 
 classes = (MECSUB_Problem, MECSUB_Settings, MECSUB_OT_apply, MECSUB_OT_check, MECSUB_OT_levels, MECSUB_OT_toggle,
            MECSUB_OT_remove, MECSUB_OT_select, MECSUB_OT_headless, MECSUB_PT_panel, MECSUB_OT_move_cache, MECSUB_OT_copy_cache,
-           MECSUB_OT_cache_switch, MECSUB_OT_render)
+           MECSUB_OT_cache_switch, MECSUB_OT_render, MECSUB_PT_about)
 
 
 @persistent
@@ -1427,7 +1468,7 @@ def register():
     global core
     import importlib
     core = importlib.reload(core)
-    MECSUB_PT_panel.bl_label = f"Renderbricks {VERSION} · rules {core.RULES_VERSION}"
+    MECSUB_PT_panel.bl_label = f"Renderbricker {VERSION} · rules {core.RULES_VERSION}"
     for c in classes:
         bpy.utils.register_class(c)
     bpy.types.Scene.mecsub = PointerProperty(type=MECSUB_Settings)

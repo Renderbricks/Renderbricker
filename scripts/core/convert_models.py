@@ -114,7 +114,7 @@ def rules_version():
 def addon_version():
     """Version of the add-on source (bl_info), e.g. '1-6-5' - results carry it in their name
     so versions can be compared side by side (user, 2026-09-26)."""
-    m = re.search(r'"version": \((\d+), (\d+), (\d+)\)', open(f"{ADDON}/mecabricks_subdiv/__init__.py",
+    m = re.search(r'"version": \((\d+), (\d+), (\d+)\)', open(f"{ADDON}/renderbricker/__init__.py",
                                                              encoding="utf-8").read())
     return "-".join(m.groups()) if m else "0-0-0"
 

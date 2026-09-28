@@ -2,7 +2,7 @@
 
 Smooth, render-ready LEGO® parts from Mecabricks imports – without touching the imported meshes.
 
-Renderbricker is a Blender add-on ("Renderbricks: Mecabricks Subdiv") and a batch pipeline for scenes imported with the Mecabricks Advanced add-on. Each part mesh is processed once: seams are welded in a temporary copy, edges get creases by a tested rule set, and the subdivided result is baked into a copy that every link of that part uses. The original import stays unchanged, so the conversion can always be undone.
+Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Mecabricks](https://www.mecabricks.com) and imported with the Mecabricks Advanced add-on. Each part mesh is processed once: seams are welded in a temporary copy, edges get creases by a tested rule set, and the subdivided result is baked into a copy that every link of that part uses. The original import stays unchanged, so the conversion can always be undone.
 
 ## Features
 
@@ -14,13 +14,14 @@ Renderbricker is a Blender add-on ("Renderbricks: Mecabricks Subdiv") and a batc
 
 ## Requirements
 
-- Blender 4.2 or newer (developed and tested with 5.2 LTS and 5.3)
-- Scenes imported with the Mecabricks Advanced add-on
+- Blender 4.5 LTS or newer (developed with 5.2 LTS and 5.3)
+- Windows, Linux or macOS
+- Scenes from [www.mecabricks.com](https://www.mecabricks.com), imported with the Mecabricks Advanced add-on
 
 ## Installation
 
-1. Build the package: `python scripts/core/build_addon.py` → `addon/dist/mecabricks_subdiv-<version>.zip`
-2. Blender: Edit → Preferences → Add-ons → Install from Disk → choose the zip, enable "Renderbricks: Mecabricks Subdiv"
+1. Build the package: `python scripts/core/build_addon.py` → `addon/dist/renderbricker-<version>.zip`
+2. Blender: Edit → Preferences → Add-ons → Install from Disk → choose the zip, enable "Renderbricker"
 3. Panel: 3D Viewport → Sidebar (N) → Renderbricks
 
 ## Usage
@@ -41,7 +42,7 @@ It expects `01_Sources/<model>.zmbx` beside the code, writes `02_Imports/` and `
 ## Repository layout
 
 ```
-addon/mecabricks_subdiv/   Blender add-on (core.py is a copy of scripts/core/mecabricks_subdiv.py)
+addon/renderbricker/       Blender add-on (core.py is a copy of scripts/core/mecabricks_subdiv.py)
 scripts/core/              rule set (mecabricks_subdiv.py), batch conversion, import, verification
 docs/RULES.md              the rule set with the origin of every rule
 ```
@@ -50,10 +51,16 @@ Model files, results and the development journal are kept locally beside the cod
 
 ## Author
 
-Renderbricks® – Michael Klein, who has worked in CGI since 1987. Developed with Claude (Anthropic).
+© 2026 Renderbricks® – Michael Klein, who has worked in CGI since 1987. Developed with Claude (Anthropic).
+
+[www.renderbricks.com](https://www.renderbricks.com) · [Facebook](https://www.facebook.com/renderbricks) · [YouTube](https://www.youtube.com/@renderbricks)
+
+Renderbricks® is a registered trademark in Germany.
 
 ## License
 
 GPL-3.0-or-later, see [LICENSE](LICENSE).
 
-LEGO® is a trademark of the LEGO Group, Mecabricks is a trademark of its owner; neither sponsors, authorizes or endorses this project.
+Renderbricks is about rendering digital LEGO®. LEGO is a trademark of the LEGO Group of companies which does not sponsor, authorize or endorse this site.
+
+Mecabricks is a trademark of its owner, who does not sponsor, authorize or endorse this project.
