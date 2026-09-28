@@ -24,6 +24,14 @@ Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Meca
 2. Blender: Edit → Preferences → Add-ons → Install from Disk → choose the zip, enable "Renderbricker"
 3. Panel: 3D Viewport → Sidebar (N) → Renderbricker
 
+## Documentation
+
+- [Quick start](docs/QUICKSTART.md) – the workflow in seven steps
+- [Tutorial](docs/TUTORIAL.md) – every step with pictures
+- [Reference](docs/REFERENCE.md) – all settings and buttons
+- [Troubleshooting](docs/TROUBLESHOOTING.md) · [Known issues](docs/KNOWN_ISSUES.md) · [Glossary](docs/GLOSSARY.md)
+- [Rules](docs/RULES.md) – the rule set with the origin of every rule
+
 ## Usage
 
 - **Apply** converts all mesh objects (or the selection). Choose viewport and render level first; with "Cache file next to the scene" the scene is saved automatically once the cache is written.
