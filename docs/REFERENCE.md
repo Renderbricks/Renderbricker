@@ -17,7 +17,7 @@ header work any time.
 
 | Setting | Default | What it does |
 |---|---|---|
-| **All / Selected / Collection** | All | Which mesh objects Apply, Check, On/Off, Levels and Remove work on: every mesh object in the scene, the selected ones, or the ones in a chosen collection and its child collections (the field below *Collection*; when it is empty, the collection active in the Outliner is taken). Only the links in scope switch to the copy; other links of the same part keep the original until they are converted too. *Convert headless* always converts the whole scene. |
+| **All / Selected / Collection** | All | Which mesh objects Apply, Check, On/Off, Levels and Remove work on: every mesh object in the scene, the selected ones, or the ones in the collections of a list and their child collections (below *Collection*: **+** adds the collection active in the Outliner, **−** removes the selected entry; the first time the active collection is taken). Only the links in scope switch to the copy; other links of the same part keep the original until they are converted too. *Convert headless* always converts the whole scene. |
 | **Variant** | A – Mecabricks normals | **A:** the subdivision interpolates the custom normals of the import – the shading stays as Mecabricks made it, logos on studs look soft. **B – geometric normals:** normals of the smoothed surface, creased edges sharp – crisper logos, but the shading of the import is not kept. |
 | **Viewport** level | 1 | Subdivision shown in the viewport. 0 shows the original mesh (no viewport copy is stored – the file gets about a fifth smaller). Levels already baked switch at once, others are computed the first time (with a progress bar). |
 | **Render** level | 2 | Subdivision used for rendering; the checks use this level. 2 is enough even for close-ups. Raising a level above 2 asks first – *Cancel* (or Esc) keeps the old level – and the panel shows a warning while it is above 2: every level multiplies the faces by three to four, so memory, file size and conversion time grow a lot for a small visible gain. |
@@ -56,6 +56,10 @@ Renderbricks one – nothing of yours is overwritten:
   *Renderbricks* and the sky world stay in the file, so ON is quick the next time; a camera you moved
   stays where you put it.
 - The **camera button** next to it frames the camera *Renderbricks* again, e.g. after adding parts.
+- **Only some collections:** the camera icon of a collection in the *Collection* list marks it for the
+  render camera (one or several). With the camera on, only the marked collections are shown and
+  rendered, and the camera frames them; marking or unmarking while it is on updates at once. OFF
+  gives every object its visibility back – what you had hidden yourself stays hidden.
 - **Front, Right, Back, Left, Top, Bottom** (shown while the render camera is on) turn the camera
   around the model and frame it: *Front* is the view of the render setup, *Right*, *Back* and *Left* go
   round the model in 90° steps at the same tilt, *Top* and *Bottom* look straight down and up, square

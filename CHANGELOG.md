@@ -20,7 +20,7 @@ First release – in preparation; improvements are added here until it is publis
 - Apply skips parts that are already converted with the same settings and rules, so adding parts to a converted scene converts only the new ones; Shift+click converts all again.
 - Option Log file: the results of Apply, Check and Convert headless are appended to `<scene>_renderbricker.log` next to the scene, with date, settings and the full problem list.
 - The results in the panel are listed as compact bullet points.
-- Scope All, Selected or Collection (a chosen collection with its child collections) for Apply, Check, On/Off, levels and Remove.
+- Scope All, Selected or Collection (a list of collections with their child collections; each can be marked for the render camera, which then shows, renders and frames only the marked ones) for Apply, Check, On/Off, levels and Remove.
 - "Subdivision: ON / OFF" switches all links between copy and original and shows the current state.
 - Checks after every conversion: original untouched, folds, seam gaps.
 - Windows, Linux and macOS: the headless conversion writes a start script for the platform (.bat, .sh, .command) and opens it in a terminal; the number of parallel jobs follows the free memory on all three.

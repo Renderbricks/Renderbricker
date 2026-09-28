@@ -3185,11 +3185,65 @@ def camera_view(scene, view, depsgraph=None):
     return frame_camera(scene, cam, dg)
 
 
+ISOLATE_FLAG = "rb_cam_hidden"      # object: what the render camera hid (1 viewport, 2 render)
+
+
+def isolate(scene, collections):
+    """Render camera with chosen collections (user, 2026-09-28): only their parts are shown and rendered.
+    Every other object of the scene (not the camera) is disabled in viewports and renders; what was
+    hidden before stays as it is and is not recorded, so unisolate() gives back exactly the state
+    before. Returns the number of objects hidden."""
+    unisolate(scene)
+    if not collections:
+        return 0
+    keep = set()
+    for c in collections:
+        keep.update(c.all_objects)
+    cam = bpy.data.objects.get(CAMERA_NAME)
+    n = 0
+    for o in scene.objects:
+        if o in keep or o == cam or o == scene.camera:
+            continue
+        flag = 0
+        try:
+            if not o.hide_viewport:
+                o.hide_viewport = True
+                flag |= 1
+            if not o.hide_render:
+                o.hide_render = True
+                flag |= 2
+        except (AttributeError, RuntimeError):     # linked, not editable
+            continue
+        if flag:
+            o[ISOLATE_FLAG] = flag
+            n += 1
+    scene["rb_isolated"] = n
+    return n
+
+
+def unisolate(scene):
+    """Give back the visibility the render camera took (only what it changed)."""
+    for o in scene.objects:
+        f = o.get(ISOLATE_FLAG)
+        if not f:
+            continue
+        try:
+            if f & 1:
+                o.hide_viewport = False
+            if f & 2:
+                o.hide_render = False
+            del o[ISOLATE_FLAG]
+        except (AttributeError, RuntimeError, KeyError):
+            pass
+    if "rb_isolated" in scene:
+        del scene["rb_isolated"]
+
+
 def render_camera_is_on(scene):
     return bool(scene.get("rb_render_on"))
 
 
-def render_camera_on(scene, template="", depsgraph=None):
+def render_camera_on(scene, template="", depsgraph=None, collections=None):
     """Keep the scene's camera, world and render settings, then make the camera "Renderbricks" and the
     world "Renderbricks Sky" active and take over the setup scene's render settings. A new camera is
     framed; an existing one stays where it is. Returns a short text for the summary."""
@@ -3213,13 +3267,14 @@ def render_camera_on(scene, template="", depsgraph=None):
     scene.world = sky
     cam, made = render_camera(scene, setup=cam_set)
     scene.camera = cam
+    hidden = isolate(scene, collections)    # only these collections shown and rendered
     if made:
         scene["rb_camera_view"] = "FRONT"
     res_before = (scene.render.resolution_x, scene.render.resolution_y)
     portrait = picture_orientation(scene, scene.get("rb_camera_view", "FRONT"))
     turned = (scene.render.resolution_x, scene.render.resolution_y) != res_before
     framed = False
-    if made or turned:
+    if made or turned or hidden:
         dg = depsgraph or bpy.context.evaluated_depsgraph_get()
         dg.update()
         framed = frame_camera(scene, cam, dg)
@@ -3229,6 +3284,7 @@ def render_camera_on(scene, template="", depsgraph=None):
     return ("render camera on: camera Renderbricks" + (" created and framed" if made and framed else
                                                        " framed" if framed else "")
             + (", portrait 9:16" if portrait else ", landscape 16:9")
+            + (f", only {', '.join(c.name for c in collections)}" if collections else "")
             + f", world {sky.name}" + (", render settings of the setup scene" if used else ""))
 
 
@@ -3238,6 +3294,7 @@ def render_camera_off(scene):
     if not render_camera_is_on(scene):
         return "render camera already off"
     before = json.loads(scene.get("rb_render_before", "{}"))
+    unisolate(scene)
     for a, snap in before.get("settings", {}).items():
         restore_props(getattr(scene, a, None), snap)
     scene.camera = bpy.data.objects.get(before.get("camera", "")) if before.get("camera") else None

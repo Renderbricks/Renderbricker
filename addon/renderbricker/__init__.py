@@ -29,8 +29,13 @@ def targets(context):
     s = context.scene.mecsub
     if s.scope == 'SELECTED':
         obs = context.selected_objects
-    elif s.scope == 'COLLECTION':           # the collection and its child collections, objects of this scene
-        obs = [o for o in s.collection.all_objects if context.scene.objects.get(o.name) is o] if s.collection else []
+    elif s.scope == 'COLLECTION':           # the collections and their child collections, objects of this scene
+        seen, obs = set(), []
+        for c in scope_collections(s):
+            for o in c.all_objects:
+                if o not in seen and context.scene.objects.get(o.name) is o:
+                    seen.add(o)
+                    obs.append(o)
     else:
         obs = context.scene.objects
     return [o for o in obs if o.type == 'MESH' and o.data.polygons and not core.is_master(o)
@@ -397,7 +402,8 @@ class MECSUB_OT_render_camera(bpy.types.Operator):
             text = core.render_camera_off(sc)
             viewport_camera(context, False)
         else:
-            text = core.render_camera_on(sc, setup_blend(), context.evaluated_depsgraph_get())
+            text = core.render_camera_on(sc, setup_blend(), context.evaluated_depsgraph_get(),
+                                         camera_collections(sc.mecsub))
             viewport_camera(context, True)
         context.scene.mecsub.summary = text
         self.report({'INFO'}, "Renderbricker: " + text)
@@ -457,6 +463,9 @@ def draw_render_camera(L, context):
                  icon='OUTLINER_OB_CAMERA' if on else 'CAMERA_DATA', depress=on)
     row.operator("mecsub.frame_camera", text="", icon='VIEW_CAMERA')
     if on:
+        only = camera_collections(sc.mecsub)
+        if only:
+            col.label(text="Only: " + ", ".join(c.name for c in only), icon='HIDE_OFF')
         current = sc.get("rb_camera_view", "")
         for keys in (core.CAMERA_VIEWS[:4], core.CAMERA_VIEWS[4:]):
             row = col.row(align=True)
@@ -478,7 +487,7 @@ def write_log(context, label):
         return
     import datetime
     scope = {"ALL": "all parts", "SELECTED": "selected parts",
-             "COLLECTION": f"collection {s.collection.name if s.collection else '-'}"}[s.scope]
+             "COLLECTION": "collections " + (", ".join(c.name for c in scope_collections(s)) or "-")}[s.scope]
     lines = [f"=== {datetime.datetime.now():%Y-%m-%d %H:%M:%S}  {label}  "
              f"(Renderbricker {VERSION}, Blender {bpy.app.version_string})",
              f"scene: {bpy.data.filepath}",
@@ -523,18 +532,106 @@ def save_after_cache(op, context):
     bpy.app.timers.register(later, first_interval=0.2)
 
 
+def scope_collections(s):
+    """The collections of the list (scenes from before: the single collection)."""
+    cols = [it.collection for it in s.collections if it.collection is not None]
+    if not cols and s.collection is not None:
+        cols = [s.collection]
+    return cols
+
+
+def camera_collections(s):
+    """The collections marked for the render camera (only these shown and rendered)."""
+    return [it.collection for it in s.collections if it.render and it.collection is not None]
+
+
 def _scope_update(self, context):
-    """Collection chosen without a collection yet: take the active one of the Outliner."""
-    if self.scope == 'COLLECTION' and self.collection is None:
+    """Collection chosen with an empty list: take the active collection of the Outliner."""
+    if self.scope == 'COLLECTION' and not scope_collections(self):
         c = context.collection
         if c is not None and c != context.scene.collection:
-            self.collection = c
+            self.collections.add().collection = c
+
+
+def _collection_render_update(self, context):
+    """A collection marked or unmarked for the camera while it is on: show and frame the new choice."""
+    sc = context.scene
+    if not core.render_camera_is_on(sc):
+        return
+    core.isolate(sc, camera_collections(sc.mecsub))
+    cam, _made = core.render_camera(sc)
+    core.picture_orientation(sc, sc.get("rb_camera_view", "FRONT"))
+    core.frame_camera(sc, cam, context.evaluated_depsgraph_get())
+
+
+class MECSUB_CollectionItem(bpy.types.PropertyGroup):
+    collection: PointerProperty(type=bpy.types.Collection, name="Collection",
+                                description="Apply, Check, On/Off, Levels and Remove work on the parts in this "
+                                            "collection and its child collections")
+    render: bpy.props.BoolProperty(name="Render camera", default=False, update=_collection_render_update,
+                                   description="With the render camera on, only the collections marked here are "
+                                               "shown and rendered (none marked: everything)")
+
+
+class MECSUB_UL_collections(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index=0):
+        row = layout.row(align=True)
+        row.prop(item, "collection", text="", icon='OUTLINER_COLLECTION')
+        row.prop(item, "render", text="", emboss=False,
+                 icon='OUTLINER_OB_CAMERA' if item.render else 'CAMERA_DATA')
+
+
+class MECSUB_OT_collection_add(bpy.types.Operator):
+    bl_idname = "mecsub.collection_add"
+    bl_label = "Add collection"
+    bl_description = "Add the collection active in the Outliner to the list (or an empty entry to choose one)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        s = context.scene.mecsub
+        c = context.collection
+        listed = {it.collection for it in s.collections}
+        it = s.collections.add()
+        if c is not None and c != context.scene.collection and c not in listed:
+            it.collection = c
+        s.collections_index = len(s.collections) - 1
+        return {'FINISHED'}
+
+
+class MECSUB_OT_collection_remove(bpy.types.Operator):
+    bl_idname = "mecsub.collection_remove"
+    bl_label = "Remove collection"
+    bl_description = "Remove the selected collection from the list (the collection itself stays)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.scene.mecsub.collections) > 0
+
+    def execute(self, context):
+        s = context.scene.mecsub
+        i = min(s.collections_index, len(s.collections) - 1)
+        s.collections.remove(i)
+        s.collections_index = max(0, i - 1)
+        _collection_render_update(None, context)
+        return {'FINISHED'}
+
+
+def draw_scope(L, s):
+    col = L.column(align=True)
+    col.prop(s, "scope", expand=True)
+    if s.scope == 'COLLECTION':
+        row = L.row()
+        row.template_list("MECSUB_UL_collections", "", s, "collections", s, "collections_index", rows=2)
+        sub = row.column(align=True)
+        sub.operator("mecsub.collection_add", text="", icon='ADD')
+        sub.operator("mecsub.collection_remove", text="", icon='REMOVE')
 
 
 def scope_empty_text(context):
     s = context.scene.mecsub
-    if s.scope == 'COLLECTION' and s.collection is None:
-        return "Choose a collection first"
+    if s.scope == 'COLLECTION' and not scope_collections(s):
+        return "Add a collection first"
     return "No mesh objects in scope"
 
 
@@ -544,7 +641,9 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         ('SELECTED', "Selected", "Selected mesh objects only"),
         ('COLLECTION', "Collection", "Mesh objects in the chosen collection and its child collections")],
         default='ALL', update=_scope_update)
-    collection: PointerProperty(type=bpy.types.Collection, name="Collection",
+    collections: CollectionProperty(type=MECSUB_CollectionItem)
+    collections_index: IntProperty(default=0)
+    collection: PointerProperty(type=bpy.types.Collection, name="Collection",       # scenes from before: taken over
                                 description="Apply, Check, On/Off, Levels and Remove work on the parts in this "
                                             "collection and its child collections")
     variant: EnumProperty(name="Variant", items=[
@@ -1676,10 +1775,11 @@ def scope_state(context):
         ok = any(o.type == 'MESH' for o in context.selected_objects)
         return ok, "Parts selected" if ok else "Select the parts to convert"
     if s.scope == 'COLLECTION':
-        if s.collection is None:
-            return False, "Choose a collection"
-        ok = any(o.type == 'MESH' for o in s.collection.all_objects)
-        return ok, f"Parts in {s.collection.name}" if ok else "The collection has no parts"
+        cols = scope_collections(s)
+        if not cols:
+            return False, "Add a collection"
+        ok = any(o.type == 'MESH' for c in cols for o in c.all_objects)
+        return ok, (f"Parts in {', '.join(c.name for c in cols)}" if ok else "The collections have no parts")
     ok = any(o.type == 'MESH' for o in context.scene.objects)
     return ok, "All parts of the scene" if ok else "The scene has no parts"
 
@@ -1696,10 +1796,7 @@ def _g_save(L, context, s):
 
 
 def _g_parts(L, context, s):
-    col = L.column(align=True)
-    col.prop(s, "scope", expand=True)
-    if s.scope == 'COLLECTION':
-        col.prop(s, "collection", text="", icon='OUTLINER_COLLECTION')
+    draw_scope(L, s)
     ok, text = scope_state(context)
     status(L, ok, text)
     return ok
@@ -1777,8 +1874,10 @@ GUIDE = (
     ("Choose the parts", _g_parts, (
         "All: every part of the scene.",
         "Selected: only the objects selected in the viewport or the Outliner.",
-        "Collection: the parts in one collection and its child collections - handy for converting a "
-        "large scene piece by piece.",
+        "Collection: the parts in the collections of the list and their child collections - + adds the "
+        "collection active in the Outliner. Handy for converting a large scene piece by piece.",
+        "The camera icon of a collection marks it for the render camera: with the camera on, only the "
+        "marked collections are shown and rendered.",
         "Parts outside the choice stay as imported.")),
     ("Settings", _g_settings, (
         "Variant A keeps the shading of the Mecabricks import (soft logos on the studs); B computes it "
@@ -1907,10 +2006,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         row.operator("mecsub.guide_start", icon='HELP')
         body = L.column()
         body.enabled = not s.running
-        col = body.column(align=True)
-        col.prop(s, "scope", expand=True)
-        if s.scope == 'COLLECTION':
-            col.prop(s, "collection", text="", icon='OUTLINER_COLLECTION')
+        draw_scope(body, s)
         body.prop(s, "variant", text="")
         draw_levels(body, s, context)
         body.operator("mecsub.apply", icon='MOD_SUBSURF')
@@ -1985,7 +2081,8 @@ class MECSUB_PT_about(bpy.types.Panel):
         wrapped(L, DISCLAIMER, context)
 
 
-classes = (MECSUB_Problem, MECSUB_Settings, MECSUB_OT_apply, MECSUB_OT_check, MECSUB_OT_levels, MECSUB_OT_toggle,
+classes = (MECSUB_Problem, MECSUB_CollectionItem, MECSUB_Settings, MECSUB_UL_collections,
+           MECSUB_OT_collection_add, MECSUB_OT_collection_remove, MECSUB_OT_apply, MECSUB_OT_check, MECSUB_OT_levels, MECSUB_OT_toggle,
            MECSUB_OT_remove, MECSUB_OT_select, MECSUB_OT_headless, MECSUB_PT_panel, MECSUB_OT_move_cache, MECSUB_OT_copy_cache,
            MECSUB_OT_cache_switch, MECSUB_OT_render, MECSUB_PT_about,
            MECSUB_OT_guide_start, MECSUB_OT_guide_nav, MECSUB_OT_guide_exit, MECSUB_OT_level_confirm,
@@ -2000,6 +2097,8 @@ def _unlock(*args):
     for sc in bpy.data.scenes:
         if getattr(sc, "mecsub", None) and sc.mecsub.running:
             sc.mecsub.running = False
+        if getattr(sc, "mecsub", None) and sc.mecsub.collection is not None and not len(sc.mecsub.collections):
+            sc.mecsub.collections.add().collection = sc.mecsub.collection
     try:
         relinked = core.relink_cache_on_load()      # scene and cache moved or renamed together
     except Exception:
