@@ -491,10 +491,36 @@ def setup_blend():
 _VIEW_BEFORE = {}           # 3D viewport -> (view, relationship lines, statistics) before Render camera ON
 
 
+_PROPS_BEFORE = {}      # Properties editor: its tab before the render camera was switched on
+
+
+def properties_output(context, on):
+    """Render camera ON: the Properties editors show the Output tab (resolution, scale, file); OFF: the
+    tab they had before (user, 2026-09-28)."""
+    screen = context.screen
+    if screen is None:
+        return
+    for area in screen.areas:
+        if area.type != 'PROPERTIES':
+            continue
+        space = area.spaces.active
+        key = area.as_pointer()
+        try:
+            if on:
+                _PROPS_BEFORE.setdefault(key, space.context)
+                space.context = 'OUTPUT'
+            elif key in _PROPS_BEFORE:
+                space.context = _PROPS_BEFORE.pop(key)
+        except (TypeError, AttributeError):
+            pass
+        area.tag_redraw()
+
+
 def viewport_camera(context, on):
     """Render camera ON (and the view buttons): the 3D viewport of the button looks through the camera,
     relationship lines off, statistics on; OFF: back to how it was before (user, 2026-09-28). Without a
     3D viewport (scripts) nothing."""
+    properties_output(context, on)
     area = context.area if context.area and context.area.type == 'VIEW_3D' else None
     if area is None and context.screen:
         area = next((a for a in context.screen.areas if a.type == 'VIEW_3D'), None)
@@ -617,6 +643,34 @@ class MECSUB_OT_sun_follow(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def is_transparent(scene):
+    cyc = getattr(scene, "cycles", None)
+    return scene.render.film_transparent and (cyc is None or getattr(cyc, "film_transparent_glass", True))
+
+
+class MECSUB_OT_transparent(bpy.types.Operator):
+    bl_idname = "mecsub.transparent"
+    bl_label = "Transparent"
+    bl_description = ("Film Transparent together with Transparent Glass: the sky is left out of the picture "
+                      "(alpha), and glass shows what lies behind it in the final image. The sky still lights "
+                      "the model. Render camera OFF brings back your own setting")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return core.render_camera_is_on(context.scene)
+
+    def execute(self, context):
+        sc = context.scene
+        on = not is_transparent(sc)
+        sc.render.film_transparent = on
+        cyc = getattr(sc, "cycles", None)
+        if cyc is not None and hasattr(cyc, "film_transparent_glass"):
+            cyc.film_transparent_glass = on
+        redraw(context)
+        return {'FINISHED'}
+
+
 SAMPLE_LEVELS = (("Low", 128), ("Medium", 256), ("Good", 512), ("High", 1024))   # user, 2026-09-28
 
 
@@ -656,13 +710,17 @@ def draw_render_camera(L, context, render_button=True):
         if only:
             col.label(text="Only: " + ", ".join(c.name for c in only), icon='HIDE_OFF')
         current = sc.get("rb_camera_view", "")
-        for keys in (core.CAMERA_VIEWS[:4], core.CAMERA_VIEWS[4:]):
+        for keys in (core.CAMERA_VIEWS[0:2], core.CAMERA_VIEWS[2:4], core.CAMERA_VIEWS[4:6]):   # in pairs
             row = col.row(align=True)
             for k, label, _d in keys:
                 row.operator("mecsub.camera_view", text=label, depress=(k == current)).view = k
         follow = bool(sc.get(core.SUN_FOLLOW))  # sun fixed or turning with the camera (user, 2026-09-28)
         col.operator("mecsub.sun_follow", text="Sun: turns with the camera" if follow else "Sun: fixed",
                      icon='LIGHT_SUN', depress=follow)
+        clear = is_transparent(sc)            # background and glass transparent (user, 2026-09-28)
+        col.operator("mecsub.transparent", text="Transparent: on" if clear else "Transparent: off",
+                     icon='TEXTURE' if clear else 'WORLD', depress=clear)
+        col.prop(sc.render, "resolution_percentage", text="Resolution Scale")
         n = render_samples(sc)
         col.label(text=f"Samples: {n}", icon='RENDER_STILL')
         row = col.row(align=True)
@@ -2338,7 +2396,8 @@ classes = (MECSUB_Problem, MECSUB_CollectionItem, MECSUB_Settings, MECSUB_UL_col
            MECSUB_OT_cache_switch, MECSUB_OT_render, MECSUB_PT_about,
            MECSUB_OT_guide_start, MECSUB_OT_guide_nav, MECSUB_OT_guide_exit, MECSUB_OT_level_confirm,
            MECSUB_OT_frame_camera, MECSUB_OT_render_camera, MECSUB_OT_camera_view, MECSUB_OT_samples,
-           MECSUB_OT_render_views, MECSUB_OT_sun_follow)
+           MECSUB_OT_render_views, MECSUB_OT_sun_follow,
+           MECSUB_OT_transparent)
 
 
 @persistent

@@ -43,28 +43,35 @@ Renderbricks one – nothing of yours is overwritten:
 
 - **ON** keeps the scene's camera, world and render settings, then makes the camera *Renderbricks*
   and a world *Renderbricks Sky* (Physical Sky) of its own active and takes over the render settings
-  of the Renderbricks setup scene (Cycles, 1024 samples, 1920 × 1080, AgX Base Contrast, Physical Sky).
+  of the Renderbricks setup scene (Cycles, 1920 × 1080, AgX Base Contrast, Physical Sky); the samples
+  start on *Low* (128).
   The first time, the camera is created with the direction and lens of the setup scene's camera and
   moved so that all visible parts fill the picture with a small margin (clip end 1000, more for very
   large scenes). Your world stays in the file even while it is not used.
   The picture is landscape 16:9, or portrait 9:16 when the model is taller than its widest side
   (the resolution of the setup scene is turned; *Top* and *Bottom* are always landscape).
   The 3D viewport switches to the camera view, the camera frame filling it (also with the view
-  buttons below), with relationship lines off and statistics on.
+  buttons below), with relationship lines off and statistics on. The Properties editor shows the
+  *Output* tab (resolution, scale, file); OFF brings back the tab it had.
 - **OFF** brings back your camera, world and render settings exactly as they were, and the viewport
   its view and overlays from before. The camera
   *Renderbricks* and the sky world stay in the file, so ON is quick the next time; a camera you moved
   stays where you put it.
 - The **camera button** next to it frames the camera *Renderbricks* again, e.g. after adding parts.
 - **Samples:** Low 128, Medium 256, Good 512, High 1024 set the render samples (Cycles and EEVEE)
-  while the render camera is on; the current level is highlighted. OFF brings your own samples back.
+  while the render camera is on; the current level is highlighted, ON starts on *Low*. OFF brings
+  your own samples back.
+- **Transparent: on / off** switches Film > Transparent together with Transparent Glass: the sky is
+  left out of the picture (alpha) and glass shows what lies behind it; the sky still lights the model.
+- **Resolution Scale** is the render resolution in percent (Output > Format), e.g. 25 % for quick
+  tests. OFF brings both back as you had them.
 - **Render (F12)** below renders through the camera *Renderbricks* with the render level, into the slot of the current view: Slot 1 Front, 2 Right, 3 Back, 4 Left, 5 Top, 6 Bottom (the slots of the Render window carry the names of the views, so earlier views stay there to compare).
 - **All views** renders the six views one after the other, each into its slot; the camera then returns to the view it had. Esc in the Render window stops the running view and the chain; closing the Render window stops only the running view, the chain goes on with the next.
 - **Only some collections:** the camera icon of a collection in the *Collection* list marks it for the
   render camera (one or several). With the camera on, only the marked collections are shown and
   rendered, and the camera frames them; marking or unmarking while it is on updates at once. OFF
   gives every object its visibility back – what you had hidden yourself stays hidden.
-- **Front, Right, Back, Left, Top, Bottom** (shown while the render camera is on) turn the camera
+- **Front, Right, Back, Left, Top, Bottom** (shown in pairs while the render camera is on) turn the camera
   around the model and frame it: *Front* is the view of the render setup, *Right*, *Back* and *Left* go
   round the model in 90° steps at the same tilt, *Top* and *Bottom* look straight down and up, square
   to the model with its longer side across the picture and its front at the bottom. The

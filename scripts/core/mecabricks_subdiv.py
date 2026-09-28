@@ -2913,6 +2913,7 @@ def say(msg):
 # camera_fit_coords is the same fit without a viewport.
 CAMERA_NAME = "Renderbricks"
 SKY_NAME = "Renderbricks Sky"
+START_SAMPLES = 128                     # render camera ON starts on Low (user, 2026-09-28)
 SKY_TAG = "rb_sky"                      # the world made or taken over by the add-on
 CAMERA_ANGLE = (1.1093, 0.0, 0.8149)    # Blender's default camera: three-quarter view from the front right
 CAMERA_MARGIN = 1.05                    # 5 % around the model
@@ -3489,6 +3490,10 @@ def render_camera_on(scene, template="", depsgraph=None, collections=None):
     sky = have or taken or make_sky()
     sky[SKY_TAG] = True
     scene.world = sky
+    for owner, prop in (("cycles", "samples"), ("eevee", "taa_render_samples")):   # start on Low (user)
+        st = getattr(scene, owner, None)
+        if st is not None and hasattr(st, prop):
+            setattr(st, prop, START_SAMPLES)
     cam, made = render_camera(scene, setup=cam_set)
     scene.camera = cam
     hidden = isolate(scene, collections)    # only these collections shown and rendered
