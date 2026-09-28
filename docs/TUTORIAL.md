@@ -80,19 +80,46 @@ of the Blender window shows it.
 
 ## Step 2: Settings
 
-<!-- IMAGE T03: the panel with the default settings, markers 1–5 -->
+**What it is for:** the defaults suit most scenes; here is what they mean. For the Italian Riviera
+all of them stay as they are.
 
-**What it is for:** the defaults suit most scenes; here is what they mean.
+![The panel with its default settings (1–5)](images/tutorial/T03_settings.png)
 
-1. **All** – every part of the scene. *Selected* con­verts only the selected objects, *Col­lec­tion*
-   the parts of one col­lec­tion (with its child col­lec­tions) – choose it in the field below.
-2. **A – Mecabricks normals** – keeps the shading of the import. *B* gives crisper logos.
+1. **All** – every part of the scene. *Selected* con­verts only the objects selected in the view­port
+   or the Out­liner, *Col­lec­tion* the parts of chosen col­lec­tions (see below).
+2. **A – Mecabricks normals** – keeps the shading of the import. *B* com­putes it from the smoothed
+   surface and gives crisper logos on the studs.
 3. **View­port 1 / Render 2** – smooth enough to judge the view­port, full quality in the render.
-4. **Use several cores** – on; larger scenes run in par­al­lel back­ground Blenders.
-5. **Cache file next to the scene** – on; the scene file stays small.
+4. **Use several cores** – on; larger scenes are con­verted in par­al­lel back­ground Blenders.
+5. **Cache file next to the scene** – on; the smoothed parts go into a file of their own and the
+   scene file stays small.
+
+**Log file** (off) also writes the results of Apply and Check, with the full list of prob­lems, into
+a file next to the scene: `<scene>_Renderbricker.log`.
 
 **Why two levels:** level 2 has three to four times the faces of level 1. The view­port stays fast
 with level 1, and F12 switches to level 2 only while it renders.
+
+### Only some collections
+
+A large scene can be con­verted piece by piece.
+
+![Collection with the list of collections (1–3)](images/tutorial/T03b_collection.png)
+
+1. Choose **Col­lec­tion**. The list starts empty.
+2. Click the col­lec­tion in the Out­liner and press **+** – it appears in the list. Several col­lec­tions
+   can be listed; **−** takes the selected one out of the list (the col­lec­tion itself stays).
+3. The **camera icon** marks a col­lec­tion for the render camera (step 6): with the camera on, only
+   the marked col­lec­tions are shown and rendered.
+
+Parts outside the chosen col­lec­tions stay as imported.
+
+### Levels above 2
+
+![The question for a render level above 2 (1, 2)](images/tutorial/T03c_level_question.png)
+
+Every level has three to four times the faces of the one below. A level above 2 is asked first:
+**Use level 3** (1) sets it, **Cancel** (2) keeps the level you had.
 
 ---
 
