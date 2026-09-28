@@ -65,7 +65,7 @@ Open the imported scene – here the *Italian Riviera*, as it came from Mecabric
 3. Save the scene under the name you want to keep (*File → Save As*). The cache file will carry the
    same name: `Italian_Riviera_Tutorial.blend` gets `Italian_Riviera_Tutorial_rbcache.blend`.
 
-<img src="images/tutorial/T02b_guide_step1.png" alt="Guide step 1 of 8: Save the scene, with the saved file name (3)" width="348">
+![Guide step 1 of 8: Save the scene, with the saved file name (3)](images/tutorial/T02b_guide_step1.png)
 
 **Check:** the guide shows **✓ Saved:** with the file name (3); without the guide, the title bar
 of the Blender window shows it.
