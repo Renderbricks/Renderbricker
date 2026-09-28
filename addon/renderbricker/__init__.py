@@ -454,6 +454,32 @@ class MECSUB_OT_camera_view(bpy.types.Operator):
         return {'FINISHED'}
 
 
+SAMPLE_LEVELS = (("Low", 128), ("Medium", 256), ("Good", 512), ("High", 1024))   # user, 2026-09-28
+
+
+def render_samples(sc):
+    return sc.eevee.taa_render_samples if sc.render.engine.startswith("BLENDER_EEVEE") else sc.cycles.samples
+
+
+class MECSUB_OT_samples(bpy.types.Operator):
+    bl_idname = "mecsub.samples"
+    bl_label = "Render samples"
+    bl_options = {'REGISTER', 'UNDO'}
+    samples: IntProperty(default=1024, min=1)
+
+    @classmethod
+    def description(cls, context, properties):
+        name = next((n for n, v in SAMPLE_LEVELS if v == properties.samples), "")
+        return (f"{name}: {properties.samples} render samples (Cycles and EEVEE). Render camera OFF brings "
+                f"your own samples back")
+
+    def execute(self, context):
+        sc = context.scene
+        sc.cycles.samples = self.samples
+        sc.eevee.taa_render_samples = self.samples
+        return {'FINISHED'}
+
+
 def draw_render_camera(L, context):
     sc = context.scene
     on = core.render_camera_is_on(sc)
@@ -471,6 +497,11 @@ def draw_render_camera(L, context):
             row = col.row(align=True)
             for k, label, _d in keys:
                 row.operator("mecsub.camera_view", text=label, depress=(k == current)).view = k
+        n = render_samples(sc)
+        col.label(text=f"Samples: {n}", icon='RENDER_STILL')
+        row = col.row(align=True)
+        for name, value in SAMPLE_LEVELS:
+            row.operator("mecsub.samples", text=name, depress=(n == value)).samples = value
 
 
 LOG_SUFFIX = "_Renderbricker.log"       # capital R (user, 2026-09-28; before: _renderbricker.log)
@@ -2134,7 +2165,7 @@ classes = (MECSUB_Problem, MECSUB_CollectionItem, MECSUB_Settings, MECSUB_UL_col
            MECSUB_OT_remove, MECSUB_OT_select, MECSUB_OT_headless, MECSUB_PT_panel, MECSUB_OT_move_cache, MECSUB_OT_copy_cache,
            MECSUB_OT_cache_switch, MECSUB_OT_render, MECSUB_PT_about,
            MECSUB_OT_guide_start, MECSUB_OT_guide_nav, MECSUB_OT_guide_exit, MECSUB_OT_level_confirm,
-           MECSUB_OT_frame_camera, MECSUB_OT_render_camera, MECSUB_OT_camera_view)
+           MECSUB_OT_frame_camera, MECSUB_OT_render_camera, MECSUB_OT_camera_view, MECSUB_OT_samples)
 
 
 @persistent

@@ -56,6 +56,8 @@ Renderbricks one – nothing of yours is overwritten:
   *Renderbricks* and the sky world stay in the file, so ON is quick the next time; a camera you moved
   stays where you put it.
 - The **camera button** next to it frames the camera *Renderbricks* again, e.g. after adding parts.
+- **Samples:** Low 128, Medium 256, Good 512, High 1024 set the render samples (Cycles and EEVEE)
+  while the render camera is on; the current level is highlighted. OFF brings your own samples back.
 - **Only some collections:** the camera icon of a collection in the *Collection* list marks it for the
   render camera (one or several). With the camera on, only the marked collections are shown and
   rendered, and the camera frames them; marking or unmarking while it is on updates at once. OFF
