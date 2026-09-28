@@ -16,4 +16,9 @@ out = f"{ROOT}/addon/dist/renderbricker-{'.'.join(ver)}.zip"
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     for fn in ("__init__.py", "core.py"):
         z.write(f"{pkg}/{fn}", f"renderbricker/{fn}")
+    setup = f"{pkg}/setup"                  # the Renderbricks setup scene (render settings, sky)
+    if os.path.isdir(setup):
+        for fn in sorted(os.listdir(setup)):
+            if fn.endswith(".blend"):
+                z.write(f"{setup}/{fn}", f"renderbricker/setup/{fn}")
 print("BUILT", out)

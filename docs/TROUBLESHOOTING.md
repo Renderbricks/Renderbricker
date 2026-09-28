@@ -16,6 +16,11 @@ and it still links the cache of the old file. Press **Move cache here** (one sce
 far keep their copies. Close other programs and press **Apply** again, or convert the scene in
 portions with *Selected*. *Convert headless* is an alternative for very large scenes.
 
+**Convert headless: "RETIRE worker short of memory …".** One of the background Blenders ran short of memory and
+stopped; its remaining parts are converted at the end by the main process, the result is complete.
+The conversion only takes longer. Closing other programs – or the scene in Blender – leaves more
+memory for the next run.
+
 **"Errors in N meshes – left as imported".** These parts could not be converted and keep the
 original mesh. Please report them with the part number (the mesh name, e.g. `3001.002`) in the
 [issues](https://github.com/Renderbricks/Renderbricker/issues).

@@ -848,12 +848,17 @@ def memory_need_gb(me, level=2):
     return len(me.polygons) * GB_PER_FACE.get(bake_quality(me), 0.2e-3) * 1.05 * 4 ** max(0, level - 2) + GB_MARGIN
 
 
+FREE_OVERRIDE = [None]      # tests: a worker told it has no memory (RENDERBRICKER_TEST_SHORT_WORKER)
+
+
 def free_memory_gb():
     """Memory a bake can still use, in GB; None if unknown.
     Windows: free commit memory (RAM + page file, what runs out first there).
     Linux: MemAvailable (free RAM + reclaimable cache) + free swap.
     macOS: free + inactive + speculative + purgeable pages (vm_stat) + free swap."""
     import sys
+    if FREE_OVERRIDE[0] is not None:
+        return FREE_OVERRIDE[0]
     if sys.platform.startswith("win"):
         try:
             import ctypes
@@ -1239,7 +1244,10 @@ RINGS = []
 EXCLUDE_RUNG = set()     # relief tips that bulged (midpoints), see bulge_check
 REPAIR_PASSES = 4
 FLUSH_FACES = 2_000_000  # a worker writes its copies away after this many copy faces (run 61)
-WORKER_WAIT = 600        # seconds a worker waits for free memory before it skips a mesh (run 61)
+WORKER_WAIT = 20         # seconds a worker waits for free memory (after writing its copies away) before
+                         # it retires; its remaining meshes are done by the parent at the end. Up to
+                         # 2026-09-28 it waited 600 s per mesh: all workers of Italian Riviera (converted
+                         # scene, commit memory full) waited for each other, the run stood still (user)
 JOB_GB = 6.0             # free memory per worker Blender of a parallel headless run (run 59)
 orig_name = [""]
 
@@ -2594,11 +2602,12 @@ def resolve_jobs(value, n_meshes):
     return max(1, min(8, cores, mem, n_meshes // 20))
 
 
-def _run_meshes(users, pick, weight, total_w, show_progress, wait=0, after=None):
+def _run_meshes(users, pick, weight, total_w, show_progress, wait=0, after=None, flush=None):
     """Process the meshes in `pick` one after the other. Prints PART per mesh (the parent of a
-    worker counts them), PROGRESS if show_progress. wait: seconds a mesh waits for memory
-    before it is skipped (workers: the others free memory when they flush, run 61); after:
-    called with each finished mesh. Returns (skipped, failed, reports)."""
+    worker counts them), PROGRESS if show_progress. wait: a worker short of memory writes its
+    copies away (flush), waits up to `wait` seconds and then retires - it prints RETIRE and
+    stops, the meshes it did not do are done by the parent; without wait a mesh short of memory
+    is skipped. after: called with each finished mesh. Returns (skipped, failed, reports)."""
     import time
     t_start, done_w = time.time(), 0
     skipped, failed, reps = [], [], {}
@@ -2606,6 +2615,7 @@ def _run_meshes(users, pick, weight, total_w, show_progress, wait=0, after=None)
         obs = users[me]
         _t0 = time.time()
         deadline = time.time() + wait
+        flushed = False
         while True:
             try:
                 check_memory(me, max(VIEW_LEVEL, RENDER_LEVEL))
@@ -2613,10 +2623,18 @@ def _run_meshes(users, pick, weight, total_w, show_progress, wait=0, after=None)
                 break
             except MemoryShortage as e:
                 short = e
+                if wait and flush and not flushed:      # give back what this worker holds first
+                    flush()
+                    flushed = True
+                    continue
                 if time.time() >= deadline:
                     break
-                time.sleep(3)
+                time.sleep(2)
         if short is not None:
+            if wait:                    # a worker: stop and free all its memory for the others
+                print(f"RETIRE worker short of memory at {me.name!r} ({len(pick) - i + 1} meshes left, "
+                      f"done at the end): {short}", flush=True)
+                break
             skipped.append(me.name)
             print(f"SKIP {me.name!r}: {short}", flush=True)
             continue
@@ -2646,7 +2664,7 @@ class Workers:
     add-on's Apply in the window (modal, the window stays usable).
     start -> poll() for progress lines -> merge() the copies into this Blender."""
 
-    def __init__(self, users, jobs, opts, names=None):
+    def __init__(self, users, jobs, opts, names=None, scene_path=None):
         import os, json, queue, tempfile, threading, subprocess
         self.users = users
         self.by_name = {me.name: me for me in users}
@@ -2655,7 +2673,7 @@ class Workers:
         self.jobs = jobs
         self.tmp = tempfile.mkdtemp(prefix="rb_jobs_")
         self.q = queue.Queue()
-        self.done, self.done_w, self.skipped, self.errors = [], 0, [], []
+        self.done, self.done_w, self.skipped, self.errors, self.retired = [], 0, [], [], 0
         extra = []
         if names is not None:           # only these meshes (Apply on a selection)
             pm = os.path.join(self.tmp, "meshes.json")
@@ -2663,7 +2681,7 @@ class Workers:
             extra = ["--meshes", pm]
         self.procs = []
         for i in range(jobs):
-            cmd = [bpy.app.binary_path, "-b", "--factory-startup", bpy.data.filepath, "--python",
+            cmd = [bpy.app.binary_path, "-b", "--factory-startup", scene_path or bpy.data.filepath, "--python",
                    os.path.abspath(__file__), "--"] + list(opts) + extra + [
                    "--worker", str(i), str(jobs), self.part(i, "blend"), self.part(i, "json")]
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -2701,6 +2719,9 @@ class Workers:
             elif line.startswith("SKIP '"):
                 self.skipped.append(line[6:line.index("'", 6)])
                 out.append(("SKIP", line))
+            elif line.startswith("RETIRE"):
+                self.retired += 1
+                out.append(("RETIRE", line))
             elif line.startswith(("Error", "Traceback")):
                 self.errors.append(line)
                 out.append(("ERROR", line))
@@ -2806,14 +2827,35 @@ class Workers:
         return reps, rest
 
 
-def _parallel(users, weight, total_w, jobs):
-    """Headless run on several cores (run 59): see Workers."""
+def clean_for_workers(users):
+    """Headless run on a converted scene (user, 2026-09-28): the links go back to the imported meshes
+    and the copies and the cache library are removed - they are made again anyway. Italian Riviera
+    opened with its cache took 3.9 GB instead of 1.0 GB, in the parent and in every worker. Returns
+    whether anything was removed."""
+    copies = [m for m in bpy.data.meshes if m.get("rb_original") and m.library is None]
+    libs = [l for l in bpy.data.libraries if l.filepath.endswith("_rbcache.blend")]
+    if not copies and not libs:
+        return False
+    for orig, obs in users.items():
+        for o in obs:
+            if o.data != orig:
+                o.data = orig
+    for m in copies:
+        bpy.data.meshes.remove(m)
+    for l in libs:
+        bpy.data.libraries.remove(l)
+    bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
+    return True
+
+
+def _parallel(users, weight, total_w, jobs, scene_path=None):
+    """Headless run on several cores (run 59): see Workers. scene_path: the file the workers open."""
     import time
     opts = list(args[1:]) if TARGET else list(args)
     if "--jobs" in opts:
         k = opts.index("--jobs")
         del opts[k:k + 2]
-    w = Workers(users, jobs, opts)
+    w = Workers(users, jobs, opts, scene_path=scene_path)
     print(f"JOBS {jobs} Blender processes for {len(users)} meshes", flush=True)
     cache = opt("--cache", "")
     t_start = time.time()
@@ -2861,6 +2903,128 @@ def say(msg):
             pass
 
 
+# ---------------------------------------------------------------- camera and render setup (user, 2026-09-28)
+# On the first Apply a camera "Renderbricks" frames the model to fill the picture, and the render
+# settings and the sky of the Renderbricks setup scene (setup/renderbricks_setup.blend in the add-on)
+# are transferred. The manual way: add a camera, Lock Camera to View, select all meshes, numpad 0 and
+# numpad period, unlock, Clip End 1000 - camera_fit_coords is the same fit without a viewport.
+CAMERA_NAME = "Renderbricks"
+CAMERA_ANGLE = (1.1093, 0.0, 0.8149)    # Blender's default camera: three-quarter view from the front right
+CAMERA_MARGIN = 1.05                    # 5 % around the model
+CLIP_END = 1000.0
+
+
+def copy_props(src, dst, depth=0):
+    """Copy the settable properties of one settings struct to another (nested structs two levels
+    deep, no ID data blocks, no output path)."""
+    if src is None or dst is None:
+        return
+    for p in src.bl_rna.properties:
+        k = p.identifier
+        if k in ("rna_type", "filepath", "name", "preview_pause"):   # preview_pause: viewport only, needs a window
+            continue
+        if p.type == 'POINTER':
+            v = getattr(src, k, None)
+            if depth < 2 and v is not None and not isinstance(v, bpy.types.ID):
+                copy_props(v, getattr(dst, k, None), depth + 1)
+            continue
+        if p.type == 'COLLECTION' or p.is_readonly:
+            continue
+        try:
+            setattr(dst, k, getattr(src, k))
+        except (AttributeError, TypeError, ValueError, RuntimeError):
+            pass
+
+
+def apply_template(scene, path):
+    """Render settings, colour management and the world (sky) of the first scene in the setup file.
+    Returns the name of the world, or "" when there is no setup file."""
+    import os
+    if not path or not os.path.isfile(path):
+        return ""
+    with bpy.data.libraries.load(path, link=False) as (src, dst):
+        dst.scenes = src.scenes[:1]
+    if not dst.scenes or dst.scenes[0] is None:
+        return ""
+    tpl = dst.scenes[0]
+    for attr in ("render", "cycles", "eevee", "view_settings", "display_settings"):
+        copy_props(getattr(tpl, attr, None), getattr(scene, attr, None))
+    if tpl.render.engine:
+        scene.render.engine = tpl.render.engine
+    world = tpl.world
+    if world is not None:
+        scene.world = world
+    objs = list(tpl.objects)
+    bpy.data.scenes.remove(tpl)
+    for o in objs:                      # the setup scene's own objects are not transferred
+        if o.users == 0:
+            bpy.data.objects.remove(o)
+    return world.name if world else ""
+
+
+def visible_meshes(scene):
+    vl = scene.view_layers[0] if scene.view_layers else None
+    out = []
+    for o in scene.objects:
+        if o.type == 'MESH' and o.name != WORK_NAME:
+            try:
+                vis = o.visible_get(view_layer=vl) if vl else not o.hide_get()
+            except (RuntimeError, TypeError):
+                vis = True
+            if vis:
+                out.append(o)
+    return out
+
+
+def frame_camera(scene, cam, depsgraph):
+    """Move the camera (keeping its direction) so that all visible meshes fill the picture, 5 % margin.
+    Returns False without meshes."""
+    import numpy as np
+    from mathutils import Vector
+    obs = visible_meshes(scene)
+    if not obs:
+        return False
+    pts = np.empty((len(obs) * 8, 3))
+    for i, o in enumerate(obs):
+        m = np.array(o.matrix_world)
+        bb = np.array(o.bound_box)
+        pts[i * 8:i * 8 + 8] = bb @ m[:3, :3].T + m[:3, 3]
+    c = (pts.min(0) + pts.max(0)) / 2
+    pts = c + (pts - c) * CAMERA_MARGIN
+    loc, _scale = cam.camera_fit_coords(depsgraph, pts.ravel().tolist())
+    cam.location = loc
+    r = float(np.linalg.norm(pts - c, axis=1).max())
+    d = (Vector(loc) - Vector(c.tolist())).length
+    cam.data.clip_end = max(CLIP_END, 2.0 * (d + r))     # very large scenes: nothing cut off
+    return True
+
+
+def setup_scene(scene, template="", depsgraph=None, frame_only=False):
+    """First Apply: transfer the setup scene (render settings, sky) and create the camera
+    "Renderbricks", the scene's camera, framing the model. frame_only: frame the existing camera
+    (or create it). Returns a short text for the summary."""
+    cam = bpy.data.objects.get(CAMERA_NAME)
+    made = cam is None or cam.type != 'CAMERA'
+    world = ""
+    if made:
+        if not frame_only:
+            world = apply_template(scene, template)
+        data = bpy.data.cameras.new(CAMERA_NAME)
+        data.lens = 50.0
+        cam = bpy.data.objects.new(CAMERA_NAME, data)
+        scene.collection.objects.link(cam)
+        cam.rotation_euler = CAMERA_ANGLE
+    elif cam.name not in scene.objects:
+        scene.collection.objects.link(cam)
+    scene.camera = cam
+    dg = depsgraph or bpy.context.evaluated_depsgraph_get()
+    dg.update()
+    ok = frame_camera(scene, cam, dg)
+    text = ("camera Renderbricks created" if made else "camera Renderbricks framed") if ok else \
+        "camera Renderbricks created (no visible parts to frame)"
+    return text + (f", render settings and {world} from the setup scene" if world else "")
+
+
 def main():
     if __name__ != "__main__":      # imported (add-on, tools): no automatic run
         return
@@ -2879,6 +3043,8 @@ def main():
         import os, json
         k = args.index("--worker")
         i, n, out_blend, out_json = int(args[k + 1]), int(args[k + 2]), args[k + 3], args[k + 4]
+        if os.environ.get("RENDERBRICKER_TEST_SHORT_WORKER") == str(i):     # CI: this worker has no memory
+            FREE_OVERRIDE[0] = 0.0
         if "--meshes" in args:      # Apply on a selection: only these meshes
             keep = set(json.load(open(args[args.index("--meshes") + 1], encoding="utf-8")))
             users = {me: obs for me, obs in users.items() if me.name in keep}
@@ -2910,7 +3076,7 @@ def main():
             if sum(len(m.polygons) for m in bpy.data.meshes if m.get("rb_original") in set(pending)) >= FLUSH_FACES:
                 flush()
 
-        _s, _f, reps = _run_meshes(users, pick, weight, total_w, False, wait=WORKER_WAIT, after=after)
+        _s, _f, reps = _run_meshes(users, pick, weight, total_w, False, wait=WORKER_WAIT, after=after, flush=flush)
         flush()
         json.dump(reps, open(out_json, "w", encoding="utf-8"), default=str)     # written last: worker done
         return
@@ -2925,15 +3091,32 @@ def main():
         except OSError:
             pass
     say(f"MESHES {len(users)}")      # for the progress line of the batch scripts
+    clean = clean_for_workers(users) if TARGET else False
+    if clean:
+        say("CLEAN the previous conversion was removed from the working copy - it is made again")
     jobs = resolve_jobs(opt("--jobs", "1"), len(users)) if bpy.data.filepath else 1
     if jobs > 1:
-        skipped, failed = _parallel(users, weight, total_w, jobs)
+        scene_path = None
+        if clean:                   # the workers open the cleaned scene, not the file on disk
+            import os, tempfile
+            scene_path = os.path.join(tempfile.gettempdir(), f"rb_clean_{os.getpid()}.blend")
+            bpy.ops.wm.save_as_mainfile(filepath=scene_path, copy=True, relative_remap=True, compress=False)
+        try:
+            skipped, failed = _parallel(users, weight, total_w, jobs, scene_path)
+        finally:
+            if scene_path:
+                try:
+                    os.remove(scene_path)
+                except OSError:
+                    pass
     else:
         skipped, failed, _r = _run_meshes(users, list(users), weight, total_w, True)
     if skipped:
         say(f"SKIPPED for memory: {len(skipped)} meshes ({', '.join(skipped[:5])}) - close other programs and run again")
     if failed:
         say(f"Errors in {len(failed)} meshes ({', '.join(failed)}) - left as imported")
+    if "--setup" in args:            # headless with the add-on's option Renderbricks camera
+        say("CAMERA " + setup_scene(bpy.context.scene, opt("--setup", "")))
     cache = opt("--cache", "")
     pending = any(m.get("rb_original") and m.library is None and m.override_library is None for m in bpy.data.meshes)
     if cache and (CACHE_WRITTEN[0] is None or pending):   # not yet (all) by the workers' merge

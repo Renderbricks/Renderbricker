@@ -8,6 +8,7 @@
 /06_User/
 *.blend
 *.blend1
+!/addon/renderbricker/setup/*.blend
 *.zmbx
 
 # Local R&D work folder (journals, runs, logs; has its own local git history)

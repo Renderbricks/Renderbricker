@@ -15,6 +15,8 @@ First release – in preparation; improvements are added here until it is publis
 - Apply and headless conversion on several cores; progress bars for all long steps; the scene is saved after the cache was written.
 - Start Guide: a step-by-step guide through the workflow (save, choose the parts, settings, Apply, Check, compare, render, what next), every step explained in bullet points, with its own controls and a status line; the next action is highlighted.
 - Raising a subdivision level above 2 asks first (Cancel keeps the old level) and the panel shows a warning while it is above 2.
+- Convert headless on a scene that was already converted no longer stands still: the previous conversion is left out of the working copy (Italian Riviera: 1 GB instead of 3.9 GB per background Blender), and a background Blender short of memory stops and hands its remaining parts back instead of waiting for the others; the terminal says so.
+- Renderbricks camera (option, on): the first Apply creates the camera "Renderbricks" as the scene camera, framing all visible parts to fill the picture (clip end 1000 or more), and takes over the render settings and the sky of the Renderbricks setup scene; the camera button frames it again. Convert headless does the same in its result.
 - Apply skips parts that are already converted with the same settings and rules, so adding parts to a converted scene converts only the new ones; Shift+click converts all again.
 - Option Log file: the results of Apply, Check and Convert headless are appended to `<scene>_renderbricker.log` next to the scene, with date, settings and the full problem list.
 - The results in the panel are listed as compact bullet points.
