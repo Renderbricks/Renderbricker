@@ -1,6 +1,6 @@
 # Renderbricker
 
-Blender add-on "Renderbricks: Mecabricks Subdiv" plus batch pipeline: creases and baked subdivision copies for Mecabricks imports, the imported meshes stay untouched. Single user (Renderbricks), Windows, Blender 5.2 LTS / 5.3. In production use – results are compared version by version.
+Blender add-on "Renderbricks: Mecabricks Subdiv" plus batch pipeline: creases and baked subdivision copies for Mecabricks imports, the imported meshes stay untouched. Single user (Renderbricks), developed on Windows, supports Linux and macOS (platform tests in the private CI repo `Renderbricker-CI`), Blender 5.2 LTS / 5.3. In production use – results are compared version by version.
 
 ## Stack and commands
 

@@ -19,3 +19,6 @@
 # Python
 __pycache__/
 *.py[cod]
+
+# Private test repository Renderbricker-CI (own git)
+/_dev/

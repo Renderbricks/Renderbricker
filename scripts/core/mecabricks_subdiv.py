@@ -848,25 +848,47 @@ def memory_need_gb(me, level=2):
 
 
 def free_memory_gb():
-    """Free commit memory in GB (Windows), else available RAM; None if unknown."""
-    try:
-        import ctypes
-        class MS(ctypes.Structure):
-            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
-                        ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
-                        ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
-                        ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
-                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
-        m = MS(); m.dwLength = ctypes.sizeof(MS)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
-            return m.ullAvailPageFile / 2**30
-    except (AttributeError, OSError):
-        pass
-    try:
-        import os
-        return os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / 2**30
-    except (AttributeError, ValueError, OSError):
+    """Memory a bake can still use, in GB; None if unknown.
+    Windows: free commit memory (RAM + page file, what runs out first there).
+    Linux: MemAvailable (free RAM + reclaimable cache) + free swap.
+    macOS: free + inactive + speculative + purgeable pages (vm_stat) + free swap."""
+    import sys
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            class MS(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            m = MS(); m.dwLength = ctypes.sizeof(MS)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
+                return m.ullAvailPageFile / 2**30
+        except (AttributeError, OSError):
+            pass
         return None
+    if sys.platform.startswith("linux"):
+        try:
+            info = {}
+            for line in open("/proc/meminfo"):
+                k, v = line.split(":", 1)
+                info[k] = int(v.split()[0]) * 1024
+            return (info.get("MemAvailable", info.get("MemFree", 0)) + info.get("SwapFree", 0)) / 2**30
+        except (OSError, ValueError):
+            return None
+    if sys.platform == "darwin":
+        try:
+            import re, subprocess
+            out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5).stdout
+            page = int(re.search(r"page size of (\d+) bytes", out).group(1))
+            pages = sum(int(n) for k, n in re.findall(r"Pages (free|inactive|speculative|purgeable):\s+(\d+)", out))
+            swap = subprocess.run(["sysctl", "-n", "vm.swapusage"], capture_output=True, text=True, timeout=5).stdout
+            m = re.search(r"free = ([\d.]+)M", swap)
+            return pages * page / 2**30 + (float(m.group(1)) / 1024 if m else 0.0)
+        except (OSError, ValueError, AttributeError, subprocess.SubprocessError):
+            return None
+    return None
 
 
 def check_memory(me, level=2):

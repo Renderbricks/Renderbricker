@@ -42,14 +42,17 @@ GB_PER_FACE_Q10, GB_PER_FACE_Q6 = 0.2e-3, 0.085e-3   # bake measurements run 45 
 
 
 def total_ram_gb():
+    """Installed RAM in GB: Windows GlobalMemoryStatusEx, Linux/macOS sysconf; 16 if unknown."""
     try:
-        import ctypes
-        class MS(ctypes.Structure):
-            _fields_ = [("l", ctypes.c_ulong), ("load", ctypes.c_ulong), ("total", ctypes.c_ulonglong),
-                        ("avail", ctypes.c_ulonglong)] + [(f"x{i}", ctypes.c_ulonglong) for i in range(5)]
-        m = MS(); m.l = ctypes.sizeof(MS)
-        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
-        return m.total / 2 ** 30
+        if sys.platform.startswith("win"):
+            import ctypes
+            class MS(ctypes.Structure):
+                _fields_ = [("l", ctypes.c_ulong), ("load", ctypes.c_ulong), ("total", ctypes.c_ulonglong),
+                            ("avail", ctypes.c_ulonglong)] + [(f"x{i}", ctypes.c_ulonglong) for i in range(5)]
+            m = MS(); m.l = ctypes.sizeof(MS)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+            return m.total / 2 ** 30
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2 ** 30
     except Exception:
         return 16.0
 
@@ -239,18 +242,7 @@ def convert_steps(name, row, blender, rv, force, stale, vonly, prog, imp, out, l
 
 def default_jobs():
     """One Blender per 3 cores, at most one per 8 GB of RAM (a car needs a few GB), at most 8."""
-    ram_gb = 16
-    try:
-        import ctypes
-        class MS(ctypes.Structure):
-            _fields_ = [("l", ctypes.c_ulong), ("load", ctypes.c_ulong), ("total", ctypes.c_ulonglong),
-                        ("avail", ctypes.c_ulonglong)] + [(f"x{i}", ctypes.c_ulonglong) for i in range(5)]
-        m = MS(); m.l = ctypes.sizeof(MS)
-        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
-        ram_gb = m.total / 2 ** 30
-    except Exception:
-        pass
-    return max(1, min(8, (os.cpu_count() or 3) // 3, int(ram_gb // 8)))
+    return max(1, min(8, (os.cpu_count() or 3) // 3, int(total_ram_gb() // 8)))
 
 
 def main():

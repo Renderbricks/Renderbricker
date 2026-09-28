@@ -1218,9 +1218,9 @@ class MECSUB_OT_select(bpy.types.Operator):
 class MECSUB_OT_headless(bpy.types.Operator):
     bl_idname = "mecsub.headless"
     bl_label = "Convert headless"
-    bl_description = ("Save the scene, write a .bat next to it and start it: Blender converts the whole scene "
-                      "in the background on several cores (progress in the console window) and saves the result as "
-                      "<scene>_subdiv_<add-on version>.blend. The open scene is not changed")
+    bl_description = ("Save the scene, write a start script next to it (.bat on Windows, .command on macOS, .sh on "
+                      "Linux) and run it in a terminal: Blender converts the whole scene in the background on several "
+                      "cores and saves the result as <scene>_subdiv_<add-on version>.blend. The open scene is not changed")
 
     def invoke(self, context, event):
         if not bpy.data.filepath:
@@ -1231,7 +1231,7 @@ class MECSUB_OT_headless(bpy.types.Operator):
             message="The scene is saved now and converted in a console window. Continue?")
 
     def execute(self, context):
-        import os, subprocess
+        import os
         object_mode(context)
         if bpy.data.is_dirty:
             bpy.ops.wm.save_mainfile()
@@ -1243,23 +1243,72 @@ class MECSUB_OT_headless(bpy.types.Operator):
         while os.path.exists(os.path.join(folder, name + ".blend")):   # never overwrite an earlier result
             k += 1
             name = f"{stem}_subdiv_{tag}_{k}"
-        out, bat = os.path.join(folder, name + ".blend"), os.path.join(folder, name + ".bat")
-        core_py = os.path.join(os.path.dirname(__file__), "core.py")
-        shading = "mecabricks" if s.variant == 'A' else "geometric"
-        lines = ["@echo off", "chcp 65001 >nul", f"title Renderbricks {VERSION} headless: {stem}",
-                 f'echo Renderbricks {VERSION} (rules {core.RULES_VERSION}): converting "{blend}"',
-                 f'echo Result: "{out}"', "echo.",
-                 f'"{bpy.app.binary_path}" -b --factory-startup "{blend}" --python "{core_py}" -- "{out}" '
-                 f"--view-level {s.view_level} --render-level {s.render_level} --shading {shading} --jobs auto "
-                 + (f'--cache "{core.cache_path_for(out)}" ' if s.use_cache else "")
-                 + '2>&1 | findstr /B /C:"PROGRESS" /C:"SKIP" /C:"SAVED" /C:"Error" /C:"Traceback" /C:"MESHES" /C:"JOBS" /C:"MERGE" /C:"CACHE"',
-                 "echo.", f'if exist "{out}" (echo Done: "{out}") else (echo FAILED - no result written)', "pause"]
-        with open(bat, "w", encoding="utf-8", newline="\r\n") as fh:
-            fh.write("\n".join(lines) + "\n")
-        os.startfile(bat)
-        s.summary = f"Headless conversion started, console window: {os.path.basename(bat)}, result: {os.path.basename(out)}"
-        self.report({'INFO'}, f"Renderbricks: headless conversion started ({bat})")
+        out = os.path.join(folder, name + ".blend")
+        args = ["-b", "--factory-startup", blend, "--python", os.path.join(os.path.dirname(__file__), "core.py"),
+                "--", out, "--view-level", str(s.view_level), "--render-level", str(s.render_level),
+                "--shading", "mecabricks" if s.variant == 'A' else "geometric", "--jobs", "auto"]
+        if s.use_cache:
+            args += ["--cache", core.cache_path_for(out)]
+        script = write_headless_script(os.path.join(folder, name), stem, blend, out, args)
+        how = start_script(script)
+        s.summary = (f"Headless conversion started in a terminal: {os.path.basename(script)}, result: {os.path.basename(out)}"
+                     if how else f"Start script written, run it in a terminal: {script}")
+        self.report({'INFO'}, "Renderbricks: " + s.summary)
         return {'FINISHED'}
+
+
+# lines of the conversion worth showing in the terminal (the rest is Blender's own output)
+HEADLESS_SHOW = ("PROGRESS", "SKIP", "SAVED", "Error", "Traceback", "MESHES", "JOBS", "MERGE", "CACHE")
+
+
+def write_headless_script(base, stem, blend, out, args):
+    """Start script for the headless conversion: <base>.bat (Windows), .command (macOS), .sh (Linux)."""
+    import os, sys, shlex
+    blender = bpy.app.binary_path
+    head = f"Renderbricks {VERSION} (rules {core.RULES_VERSION}): converting"
+    if sys.platform.startswith("win"):
+        q = lambda x: '"' + x.replace("%", "%%") + '"'
+        lines = ["@echo off", "chcp 65001 >nul", f"title Renderbricks {VERSION} headless: {stem}",
+                 f"echo {head} {q(blend)}", f"echo Result: {q(out)}", "echo.",
+                 " ".join([q(blender)] + [q(a) if (" " in a or os.sep in a) else a for a in args])
+                 + " 2>&1 | findstr /B " + " ".join(f'/C:"{w}"' for w in HEADLESS_SHOW),
+                 "echo.", f"if exist {q(out)} (echo Done: {q(out)}) else (echo FAILED - no result written)", "pause"]
+        path = base + ".bat"
+        with open(path, "w", encoding="utf-8", newline="\r\n") as fh:
+            fh.write("\n".join(lines) + "\n")
+        return path
+    path = base + (".command" if sys.platform == "darwin" else ".sh")
+    lines = ["#!/bin/sh", f"# Renderbricks {VERSION} headless conversion of {stem}",
+             f"echo {shlex.quote(head + ' ' + blend)}", f"echo {shlex.quote('Result: ' + out)}", "echo",
+             " ".join(shlex.quote(a) for a in [blender] + args)
+             + " 2>&1 | grep -E " + shlex.quote("^(" + "|".join(HEADLESS_SHOW) + ")"),
+             "echo", f"if [ -f {shlex.quote(out)} ]; then echo {shlex.quote('Done: ' + out)}; "
+             "else echo 'FAILED - no result written'; fi",
+             "printf 'Press Enter to close. '", "read _"]
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(lines) + "\n")
+    os.chmod(path, 0o755)
+    return path
+
+
+def start_script(path):
+    """Run a start script in a terminal window. Windows: its own console; macOS: Terminal; Linux: the
+    first terminal found. Returns how it was started, or None when no terminal was found (the user
+    runs it by hand)."""
+    import os, sys, shutil, subprocess
+    if sys.platform.startswith("win"):
+        os.startfile(path)
+        return "console"
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", "-a", "Terminal", path])
+        return "Terminal"
+    for term, pre in (("x-terminal-emulator", ["-e"]), ("gnome-terminal", ["--"]), ("konsole", ["-e"]),
+                      ("xfce4-terminal", ["-x"]), ("kitty", []), ("alacritty", ["-e"]), ("xterm", ["-e"])):
+        exe = shutil.which(term)
+        if exe:
+            subprocess.Popen([exe] + pre + [path], start_new_session=True)
+            return term
+    return None
 
 
 # ---------------------------------------------------------------- panel
