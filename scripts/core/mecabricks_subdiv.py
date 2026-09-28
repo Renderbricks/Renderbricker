@@ -2903,63 +2903,138 @@ def say(msg):
             pass
 
 
-# ---------------------------------------------------------------- camera and render setup (user, 2026-09-28)
-# On the first Apply a camera "Renderbricks" frames the model to fill the picture, and the render
-# settings and the sky of the Renderbricks setup scene (setup/renderbricks_setup.blend in the add-on)
-# are transferred. The manual way: add a camera, Lock Camera to View, select all meshes, numpad 0 and
-# numpad period, unlock, Clip End 1000 - camera_fit_coords is the same fit without a viewport.
+# ---------------------------------------------------------------- render camera (user, 2026-09-28)
+# "Render camera: ON" creates the camera "Renderbricks" (framing the model to fill the picture, clip
+# end 1000) and a world "Renderbricks Sky" of its own (Physical Sky), makes both active and takes over
+# the render settings of the Renderbricks setup scene (setup/renderbricks_setup.blend in the add-on).
+# The scene's camera, world and render settings before are kept in the scene and come back with OFF -
+# nothing of the user's is overwritten or lost (the old world keeps a fake user while it is unused).
+# Framing: the manual way is Lock Camera to View, select all meshes, numpad 0 and period;
+# camera_fit_coords is the same fit without a viewport.
 CAMERA_NAME = "Renderbricks"
+SKY_NAME = "Renderbricks Sky"
+SKY_TAG = "rb_sky"                      # the world made or taken over by the add-on
 CAMERA_ANGLE = (1.1093, 0.0, 0.8149)    # Blender's default camera: three-quarter view from the front right
 CAMERA_MARGIN = 1.05                    # 5 % around the model
 CLIP_END = 1000.0
+RENDER_STRUCTS = ("render", "cycles", "eevee", "view_settings", "display_settings")
+SKIP_PROPS = ("rna_type", "filepath", "name", "preview_pause")      # preview_pause: viewport only, needs a window
 
 
-def copy_props(src, dst, depth=0):
-    """Copy the settable properties of one settings struct to another (nested structs two levels
-    deep, no ID data blocks, no output path)."""
-    if src is None or dst is None:
+def _props(struct, depth=0):
+    """(identifier, value or nested struct) of the settable properties - nested structs two levels
+    deep, no ID data blocks, no collections."""
+    if struct is None:
         return
-    for p in src.bl_rna.properties:
+    for p in struct.bl_rna.properties:
         k = p.identifier
-        if k in ("rna_type", "filepath", "name", "preview_pause"):   # preview_pause: viewport only, needs a window
+        if k in SKIP_PROPS:
             continue
         if p.type == 'POINTER':
-            v = getattr(src, k, None)
+            v = getattr(struct, k, None)
             if depth < 2 and v is not None and not isinstance(v, bpy.types.ID):
-                copy_props(v, getattr(dst, k, None), depth + 1)
+                yield k, v, True
             continue
         if p.type == 'COLLECTION' or p.is_readonly:
             continue
+        yield k, getattr(struct, k), False
+
+
+def copy_props(src, dst, depth=0):
+    """Copy the settable properties of one settings struct to another."""
+    if src is None or dst is None:
+        return
+    for k, v, nested in _props(src, depth):
+        if nested:
+            copy_props(v, getattr(dst, k, None), depth + 1)
+            continue
         try:
-            setattr(dst, k, getattr(src, k))
+            setattr(dst, k, v)
         except (AttributeError, TypeError, ValueError, RuntimeError):
             pass
 
 
+def snapshot_props(struct, depth=0):
+    """The settable properties as plain values (for the scene's JSON)."""
+    out = {}
+    for k, v, nested in _props(struct, depth):
+        if nested:
+            out[k] = snapshot_props(v, depth + 1)
+        elif isinstance(v, (bool, int, float, str)):
+            out[k] = v
+        elif isinstance(v, set):
+            out[k] = {"__set__": sorted(v)}
+        else:
+            try:
+                out[k] = {"__seq__": list(v)}
+            except TypeError:
+                pass
+    return out
+
+
+def restore_props(struct, snap):
+    if struct is None:
+        return
+    for k, v in snap.items():
+        if isinstance(v, dict) and "__set__" in v:
+            v = set(v["__set__"])
+        elif isinstance(v, dict) and "__seq__" in v:
+            v = v["__seq__"]
+        elif isinstance(v, dict):
+            restore_props(getattr(struct, k, None), v)
+            continue
+        try:
+            setattr(struct, k, v)
+        except (AttributeError, TypeError, ValueError, RuntimeError):
+            pass
+
+
+def sky_world():
+    """The world of the add-on, if there is one in the file."""
+    return next((w for w in bpy.data.worlds if w.get(SKY_TAG)), None)
+
+
+def make_sky():
+    """A Physical Sky world of its own (when the setup scene is not there)."""
+    w = bpy.data.worlds.new(SKY_NAME)
+    if hasattr(w, "use_nodes") and not w.node_tree:
+        w.use_nodes = True
+    nt = w.node_tree
+    sky = nt.nodes.new("ShaderNodeTexSky")
+    bg = next((n for n in nt.nodes if n.bl_idname == "ShaderNodeBackground"), None)
+    if bg is None:
+        bg = nt.nodes.new("ShaderNodeBackground")
+        out = next((n for n in nt.nodes if n.bl_idname == "ShaderNodeOutputWorld"), None) or \
+            nt.nodes.new("ShaderNodeOutputWorld")
+        nt.links.new(bg.outputs[0], out.inputs[0])
+    nt.links.new(sky.outputs[0], bg.inputs[0])
+    return w
+
+
 def apply_template(scene, path):
-    """Render settings, colour management and the world (sky) of the first scene in the setup file.
-    Returns the name of the world, or "" when there is no setup file."""
+    """Render settings and colour management of the first scene in the setup file; its world becomes
+    the add-on's sky (tagged, kept once). Returns the sky world taken over, or None."""
     import os
     if not path or not os.path.isfile(path):
-        return ""
+        return None
     with bpy.data.libraries.load(path, link=False) as (src, dst):
         dst.scenes = src.scenes[:1]
     if not dst.scenes or dst.scenes[0] is None:
-        return ""
+        return None
     tpl = dst.scenes[0]
-    for attr in ("render", "cycles", "eevee", "view_settings", "display_settings"):
+    for attr in RENDER_STRUCTS:
         copy_props(getattr(tpl, attr, None), getattr(scene, attr, None))
     if tpl.render.engine:
         scene.render.engine = tpl.render.engine
     world = tpl.world
-    if world is not None:
-        scene.world = world
     objs = list(tpl.objects)
     bpy.data.scenes.remove(tpl)
-    for o in objs:                      # the setup scene's own objects are not transferred
+    for o in objs:                      # the setup scene's own objects are not taken over
         if o.users == 0:
             bpy.data.objects.remove(o)
-    return world.name if world else ""
+    if world is not None:
+        world[SKY_TAG] = True
+    return world
 
 
 def visible_meshes(scene):
@@ -2999,30 +3074,78 @@ def frame_camera(scene, cam, depsgraph):
     return True
 
 
-def setup_scene(scene, template="", depsgraph=None, frame_only=False):
-    """First Apply: transfer the setup scene (render settings, sky) and create the camera
-    "Renderbricks", the scene's camera, framing the model. frame_only: frame the existing camera
-    (or create it). Returns a short text for the summary."""
+def render_camera(scene, create=True):
+    """The camera "Renderbricks" (made when missing and create), linked to the scene. (camera, made)."""
     cam = bpy.data.objects.get(CAMERA_NAME)
-    made = cam is None or cam.type != 'CAMERA'
-    world = ""
-    if made:
-        if not frame_only:
-            world = apply_template(scene, template)
+    made = False
+    if (cam is None or cam.type != 'CAMERA') and create:
         data = bpy.data.cameras.new(CAMERA_NAME)
         data.lens = 50.0
         cam = bpy.data.objects.new(CAMERA_NAME, data)
-        scene.collection.objects.link(cam)
         cam.rotation_euler = CAMERA_ANGLE
-    elif cam.name not in scene.objects:
+        made = True
+    if cam is not None and cam.name not in scene.objects:
         scene.collection.objects.link(cam)
+    return cam, made
+
+
+def render_camera_is_on(scene):
+    return bool(scene.get("rb_render_on"))
+
+
+def render_camera_on(scene, template="", depsgraph=None):
+    """Keep the scene's camera, world and render settings, then make the camera "Renderbricks" and the
+    world "Renderbricks Sky" active and take over the setup scene's render settings. A new camera is
+    framed; an existing one stays where it is. Returns a short text for the summary."""
+    import json
+    if render_camera_is_on(scene):
+        return "render camera already on"
+    before = {"camera": scene.camera.name if scene.camera else "",
+              "world": scene.world.name if scene.world else "",
+              "world_fake": bool(scene.world and scene.world.use_fake_user),
+              "settings": {a: snapshot_props(getattr(scene, a, None)) for a in RENDER_STRUCTS}}
+    scene["rb_render_before"] = json.dumps(before)
+    if scene.world is not None:
+        scene.world.use_fake_user = True    # an unused world would not be saved
+    have = sky_world()
+    taken = apply_template(scene, template)
+    if taken is not None and have is not None and taken != have:
+        bpy.data.worlds.remove(taken)       # the sky is in the file already
+        taken = None
+    sky = have or taken or make_sky()
+    sky[SKY_TAG] = True
+    scene.world = sky
+    cam, made = render_camera(scene)
     scene.camera = cam
-    dg = depsgraph or bpy.context.evaluated_depsgraph_get()
-    dg.update()
-    ok = frame_camera(scene, cam, dg)
-    text = ("camera Renderbricks created" if made else "camera Renderbricks framed") if ok else \
-        "camera Renderbricks created (no visible parts to frame)"
-    return text + (f", render settings and {world} from the setup scene" if world else "")
+    framed = False
+    if made:
+        dg = depsgraph or bpy.context.evaluated_depsgraph_get()
+        dg.update()
+        framed = frame_camera(scene, cam, dg)
+    scene["rb_render_on"] = True
+    import os
+    used = bool(template) and os.path.isfile(template)
+    return ("render camera on: camera Renderbricks" + (" created and framed" if framed else "")
+            + f", world {sky.name}" + (", render settings of the setup scene" if used else ""))
+
+
+def render_camera_off(scene):
+    """Back to the scene's camera, world and render settings from before ON."""
+    import json
+    if not render_camera_is_on(scene):
+        return "render camera already off"
+    before = json.loads(scene.get("rb_render_before", "{}"))
+    for a, snap in before.get("settings", {}).items():
+        restore_props(getattr(scene, a, None), snap)
+    scene.camera = bpy.data.objects.get(before.get("camera", "")) if before.get("camera") else None
+    world = bpy.data.worlds.get(before.get("world", "")) if before.get("world") else None
+    scene.world = world
+    if world is not None:
+        world.use_fake_user = before.get("world_fake", False)
+    scene["rb_render_on"] = False
+    if "rb_render_before" in scene:
+        del scene["rb_render_before"]
+    return "render camera off: camera, world and render settings as before"
 
 
 def main():
@@ -3115,8 +3238,8 @@ def main():
         say(f"SKIPPED for memory: {len(skipped)} meshes ({', '.join(skipped[:5])}) - close other programs and run again")
     if failed:
         say(f"Errors in {len(failed)} meshes ({', '.join(failed)}) - left as imported")
-    if "--setup" in args:            # headless with the add-on's option Renderbricks camera
-        say("CAMERA " + setup_scene(bpy.context.scene, opt("--setup", "")))
+    if "--setup" in args:            # headless, scene never set up: the result gets the render camera
+        say("CAMERA " + render_camera_on(bpy.context.scene, opt("--setup", "")))
     cache = opt("--cache", "")
     pending = any(m.get("rb_original") and m.library is None and m.override_library is None for m in bpy.data.meshes)
     if cache and (CACHE_WRITTEN[0] is None or pending):   # not yet (all) by the workers' merge

@@ -344,18 +344,53 @@ def setup_blend():
     return os.path.join(os.path.dirname(__file__), "setup", "renderbricks_setup.blend")
 
 
-class MECSUB_OT_frame_camera(bpy.types.Operator):
-    bl_idname = "mecsub.frame_camera"
-    bl_label = "Frame camera"
-    bl_description = ("Move the camera \"Renderbricks\" so that all visible parts fill the picture (its direction "
-                      "stays); creates the camera when it is missing")
+class MECSUB_OT_render_camera(bpy.types.Operator):
+    bl_idname = "mecsub.render_camera"
+    bl_label = "Render camera"
+    bl_description = ("ON: the camera \"Renderbricks\" (framing the whole model) and the world \"Renderbricks Sky\" "
+                      "(Physical Sky) become active and the Renderbricks render settings are taken over. OFF: the "
+                      "scene's camera, world and render settings from before come back - nothing of your own setup "
+                      "is overwritten")
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         object_mode(context)
-        text = core.setup_scene(context.scene, "", context.evaluated_depsgraph_get(), frame_only=True)
+        sc = context.scene
+        if core.render_camera_is_on(sc):
+            text = core.render_camera_off(sc)
+        else:
+            text = core.render_camera_on(sc, setup_blend(), context.evaluated_depsgraph_get())
+        context.scene.mecsub.summary = text
         self.report({'INFO'}, "Renderbricker: " + text)
+        redraw(context)
         return {'FINISHED'}
+
+
+class MECSUB_OT_frame_camera(bpy.types.Operator):
+    bl_idname = "mecsub.frame_camera"
+    bl_label = "Frame camera"
+    bl_description = ("Move the camera \"Renderbricks\" so that all visible parts fill the picture again (its "
+                      "direction stays), e.g. after adding parts")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return core.render_camera_is_on(context.scene)
+
+    def execute(self, context):
+        object_mode(context)
+        cam, _made = core.render_camera(context.scene)
+        ok = core.frame_camera(context.scene, cam, context.evaluated_depsgraph_get())
+        self.report({'INFO'}, "Renderbricker: " + ("camera Renderbricks framed" if ok else "no visible parts to frame"))
+        return {'FINISHED'}
+
+
+def draw_render_camera(L, context):
+    on = core.render_camera_is_on(context.scene)
+    row = L.row(align=True)
+    row.operator("mecsub.render_camera", text=f"Render camera: {'ON' if on else 'OFF'}",
+                 icon='OUTLINER_OB_CAMERA' if on else 'CAMERA_DATA', depress=on)
+    row.operator("mecsub.frame_camera", text="", icon='VIEW_CAMERA')
 
 
 def log_path():
@@ -462,11 +497,6 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         description="The subdivided copies are kept in <scene>_rbcache.blend next to the scene and "
                     "linked into it (as library overrides that carry the scene's materials): the scene file "
                     "stays about as large as the import. Needs a saved scene")
-    use_setup: bpy.props.BoolProperty(
-        name="Renderbricks camera", default=True,
-        description="On the first Apply: create the camera \"Renderbricks\" (the scene camera, clip end 1000) "
-                    "framing all visible parts to fill the picture, and take over the render settings and the "
-                    "sky of the Renderbricks setup scene. The camera icon frames the camera again")
     use_log: bpy.props.BoolProperty(
         name="Log file", default=False,
         description="Write the results of Apply, Check and Convert headless into <scene>_renderbricker.log "
@@ -761,13 +791,6 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         if not by_mesh(targets(context)):
             self.report({'WARNING'}, scope_empty_text(context))
             return False
-        self.setup_note = ""
-        if s.use_setup and bpy.data.objects.get(core.CAMERA_NAME) is None:
-            try:
-                self.setup_note = ", " + core.setup_scene(context.scene, setup_blend(),
-                                                         context.evaluated_depsgraph_get())
-            except Exception as e:           # the conversion goes on without the camera
-                self.setup_note = f", camera not set up: {type(e).__name__}: {e}"
         self.items, fresh = self.collect(context)
         for me, obs in fresh:                  # up to date: only new or switched-off links join the copy
             for ob in obs:
@@ -776,7 +799,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         self.skipped = len(fresh)
         if not self.items:
             s.summary = (f"All {self.skipped} parts are already converted with these settings, "
-                         f"Shift+click on Apply converts all again" + self.setup_note)
+                         f"Shift+click on Apply converts all again")
             refresh_state(context)
             self.report({'INFO'}, "Renderbricker: " + s.summary)
             return False
@@ -961,8 +984,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                      + (f", T points pinned {getattr(self, 'tpoints', 0)}" if core.METHOD == "weld"
                         else f", T fans creased {self.fans}")
                      + (f", unresolved {self.unresolved}" if self.unresolved else "")
-                     + (f", folds left {self.folds}" if self.folds else "")
-                     + getattr(self, "setup_note", ""))
+                     + (f", folds left {self.folds}" if self.folds else ""))
         if self.done:
             if getattr(self, "cache_part", None) is None:     # scripts (execute): no tail phases
                 try:
@@ -1456,8 +1478,6 @@ class MECSUB_OT_headless(bpy.types.Operator):
             args += ["--cache", core.cache_path_for(out)]
         if s.use_log:
             args += ["--log", log_path()]
-        if s.use_setup and bpy.data.objects.get(core.CAMERA_NAME) is None:
-            args += ["--setup", setup_blend()]
         script = write_headless_script(os.path.join(folder, name), stem, blend, out, args)
         how = start_script(script)
         s.summary = (f"Headless conversion started in a terminal: {os.path.basename(script)}, result: {os.path.basename(out)}"
@@ -1620,9 +1640,6 @@ def _g_settings(L, context, s):
     L.prop(s, "use_cores")
     L.prop(s, "use_cache")
     L.prop(s, "use_log")
-    row = L.row(align=True)
-    row.prop(s, "use_setup")
-    row.operator("mecsub.frame_camera", text="", icon='VIEW_CAMERA')
     return True
 
 
@@ -1665,6 +1682,7 @@ def _g_compare(L, context, s):
 
 def _g_render(L, context, s):
     ok = s.wt_rendered
+    draw_render_camera(L, context)
     row = L.row()
     row.scale_y = 1.3
     op = row.operator("mecsub.render", text="Render Image (F12)", icon='RENDER_STILL', depress=not ok)
@@ -1701,8 +1719,7 @@ GUIDE = (
         "scene file stays small.",
         "Log file: the results of Apply, Check and Convert headless are also written into "
         "<scene>_renderbricker.log, with the full list of problems.",
-        "Renderbricks camera: the first Apply creates the camera \"Renderbricks\" that frames the whole "
-        "model and takes over the Renderbricks render settings and sky. The camera icon frames it again.",
+
         "The defaults suit most scenes.")),
     ("Apply", _g_apply, (
         "Apply decides for every edge of every part whether the real brick is sharp or round there, "
@@ -1724,8 +1741,10 @@ GUIDE = (
         "F12 (image) and Ctrl+F12 (animation) switch the bricks to the render level while rendering "
         "and back to the viewport level afterwards.",
         "The Render menu has the same: Render Image / Animation (Renderbricker levels).",
-        "With the option Renderbricks camera, the render uses the camera \"Renderbricks\" that frames "
-        "the whole model.")),
+        "Render camera ON: the camera \"Renderbricks\" frames the whole model, a world \"Renderbricks Sky\" "
+        "(Physical Sky) and the Renderbricks render settings are used. OFF brings your own camera, world and "
+        "render settings back - nothing is overwritten.",
+        "The camera icon frames the model again, e.g. after adding parts.")),
     ("Done - what next", _g_next, (
         "Save As under another name or folder: the panel then offers Move cache here or Copy cache "
         "here, so the new file gets its cache.",
@@ -1825,9 +1844,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         body.prop(s, "use_cores")
         body.prop(s, "use_cache")
         body.prop(s, "use_log")
-        row = body.row(align=True)
-        row.prop(s, "use_setup")
-        row.operator("mecsub.frame_camera", text="", icon='VIEW_CAMERA')
+        draw_render_camera(body, context)
         st = core.cache_state()
         if st is not None:
             import os
@@ -1899,7 +1916,7 @@ classes = (MECSUB_Problem, MECSUB_Settings, MECSUB_OT_apply, MECSUB_OT_check, ME
            MECSUB_OT_remove, MECSUB_OT_select, MECSUB_OT_headless, MECSUB_PT_panel, MECSUB_OT_move_cache, MECSUB_OT_copy_cache,
            MECSUB_OT_cache_switch, MECSUB_OT_render, MECSUB_PT_about,
            MECSUB_OT_guide_start, MECSUB_OT_guide_nav, MECSUB_OT_guide_exit, MECSUB_OT_level_confirm,
-           MECSUB_OT_frame_camera)
+           MECSUB_OT_frame_camera, MECSUB_OT_render_camera)
 
 
 @persistent

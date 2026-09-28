@@ -22,7 +22,6 @@ header work any time.
 | **Viewport** level | 1 | Subdivision shown in the viewport. 0 shows the original mesh (no viewport copy is stored – the file gets about a fifth smaller). Levels already baked switch at once, others are computed the first time (with a progress bar). |
 | **Render** level | 2 | Subdivision used for rendering; the checks use this level. 2 is enough even for close-ups. Raising a level above 2 asks first – *Cancel* (or Esc) keeps the old level – and the panel shows a warning while it is above 2: every level multiplies the faces by three to four, so memory, file size and conversion time grow a lot for a small visible gain. |
 | **Use several cores** | on | Apply on larger scenes (about 40 meshes and more) runs in background Blenders on several cores and loads the result into this scene. The scene is saved first. The number of Blenders follows the free memory. |
-| **Renderbricks camera** | on | On the first Apply: creates the camera *Renderbricks* and makes it the scene camera – a three-quarter view from the front right, moved so that all visible parts fill the picture with a small margin, clip end 1000 (more for very large scenes). The render settings and the sky of the Renderbricks setup scene are taken over. A camera that already exists is left as it is (move it freely); the **camera button** next to the option frames it again, e.g. after adding parts. *Convert headless* sets up its result file the same way. |
 | **Log file** | off | Appends the results of Apply, Check and Convert headless to `<scene>_renderbricker.log` next to the scene: date, add-on and Blender version, settings, the summary and the full problem list (the panel shows the first 12 problems). Needs a saved scene. |
 | **Cache file next to the scene** | on | The subdivided copies are kept in `<scene>_rbcache.blend` next to the scene and linked into it, so the scene file stays about as large as the import. Needs a saved scene. Switching it off takes the copies back into the scene file; switching it on writes them out again. |
 
@@ -36,6 +35,23 @@ header work any time.
 | **Remove** | Points the links back to the original meshes and removes the copies – the scene is the plain import again. |
 | **Convert headless** | Saves the scene, writes a start script next to it (`.bat` on Windows, `.command` on macOS, `.sh` on Linux) and runs it in a terminal. Blender converts the whole scene in the background on several cores and saves the result as `<scene>_subdiv_<version>.blend` – the open scene is not changed. If no terminal is found (Linux), the panel names the script to start by hand. |
 | **Move cache here / Copy cache here** | Shown when the scene was saved under another name or in another folder and still links the cache of the old scene file. *Move* renames the cache to belong to this scene (the old scene file then shows its original meshes); *Copy* gives this scene a cache of its own. |
+
+## Render camera
+
+**Render camera: ON / OFF** below the settings switches between your own render setup and the
+Renderbricks one – nothing of yours is overwritten:
+
+- **ON** keeps the scene's camera, world and render settings, then makes the camera *Renderbricks*
+  and a world *Renderbricks Sky* (Physical Sky) of its own active and takes over the render settings
+  of the Renderbricks setup scene. The first time, the camera is created as a three-quarter view from
+  the front right and moved so that all visible parts fill the picture with a small margin (clip end
+  1000, more for very large scenes). Your world stays in the file even while it is not used.
+- **OFF** brings back your camera, world and render settings exactly as they were. The camera
+  *Renderbricks* and the sky world stay in the file, so ON is quick the next time; a camera you moved
+  stays where you put it.
+- The **camera button** next to it frames the camera *Renderbricks* again, e.g. after adding parts.
+
+Apply and Convert headless never change the camera, world or render settings.
 
 ## Rendering
 
