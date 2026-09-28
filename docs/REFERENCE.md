@@ -59,7 +59,7 @@ Renderbricks one – nothing of yours is overwritten:
 - **Samples:** Low 128, Medium 256, Good 512, High 1024 set the render samples (Cycles and EEVEE)
   while the render camera is on; the current level is highlighted. OFF brings your own samples back.
 - **Render (F12)** below renders through the camera *Renderbricks* with the render level, into the slot of the current view: Slot 1 Front, 2 Right, 3 Back, 4 Left, 5 Top, 6 Bottom (the slots of the Render window carry the names of the views, so earlier views stay there to compare).
-- **All views** renders the six views one after the other, each into its slot; the camera then returns to the view it had. Esc in the Render window stops the running view and the chain.
+- **All views** renders the six views one after the other, each into its slot; the camera then returns to the view it had. Esc in the Render window stops the running view and the chain; closing the Render window stops only the running view, the chain goes on with the next.
 - **Only some collections:** the camera icon of a collection in the *Collection* list marks it for the
   render camera (one or several). With the camera on, only the marked collections are shown and
   rendered, and the camera frames them; marking or unmarking while it is on updates at once. OFF
@@ -68,7 +68,14 @@ Renderbricks one – nothing of yours is overwritten:
   around the model and frame it: *Front* is the view of the render setup, *Right*, *Back* and *Left* go
   round the model in 90° steps at the same tilt, *Top* and *Bottom* look straight down and up, square
   to the model with its longer side across the picture and its front at the bottom. The
-  current view is highlighted.
+  current view is highlighted. For *Bottom* the sky is mirrored vertically: the sun and the bright
+  sky are below the model and light its underside as they light the top from above. The physical
+  sky cannot be turned upside down (a sun below the horizon is night), so the add-on renders it once
+  as a panorama (a few seconds, in a Blender of its own) and shows it mirrored in a world
+  *Renderbricks Sky Below*; it is made again only when the sky is changed.
+- **Sun: fixed / Sun: turns with the camera** – fixed (the default): the sun stays where it is, and
+  the views show the model from every side in the same light. Turning: the sun goes round with the
+  camera, so every view is lit like *Front*. Switching back puts the sun back to its place.
 
 Apply and Convert headless never change the camera, world or render settings.
 

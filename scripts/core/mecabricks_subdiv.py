@@ -3011,6 +3011,229 @@ def make_sky():
     return w
 
 
+BELOW_TAG = "rb_sky_below"              # the world of the view Bottom: the sky mirrored vertically
+BELOW_NAME = "Renderbricks Sky Below"
+SUN_BASE = "rb_sun_base"                # sky world: sun_rotation of its Sky Textures while the sun turns
+SUN_FOLLOW = "rb_sun_follow"            # scene: the sun turns with the camera (user, 2026-09-28)
+SKY_RES = 2048                          # width of the panorama of the sky (equirectangular, 2:1)
+_SKY_PROPS = ("sky_type", "sun_disc", "sun_size", "sun_intensity", "sun_elevation", "altitude", "air_density",
+              "aerosol_density", "ozone_density", "dust_density", "turbidity", "ground_albedo", "sun_direction")
+
+
+def sky_nodes(world):
+    if world is None or not world.node_tree:
+        return []
+    return [n for n in world.node_tree.nodes if n.bl_idname == "ShaderNodeTexSky"]
+
+
+def sun_rotations(world):
+    """The fixed sun_rotation of every Sky Texture: the stored one while the sun turns, else the current."""
+    base = world.get(SUN_BASE) if world is not None else None
+    nodes = sky_nodes(world)
+    if base is not None and len(base) == len(nodes):
+        return [float(b) for b in base]
+    return [n.sun_rotation for n in nodes]
+
+
+def _plain(v):
+    if isinstance(v, str) or isinstance(v, bool):
+        return v
+    if hasattr(v, "__len__"):
+        return [round(float(x), 5) for x in v]
+    return round(float(v), 5)
+
+
+def sky_signature(world):
+    """What the look of the sky depends on (the sun at its fixed rotation): the panorama of the view Bottom
+    is made again only when this changes."""
+    import json
+    parts = []
+    rots = iter(sun_rotations(world))
+    for n in sorted(world.node_tree.nodes, key=lambda n: n.name):
+        d = {"t": n.bl_idname, "mute": n.mute}
+        for p in _SKY_PROPS:
+            if hasattr(n, p):
+                d[p] = _plain(getattr(n, p))
+        if n.bl_idname == "ShaderNodeTexSky":
+            d["sun_rotation"] = round(next(rots, n.sun_rotation), 5)
+        for i in n.inputs:
+            v = getattr(i, "default_value", None)
+            if v is not None and not i.is_linked:
+                try:
+                    d["in_" + i.identifier] = _plain(v)
+                except (TypeError, ValueError):
+                    pass
+        parts.append(d)
+    parts.append(sorted(f"{l.from_node.name}.{l.from_socket.identifier}>{l.to_node.name}.{l.to_socket.identifier}"
+                        for l in world.node_tree.links))
+    return json.dumps(parts, sort_keys=True)
+
+
+_BAKE_SCRIPT = '''
+import bpy, sys, math
+a = sys.argv[sys.argv.index("--") + 1:]
+lib, name, out, res = a[0], a[1], a[2], int(a[3])
+with bpy.data.libraries.load(lib) as (src, dst):
+    dst.worlds = [name]
+sc = bpy.context.scene
+sc.world = dst.worlds[0]
+for o in list(sc.objects):
+    bpy.data.objects.remove(o)
+cam = bpy.data.objects.new("pano", bpy.data.cameras.new("pano"))
+sc.collection.objects.link(cam)
+sc.camera = cam
+cam.data.type = 'PANO'
+try:
+    cam.data.panorama_type = 'EQUIRECTANGULAR'
+except AttributeError:
+    cam.data.cycles.panorama_type = 'EQUIRECTANGULAR'
+cam.rotation_euler = (math.pi / 2, 0.0, -math.pi / 2)   # the orientation of an Environment Texture
+r = sc.render
+r.engine = 'CYCLES'
+sc.cycles.device = 'CPU'
+sc.cycles.samples = 16
+sc.cycles.use_denoising = False
+r.resolution_x, r.resolution_y, r.resolution_percentage = res, res // 2, 100
+r.film_transparent = False
+r.image_settings.file_format = 'OPEN_EXR'
+r.image_settings.color_depth = '32'
+r.image_settings.exr_codec = 'ZIP'
+r.filepath = out
+bpy.ops.render.render(write_still=True)
+print("SKYBAKE OK")
+'''
+
+
+def bake_sky_panorama(sky, res=None):
+    """The sky rendered as an equirectangular panorama (linear EXR) by a Blender of its own - a render in
+    this Blender would overwrite the Render Result. The image is packed into the file and remembers
+    the signature of the sky it shows. Returns the image or None."""
+    import os, shutil, subprocess, tempfile
+    res = int(os.environ.get("RENDERBRICKER_SKY_RES", 0) or 0) or res or SKY_RES
+    nodes = sky_nodes(sky)
+    now = [n.sun_rotation for n in nodes]
+    tmp = tempfile.mkdtemp(prefix="rb_sky_")
+    lib, out, script = (os.path.join(tmp, f) for f in ("sky.blend", "sky_below.exr", "bake_sky.py"))
+    try:
+        try:
+            for n, r in zip(nodes, sun_rotations(sky)):     # the sun at its fixed place
+                n.sun_rotation = r
+            bpy.data.libraries.write(lib, {sky}, fake_user=True)
+        finally:
+            for n, r in zip(nodes, now):
+                n.sun_rotation = r
+        with open(script, "w", encoding="utf-8") as f:
+            f.write(_BAKE_SCRIPT)
+        try:
+            p = subprocess.run([bpy.app.binary_path, "-b", "--factory-startup", "--python", script, "--",
+                                lib, sky.name, out, str(res)], capture_output=True, text=True, errors="replace",
+                               timeout=600, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.SubprocessError) as e:
+            print("Renderbricker: sky panorama not made:", e)
+            return None
+        if "SKYBAKE OK" not in p.stdout or not os.path.isfile(out):
+            print("Renderbricker: sky panorama not made:", (p.stdout + p.stderr)[-600:])
+            return None
+        old = bpy.data.images.get(BELOW_NAME)
+        if old is not None:
+            bpy.data.images.remove(old)
+        img = bpy.data.images.load(out, check_existing=False)
+        img.name = BELOW_NAME
+        img.pack()
+        img.filepath = ""
+        img["rb_sig"] = sky_signature(sky)
+        return img
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def sky_below(sky):
+    """The world of the view Bottom (user, 2026-09-28): the add-on's sky mirrored vertically, so the sun
+    and the bright sky are below the model and light its underside exactly as they light the top from
+    above. The Sky Texture cannot be mirrored (its Vector input is disabled for the physical skies, and
+    a sun below the horizon is night), so the sky is rendered once as a panorama and shown by an
+    Environment Texture behind a Mapping node (scale Z -1). Made again only when the sky changes."""
+    sig = sky_signature(sky)
+    img = bpy.data.images.get(BELOW_NAME)
+    if img is None or img.get("rb_sig") != sig:
+        img = bake_sky_panorama(sky)
+        if img is None:
+            return None
+    w = next((w for w in bpy.data.worlds if w.get(BELOW_TAG)), None)
+    if w is None:
+        w = bpy.data.worlds.new(BELOW_NAME)
+        w[BELOW_TAG] = True
+        if hasattr(w, "use_nodes") and not w.node_tree:
+            w.use_nodes = True
+    nt = w.node_tree
+    env = next((n for n in nt.nodes if n.bl_idname == "ShaderNodeTexEnvironment"), None)
+    if env is not None and nt.nodes.get("Mirror") is not None:
+        env.image = img
+        return w
+    nt.nodes.clear()
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    m = nt.nodes.new("ShaderNodeMapping")
+    m.name = m.label = "Mirror"
+    m.vector_type = 'POINT'
+    m.inputs["Scale"].default_value = (1.0, 1.0, -1.0)
+    env = nt.nodes.new("ShaderNodeTexEnvironment")
+    env.image = img
+    bg = nt.nodes.new("ShaderNodeBackground")
+    out = nt.nodes.new("ShaderNodeOutputWorld")
+    for i, n in enumerate((coord, m, env, bg, out)):
+        n.location = (-800 + 220 * i, 0)
+    nt.links.new(coord.outputs["Generated"], m.inputs["Vector"])
+    nt.links.new(m.outputs["Vector"], env.inputs["Vector"])
+    nt.links.new(env.outputs["Color"], bg.inputs["Color"])
+    nt.links.new(bg.outputs[0], out.inputs[0])
+    return w
+
+
+def camera_turn(scene):
+    """How far the camera "Renderbricks" is turned about Z from the view it was set up with (radians)."""
+    cam = bpy.data.objects.get(CAMERA_NAME)
+    if cam is None or "rb_base_rotation" not in cam:
+        return 0.0
+    return cam.rotation_euler[2] - float(cam["rb_base_rotation"][2])
+
+
+def apply_sky(scene, view):
+    """The add-on's sky for a view: the sun at its fixed place, or turned with the camera (scene
+    rb_sun_follow, user 2026-09-28; sun_rotation turns the other way round than the camera: the sun's
+    azimuth is 90 deg - sun_rotation); the view Bottom gets the mirrored sky. A world of the user is
+    never touched. Returns a note or ""."""
+    w = scene.world
+    if w is None or not (w.get(SKY_TAG) or w.get(BELOW_TAG)):
+        return ""
+    sky = sky_world()
+    if sky is None:
+        return ""
+    nodes = sky_nodes(sky)
+    follow = bool(scene.get(SUN_FOLLOW))
+    turn = camera_turn(scene) if follow else 0.0
+    if follow:
+        if sky.get(SUN_BASE) is None or len(sky[SUN_BASE]) != len(nodes):
+            sky[SUN_BASE] = [n.sun_rotation for n in nodes]
+        for n, b in zip(nodes, sky[SUN_BASE]):
+            n.sun_rotation = float(b) - turn
+    elif sky.get(SUN_BASE) is not None:                 # back to the fixed place
+        for n, b in zip(nodes, sky[SUN_BASE]):
+            n.sun_rotation = float(b)
+        del sky[SUN_BASE]
+    if view != "BOTTOM":
+        scene.world = sky
+        return ""
+    below = sky_below(sky)
+    if below is None:
+        scene.world = sky
+        return "mirrored sky not made (see the console)"
+    m = below.node_tree.nodes.get("Mirror")
+    if m is not None:
+        m.inputs["Rotation"].default_value = (0.0, 0.0, -turn)
+    scene.world = below
+    return ""
+
+
 def apply_template(scene, path):
     """Render settings and colour management of the first scene in the setup file; its world becomes
     the add-on's sky (tagged, kept once), its camera gives direction and lens of the camera
@@ -3182,6 +3405,7 @@ def camera_view(scene, view, depsgraph=None):
     dg = depsgraph or bpy.context.evaluated_depsgraph_get()
     dg.update()
     scene["rb_camera_view"] = view
+    apply_sky(scene, view)                          # sun fixed or turned; Bottom: the sky mirrored
     return frame_camera(scene, cam, dg)
 
 
@@ -3270,6 +3494,7 @@ def render_camera_on(scene, template="", depsgraph=None, collections=None):
     hidden = isolate(scene, collections)    # only these collections shown and rendered
     if made:
         scene["rb_camera_view"] = "FRONT"
+    sky_note = apply_sky(scene, scene.get("rb_camera_view", "FRONT"))
     res_before = (scene.render.resolution_x, scene.render.resolution_y)
     portrait = picture_orientation(scene, scene.get("rb_camera_view", "FRONT"))
     turned = (scene.render.resolution_x, scene.render.resolution_y) != res_before
@@ -3285,7 +3510,8 @@ def render_camera_on(scene, template="", depsgraph=None, collections=None):
                                                        " framed" if framed else "")
             + (", portrait 9:16" if portrait else ", landscape 16:9")
             + (f", only {', '.join(c.name for c in collections)}" if collections else "")
-            + f", world {sky.name}" + (", render settings of the setup scene" if used else ""))
+            + f", world {scene.world.name}" + (", render settings of the setup scene" if used else "")
+            + (f"; {sky_note}" if sky_note else ""))
 
 
 def render_camera_off(scene):

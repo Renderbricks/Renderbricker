@@ -575,7 +575,8 @@ class MECSUB_OT_camera_view(bpy.types.Operator):
     bl_label = "Camera view"
     bl_description = ("Turn the camera \"Renderbricks\" around the model and frame it: Front is the view of the "
                       "setup scene, Right / Back / Left go round in 90° steps, Top and Bottom look straight down "
-                      "and up")
+                      "and up. For Bottom the sky is mirrored vertically, so the sun lights the underside (the "
+                      "first time the sky is rendered as a panorama, a few seconds)")
     bl_options = {'REGISTER', 'UNDO'}
     view: EnumProperty(items=[(k, label, "") for k, label, _d in core.CAMERA_VIEWS], default="FRONT")
 
@@ -589,6 +590,29 @@ class MECSUB_OT_camera_view(bpy.types.Operator):
         viewport_camera(context, True)
         if not ok:
             self.report({'WARNING'}, "Renderbricker: no camera or no visible parts to frame")
+        if self.view == "BOTTOM" and context.scene.world and not context.scene.world.get(core.BELOW_TAG)                 and context.scene.world.get(core.SKY_TAG):
+            self.report({'WARNING'}, "Renderbricker: mirrored sky not made (see the console)")
+        redraw(context)
+        return {'FINISHED'}
+
+
+class MECSUB_OT_sun_follow(bpy.types.Operator):
+    bl_idname = "mecsub.sun_follow"
+    bl_label = "Sun turns with the camera"
+    bl_description = ("Off (default): the sun stays where it is and the views show the model from all sides in the "
+                      "same light. On: the sun turns with the camera, so every view is lit as the Front view")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return core.render_camera_is_on(context.scene)
+
+    def execute(self, context):
+        sc = context.scene
+        sc[core.SUN_FOLLOW] = not bool(sc.get(core.SUN_FOLLOW))
+        note = core.apply_sky(sc, sc.get("rb_camera_view", "FRONT"))
+        if note:
+            self.report({'WARNING'}, "Renderbricker: " + note)
         redraw(context)
         return {'FINISHED'}
 
@@ -636,6 +660,9 @@ def draw_render_camera(L, context, render_button=True):
             row = col.row(align=True)
             for k, label, _d in keys:
                 row.operator("mecsub.camera_view", text=label, depress=(k == current)).view = k
+        follow = bool(sc.get(core.SUN_FOLLOW))  # sun fixed or turning with the camera (user, 2026-09-28)
+        col.operator("mecsub.sun_follow", text="Sun: turns with the camera" if follow else "Sun: fixed",
+                     icon='LIGHT_SUN', depress=follow)
         n = render_samples(sc)
         col.label(text=f"Samples: {n}", icon='RENDER_STILL')
         row = col.row(align=True)
@@ -2311,7 +2338,7 @@ classes = (MECSUB_Problem, MECSUB_CollectionItem, MECSUB_Settings, MECSUB_UL_col
            MECSUB_OT_cache_switch, MECSUB_OT_render, MECSUB_PT_about,
            MECSUB_OT_guide_start, MECSUB_OT_guide_nav, MECSUB_OT_guide_exit, MECSUB_OT_level_confirm,
            MECSUB_OT_frame_camera, MECSUB_OT_render_camera, MECSUB_OT_camera_view, MECSUB_OT_samples,
-           MECSUB_OT_render_views)
+           MECSUB_OT_render_views, MECSUB_OT_sun_follow)
 
 
 @persistent
