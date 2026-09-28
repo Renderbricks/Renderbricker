@@ -48,9 +48,9 @@ Renderbricks one – nothing of yours is overwritten:
   moved so that all visible parts fill the picture with a small margin (clip end 1000, more for very
   large scenes). Your world stays in the file even while it is not used.
   The 3D viewport switches to the camera view, the camera frame filling it (also with the view
-  buttons below).
+  buttons below), with relationship lines off and statistics on.
 - **OFF** brings back your camera, world and render settings exactly as they were, and the viewport
-  its view from before. The camera
+  its view and overlays from before. The camera
   *Renderbricks* and the sky world stay in the file, so ON is quick the next time; a camera you moved
   stays where you put it.
 - The **camera button** next to it frames the camera *Renderbricks* again, e.g. after adding parts.

@@ -344,23 +344,27 @@ def setup_blend():
     return os.path.join(os.path.dirname(__file__), "setup", "renderbricks_setup.blend")
 
 
-_VIEW_BEFORE = {}           # 3D viewport -> its view (perspective / ortho) before Render camera ON
+_VIEW_BEFORE = {}           # 3D viewport -> (view, relationship lines, statistics) before Render camera ON
 
 
 def viewport_camera(context, on):
-    """Render camera ON (and the view buttons): the 3D viewport of the button looks through the camera;
-    OFF: back to the view it had before (user, 2026-09-28). Without a 3D viewport (scripts) nothing."""
+    """Render camera ON (and the view buttons): the 3D viewport of the button looks through the camera,
+    relationship lines off, statistics on; OFF: back to how it was before (user, 2026-09-28). Without a
+    3D viewport (scripts) nothing."""
     area = context.area if context.area and context.area.type == 'VIEW_3D' else None
     if area is None and context.screen:
         area = next((a for a in context.screen.areas if a.type == 'VIEW_3D'), None)
     if area is None:
         return
-    r3d = area.spaces.active.region_3d
+    space = area.spaces.active
+    r3d, ov = space.region_3d, space.overlay
     key = area.as_pointer()
     if on:
-        if r3d.view_perspective != 'CAMERA':
-            _VIEW_BEFORE[key] = r3d.view_perspective
+        if key not in _VIEW_BEFORE:
+            _VIEW_BEFORE[key] = (r3d.view_perspective, ov.show_relationship_lines, ov.show_stats)
         r3d.view_perspective = 'CAMERA'
+        ov.show_relationship_lines = False
+        ov.show_stats = True
         region = next((r for r in area.regions if r.type == 'WINDOW'), None)
         if region is not None:                  # the camera frame fills the viewport (Frame Camera Bounds)
             try:
@@ -370,8 +374,10 @@ def viewport_camera(context, on):
                 pass
     else:
         before = _VIEW_BEFORE.pop(key, None)
-        if r3d.view_perspective == 'CAMERA':
-            r3d.view_perspective = before or 'PERSP'
+        if before is None:
+            before = ('PERSP', ov.show_relationship_lines, ov.show_stats)
+        r3d.view_perspective = before[0]        # a camera view before: now through the scene's own camera
+        ov.show_relationship_lines, ov.show_stats = before[1], before[2]
     area.tag_redraw()
 
 
