@@ -705,20 +705,49 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
     bl_idname = "mecsub.apply"
     bl_label = "Apply"
     bl_description = ("Set creases on each mesh once and write the subdivision into a copy of it that all its "
-                      "links use (the original mesh stays in the file, unchanged). Esc cancels")
+                      "links use (the original mesh stays in the file, unchanged). Parts already converted with "
+                      "these settings are skipped - Shift+click converts all again. Esc cancels")
     bl_options = {'REGISTER', 'UNDO'}
     label = "Apply"
+    force: bpy.props.BoolProperty(name="Convert all again", default=False, options={'SKIP_SAVE'})
+
+    def collect(self, context):
+        """(to do, up to date): meshes in scope, split by whether their copies already come from the
+        current settings and rules. Sets the core's settings for the run."""
+        s = context.scene.mecsub
+        core.LEVELS = s.render_level                    # the checks run at the render level
+        core.VIEW_LEVEL, core.RENDER_LEVEL = s.view_level, s.render_level
+        core.SHADING = "mecabricks" if s.variant == 'A' else "geometric"
+        items = list(by_mesh(targets(context)).items())
+        if self.force:
+            return items, []
+        core.copy_index_begin()
+        try:
+            todo, fresh = [], []
+            for me, obs in items:
+                (fresh if core.up_to_date(me, s.view_level, s.render_level) else todo).append((me, obs))
+        finally:
+            core.copy_index_end()
+        return todo, fresh
 
     def prepare(self, context):
         object_mode(context)
         s = context.scene.mecsub
-        self.items = list(by_mesh(targets(context)).items())
-        if not self.items:
+        if not by_mesh(targets(context)):
             self.report({'WARNING'}, scope_empty_text(context))
             return False
-        core.LEVELS = s.render_level                    # the checks run at the render level
-        core.VIEW_LEVEL, core.RENDER_LEVEL = s.view_level, s.render_level
-        core.SHADING = "mecabricks" if s.variant == 'A' else "geometric"
+        self.items, fresh = self.collect(context)
+        for me, obs in fresh:                  # up to date: only new or switched-off links join the copy
+            for ob in obs:
+                ob.pop("rb_off", None)
+            core.point_links(obs, me, "view")
+        self.skipped = len(fresh)
+        if not self.items:
+            s.summary = (f"All {self.skipped} parts are already converted with these settings, "
+                         f"Shift+click on Apply converts all again")
+            refresh_state(context)
+            self.report({'INFO'}, "Renderbricker: " + s.summary)
+            return False
         self.variant, self.levels = s.variant, (s.view_level, s.render_level)
         self.t0 = time.time()
         self.fans = self.unresolved = self.folds = self.done = 0
@@ -758,9 +787,11 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
     def invoke(self, context, event):
         s = context.scene.mecsub
         self.workers = None
+        if event.shift:
+            self.force = True
         if s.use_cores and not bpy.app.background:
             object_mode(context)
-            jobs = core.resolve_jobs("auto", len(by_mesh(targets(context))))
+            jobs = core.resolve_jobs("auto", len(self.collect(context)[0]))
             if jobs > 1:
                 if not bpy.data.filepath:
                     self.report({'WARNING'}, "Save the scene first: Apply on several cores opens it from disk "
@@ -889,7 +920,9 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         n = len(self.items)
         objs = sum(len(o) for _, o in self.items[:self.done])
         cores = f", {self.jobs} cores" if getattr(self, "workers", None) else ""
-        s.summary = ((f"Cancelled after {self.done} of {n} meshes, " if self.cancelled else f"{n} meshes, ")
+        skipped = getattr(self, "skipped", 0)
+        s.summary = ((f"Cancelled after {self.done} of {n} meshes, " if self.cancelled else f"{n} mesh{'' if n == 1 else 'es'}, ")
+                     + (f"{skipped} already up to date (skipped), " if skipped else "")
                      + f"{objs} objects, {time.time() - self.t0:.0f} s, variant {self.variant}, "
                      + f"viewport {self.levels[0]} / render {self.levels[1]}{cores}"
                      + (f", T points pinned {getattr(self, 'tpoints', 0)}" if core.METHOD == "weld"

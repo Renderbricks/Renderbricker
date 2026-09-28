@@ -29,7 +29,7 @@ header work any time.
 
 | Button | What it does |
 |---|---|
-| **Apply** | Sets the creases of each part mesh once and bakes the subdivision into a copy of it (`<mesh> L<level>`) that all its links use. The original mesh stays in the file, unchanged. With the cache on, the copies are written into the cache file and the scene is saved. Esc cancels; the parts converted so far keep their copies. |
+| **Apply** | Sets the creases of each part mesh once and bakes the subdivision into a copy of it (`<mesh> L<level>`) that all its links use. The original mesh stays in the file, unchanged. Parts whose copies already match the settings (levels, variant) and the current rules are skipped – after adding parts to a scene, Apply converts only the new ones. **Shift+click** converts all parts again. With the cache on, the copies are written into the cache file and the scene is saved. Esc cancels; the parts converted so far keep their copies. |
 | **Check** | Looks for folded faces and seam gaps in the render copies and lists the objects with problems; the arrow button next to an entry selects and frames that object. |
 | **Subdivision: ON / OFF** | Switches every link between the subdivided copy and the original mesh (viewport and render). The button shows the state: *ON* (pressed), *OFF*, or *partly on* when objects differ. |
 | **Remove** | Points the links back to the original meshes and removes the copies – the scene is the plain import again. |
@@ -55,11 +55,12 @@ line (`blender -b … -f`) switch the level as well.
 
 ## Converting again
 
-- **Apply on a converted scene** runs the rules again for every part in scope and replaces the
-  copies by new ones – the result is the same as before (same copies, no duplicates, the cache file is
-  rewritten and the scene saved). It takes as long as the first Apply. To change only the smoothness,
-  change the viewport or render level instead: that switches or computes copies without running the
-  rules again.
+- **Apply on a converted scene** converts only the parts that are not up to date: new parts, parts
+  converted with another variant or levels, or with an older version of the rules. When everything is
+  up to date it says so and changes nothing (links switched off with *Subdivision: OFF* are switched
+  back on). **Shift+click** on Apply converts all parts again; the result is the same (same copies, no
+  duplicates, the cache file is rewritten and the scene saved). To change only the smoothness, change
+  the viewport or render level: that switches or computes copies without running the rules.
 - **Convert headless on a converted scene** opens the saved scene in the background, goes back from
   the copies to the imported meshes and converts them again. It writes a new file
   `<scene>_subdiv_<version>.blend` with its own cache file; the open scene and its cache stay

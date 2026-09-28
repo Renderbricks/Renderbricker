@@ -703,6 +703,7 @@ def bake_copy(orig, work, level):
         LEVELS = keep
     cp.name = f"{orig.name} L{level}"
     cp["rb_original"], cp["rb_level"], cp["rb_variant"] = orig.name, level, SHADING
+    cp["rb_rules"] = RULES_VERSION          # Apply skips meshes whose copies are up to date (user, 2026-09-28)
     if _COPY_INDEX[0] is not None:
         _COPY_INDEX[0].setdefault(orig.name, []).append(cp)
     cp.use_fake_user = True      # a copy no link uses right now (L1, the render copy) is saved too (run 40)
@@ -911,6 +912,18 @@ def copies_by_level(orig):
 def missing_levels(orig, view, render):
     have = copies_by_level(orig)
     return sorted(lv for lv in {view, render} - {0} if lv not in have)
+
+
+def up_to_date(orig, view, render):
+    """The copies of this mesh for the viewport and render level exist and come from the current rules,
+    variant and method - Apply can skip the mesh (user, 2026-09-28). Copies made before 1.0.0 carry no
+    rules version and are converted again."""
+    have = copies_by_level(orig)
+    need = {lv for lv in (view, render) if lv}
+    if not need or any(lv not in have for lv in need):
+        return False
+    return all(have[lv].get("rb_rules") == RULES_VERSION and have[lv].get("rb_variant") == SHADING
+               and (have[lv].get("rb_method") == "weld") == (METHOD == "weld") for lv in need)
 
 
 def bake_levels(orig, levels):
