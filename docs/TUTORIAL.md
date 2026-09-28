@@ -1,10 +1,11 @@
 # Tutorial – from a Mecabricks scene to smooth, render-ready parts
 
-<!-- DRAFT: the example scene, all numbers in [brackets] and the pictures T01–T10 follow once the
-reference scene is chosen. Pictures: Blender 5.2.2, reference scene, yellow numbered markers. -->
+<!-- DRAFT: numbers in [brackets] and the pictures from T03 on follow step by step.
+Pictures: Blender 5.2.2, the Italian Riviera scene, yellow numbered markers. -->
 
-This tutorial takes you through the whole workflow once, step by step. It uses [example scene] as
-example; the numbers in brackets are the values of that example.
+This tutorial takes you through the whole workflow once, step by step. It uses the *Italian
+Riviera* as example – a Mecabricks scene with 3297 parts; the numbers in brackets are the values of
+that example.
 
 **You need:** Blender 4.5 LTS or newer with the add-on installed ([Install](#0-install-the-add-on)),
 and a scene built in [Mecabricks](https://www.mecabricks.com) and imported into Blender with the
@@ -35,7 +36,7 @@ Contents: [0 Install](#0-install-the-add-on) · [1 Open and save](#step-1-open-a
 
 ## 0. Install the add-on
 
-<!-- IMAGE T01: Preferences → Add-ons, Install from Disk, Renderbricker enabled -->
+![Preferences, Add-ons: the menu with Install from Disk (1) and Renderbricker enabled (2)](images/tutorial/T01_install.png)
 
 **[⬇ Download renderbricker-<version>.zip](https://github.com/Renderbricks/Renderbricker/releases/latest)** (latest release)
 
@@ -52,15 +53,22 @@ Contents: [0 Install](#0-install-the-add-on) · [1 Open and save](#step-1-open-a
 
 ## Step 1: Open and save the scene
 
-<!-- IMAGE T02: the imported example scene in the viewport, sidebar tab Renderbricker open -->
-
 **What it is for:** the add-on writes its copies into a cache file next to the scene and saves
 the scene when it is done – the scene needs a file first.
 
-1. Open the imported scene ([example scene]).
-2. Save it under the name you want to keep (*File → Save As*).
+Open the imported scene – here the *Italian Riviera*, as it came from Mecabricks.
 
-**Check:** the title bar shows the file name.
+![The Italian Riviera with the sidebar tab Renderbricker (1) and Start Guide (2)](images/tutorial/T02_open.png)
+
+1. Press **N** in the 3D viewport and click the tab **Renderbricker**.
+2. Optional: **Start Guide** leads through the following steps inside Blender.
+3. Save the scene under the name you want to keep (*File → Save As*). The cache file will carry the
+   same name: `Italian_Riviera_Tutorial.blend` gets `Italian_Riviera_Tutorial_rbcache.blend`.
+
+<img src="images/tutorial/T02b_guide_step1.png" alt="Guide step 1 of 8: Save the scene, with the saved file name (3)" width="348">
+
+**Check:** the guide shows **✓ Saved:** with the file name (3); without the guide, the title bar
+of the Blender window shows it.
 
 ---
 
