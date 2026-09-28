@@ -1293,7 +1293,7 @@ def write_headless_script(base, stem, blend, out, args):
     """Start script for the headless conversion: <base>.bat (Windows), .command (macOS), .sh (Linux)."""
     import os, sys, shlex
     blender = bpy.app.binary_path
-    head = f"Renderbricker {VERSION} (rules {core.RULES_VERSION}): converting"
+    head = f"Renderbricker {VERSION}: converting"
     if sys.platform.startswith("win"):
         q = lambda x: '"' + x.replace("%", "%%") + '"'
         lines = ["@echo off", "chcp 65001 >nul", f"title Renderbricker {VERSION} headless: {stem}",
@@ -1344,7 +1344,7 @@ VERSION = ".".join(str(x) for x in bl_info["version"])
 
 
 class MECSUB_PT_panel(bpy.types.Panel):
-    bl_label = f"Renderbricker {VERSION} · rules {core.RULES_VERSION}"   # both in the header (user, runs 41/42)
+    bl_label = f"Renderbricker {VERSION}"   # version in the header (runs 41/42); the rules version stays internal (user, 2026-09-28)
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "Renderbricker"
@@ -1499,7 +1499,7 @@ def register():
     global core
     import importlib
     core = importlib.reload(core)
-    MECSUB_PT_panel.bl_label = f"Renderbricker {VERSION} · rules {core.RULES_VERSION}"
+    MECSUB_PT_panel.bl_label = f"Renderbricker {VERSION}"
     for c in classes:
         bpy.utils.register_class(c)
     bpy.types.Scene.mecsub = PointerProperty(type=MECSUB_Settings)

@@ -1,7 +1,7 @@
 # Reference – all settings
 
 The panel is in the 3D Viewport sidebar (press N), tab **Renderbricker**. Its header shows the
-add-on version and the version of the rule set ([RULES.md](RULES.md)). Defaults in brackets. The
+add-on version. Defaults in brackets. The
 tooltips in Blender say the same in short.
 
 ## Settings
