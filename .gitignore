@@ -1,0 +1,21 @@
+# Local model data – beside the code, never in the repository
+/00_Contents.md
+/01_Sources/
+/02_Imports/
+/03_Results/
+/04_Curation/
+/05_Videos/
+/06_User/
+*.blend
+*.blend1
+*.zmbx
+
+# Local R&D work folder (journals, runs, logs; has its own local git history)
+/_CLAUDE_/
+
+# Build output
+/addon/dist/
+
+# Python
+__pycache__/
+*.py[cod]
