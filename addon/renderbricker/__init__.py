@@ -1,9 +1,9 @@
 bl_info = {
     "name": "Renderbricker",
-    "author": "Renderbricks® – Michael Klein",
+    "author": "Renderbricks® – Prof. Michael Klein",
     "version": (1, 0, 0),
     "blender": (4, 5, 0),
-    "location": "3D Viewport > Sidebar > Renderbricks",
+    "location": "3D Viewport > Sidebar > Renderbricker",
     "description": "Creases and subdivision for imported Mecabricks parts: each mesh is processed once, "
                    "its links use the subdivided copy - the original mesh stays untouched",
     "doc_url": "https://github.com/Renderbricks/Renderbricker",
@@ -1321,7 +1321,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
     bl_label = f"Renderbricker {VERSION} · rules {core.RULES_VERSION}"   # both in the header (user, runs 41/42)
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "Renderbricks"
+    bl_category = "Renderbricker"
 
     def draw(self, context):
         s = context.scene.mecsub
@@ -1377,10 +1377,13 @@ class MECSUB_PT_panel(bpy.types.Panel):
                 r.operator("mecsub.select", text="", icon='RESTRICT_SELECT_OFF').obj = p.obj
             if len(s.problems) > 12:
                 box.label(text=f"... {len(s.problems) - 12} more")
-        L.label(text=COPYRIGHT)
+        col = L.column(align=True)
+        col.scale_y = 0.8
+        for line in COPYRIGHT.split(" – "):         # holder on its own line, the name is never split
+            col.label(text=line)
 
 
-COPYRIGHT = "© 2026 Renderbricks® – Michael Klein"
+COPYRIGHT = "© 2026 Renderbricks® – Prof. Michael Klein"
 TRADEMARK = "Renderbricks® is a registered trademark in Germany."
 DISCLAIMER = ("Renderbricks is about rendering digital LEGO®. LEGO is a trademark of the LEGO Group of companies "
               "which does not sponsor, authorize or endorse this add-on.")
@@ -1405,7 +1408,7 @@ class MECSUB_PT_about(bpy.types.Panel):
     bl_label = "About"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "Renderbricks"
+    bl_category = "Renderbricker"
     bl_parent_id = "MECSUB_PT_panel"
     bl_options = {'DEFAULT_CLOSED'}
 

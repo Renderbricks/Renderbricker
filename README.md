@@ -22,7 +22,7 @@ Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Meca
 
 1. Build the package: `python scripts/core/build_addon.py` → `addon/dist/renderbricker-<version>.zip`
 2. Blender: Edit → Preferences → Add-ons → Install from Disk → choose the zip, enable "Renderbricker"
-3. Panel: 3D Viewport → Sidebar (N) → Renderbricks
+3. Panel: 3D Viewport → Sidebar (N) → Renderbricker
 
 ## Usage
 
@@ -51,7 +51,7 @@ Model files, results and the development journal are kept locally beside the cod
 
 ## Author
 
-© 2026 Renderbricks® – Michael Klein, who has worked in CGI since 1987. Developed with Claude (Anthropic).
+© 2026 Renderbricks® – Prof. Michael Klein, who has worked in CGI since 1987. Developed with Claude (Anthropic).
 
 [www.renderbricks.com](https://www.renderbricks.com) · [Facebook](https://www.facebook.com/renderbricks) · [YouTube](https://www.youtube.com/@renderbricks)
 
