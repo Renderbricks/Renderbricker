@@ -43,9 +43,10 @@ Renderbricks one – nothing of yours is overwritten:
 
 - **ON** keeps the scene's camera, world and render settings, then makes the camera *Renderbricks*
   and a world *Renderbricks Sky* (Physical Sky) of its own active and takes over the render settings
-  of the Renderbricks setup scene. The first time, the camera is created as a three-quarter view from
-  the front right and moved so that all visible parts fill the picture with a small margin (clip end
-  1000, more for very large scenes). Your world stays in the file even while it is not used.
+  of the Renderbricks setup scene (Cycles, 1024 samples, 1920 × 1080, AgX Base Contrast, Physical Sky).
+  The first time, the camera is created with the direction and lens of the setup scene's camera and
+  moved so that all visible parts fill the picture with a small margin (clip end 1000, more for very
+  large scenes). Your world stays in the file even while it is not used.
 - **OFF** brings back your camera, world and render settings exactly as they were. The camera
   *Renderbricks* and the sky world stay in the file, so ON is quick the next time; a camera you moved
   stays where you put it.

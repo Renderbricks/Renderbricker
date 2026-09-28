@@ -3013,15 +3013,23 @@ def make_sky():
 
 def apply_template(scene, path):
     """Render settings and colour management of the first scene in the setup file; its world becomes
-    the add-on's sky (tagged, kept once). Returns the sky world taken over, or None."""
+    the add-on's sky (tagged, kept once), its camera gives direction and lens of the camera
+    "Renderbricks". Returns (sky world or None, camera settings or None)."""
     import os
     if not path or not os.path.isfile(path):
-        return None
+        return None, None
     with bpy.data.libraries.load(path, link=False) as (src, dst):
         dst.scenes = src.scenes[:1]
     if not dst.scenes or dst.scenes[0] is None:
-        return None
+        return None, None
     tpl = dst.scenes[0]
+    cam = tpl.camera
+    cam_set = None
+    if cam is not None and cam.type == 'CAMERA':
+        d = cam.data
+        # matrix_basis: loaded objects have no evaluated matrix_world yet (it read as the identity)
+        cam_set = {"rotation": tuple(cam.matrix_basis.to_euler()), "lens": d.lens, "sensor_width": d.sensor_width,
+                   "sensor_fit": d.sensor_fit, "clip_start": d.clip_start}
     for attr in RENDER_STRUCTS:
         copy_props(getattr(tpl, attr, None), getattr(scene, attr, None))
     if tpl.render.engine:
@@ -3034,7 +3042,7 @@ def apply_template(scene, path):
             bpy.data.objects.remove(o)
     if world is not None:
         world[SKY_TAG] = True
-    return world
+    return world, cam_set
 
 
 def visible_meshes(scene):
@@ -3074,8 +3082,10 @@ def frame_camera(scene, cam, depsgraph):
     return True
 
 
-def render_camera(scene, create=True):
-    """The camera "Renderbricks" (made when missing and create), linked to the scene. (camera, made)."""
+def render_camera(scene, create=True, setup=None):
+    """The camera "Renderbricks" (made when missing and create), linked to the scene; a new one takes
+    direction and lens of the setup scene's camera (setup), else Blender's default camera angle and
+    50 mm. (camera, made)."""
     cam = bpy.data.objects.get(CAMERA_NAME)
     made = False
     if (cam is None or cam.type != 'CAMERA') and create:
@@ -3083,6 +3093,13 @@ def render_camera(scene, create=True):
         data.lens = 50.0
         cam = bpy.data.objects.new(CAMERA_NAME, data)
         cam.rotation_euler = CAMERA_ANGLE
+        if setup:
+            cam.rotation_euler = setup["rotation"]
+            for k in ("lens", "sensor_width", "sensor_fit", "clip_start"):
+                try:
+                    setattr(data, k, setup[k])
+                except (KeyError, TypeError, ValueError):
+                    pass
         made = True
     if cam is not None and cam.name not in scene.objects:
         scene.collection.objects.link(cam)
@@ -3108,14 +3125,14 @@ def render_camera_on(scene, template="", depsgraph=None):
     if scene.world is not None:
         scene.world.use_fake_user = True    # an unused world would not be saved
     have = sky_world()
-    taken = apply_template(scene, template)
+    taken, cam_set = apply_template(scene, template)
     if taken is not None and have is not None and taken != have:
         bpy.data.worlds.remove(taken)       # the sky is in the file already
         taken = None
     sky = have or taken or make_sky()
     sky[SKY_TAG] = True
     scene.world = sky
-    cam, made = render_camera(scene)
+    cam, made = render_camera(scene, setup=cam_set)
     scene.camera = cam
     framed = False
     if made:
