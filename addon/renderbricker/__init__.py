@@ -150,6 +150,8 @@ class MECSUB_OT_render(bpy.types.Operator):
     use_viewport: bpy.props.BoolProperty(default=False)
 
     def invoke(self, context, event):
+        if core.render_camera_is_on(context.scene) and not self.animation:    # the view's own slot
+            set_render_slot(context.scene.get("rb_camera_view", "FRONT"))
         _swap_to_render(context.scene)
         _RENDER_OP[0] = True
         try:
@@ -178,6 +180,143 @@ class MECSUB_OT_render(bpy.types.Operator):
             bpy.context.scene.mecsub.wt_rendered = True
         except (AttributeError, ReferenceError):
             pass
+        return {'FINISHED'}
+
+
+def _view3d_override():
+    """Window and 3D view for starting a render outside an operator (the timer of the view chain)."""
+    wm = bpy.context.window_manager
+    want = _VIEWS.get("window")
+    wins = sorted(wm.windows, key=lambda w: w.as_pointer() != want)
+    for w in wins:
+        for a in w.screen.areas:
+            if a.type == 'VIEW_3D':
+                return {"window": w, "area": a}
+    return {"window": wins[0]} if wins else {}
+
+
+def ensure_render_result(override=None):
+    """The image "Render Result" only exists after the first render; without it no slot can be chosen
+    and the first render would always land in slot 1. Showing the render view creates it."""
+    img = bpy.data.images.get("Render Result")
+    if img is None:
+        try:
+            with bpy.context.temp_override(**(override or {})):
+                bpy.ops.render.view_show('INVOKE_DEFAULT')
+        except (RuntimeError, TypeError):
+            pass
+        img = bpy.data.images.get("Render Result")
+    return img if img is not None and img.type == 'RENDER_RESULT' else None
+
+
+def set_render_slot(view, override=None):
+    """The render camera's views each render into a slot of their own (user, 2026-09-28): Slot 1 Front,
+    2 Right, 3 Back, 4 Left, 5 Top, 6 Bottom; the slots are named after the views."""
+    img = ensure_render_result(override)
+    if img is None:
+        return None
+    keys = [k for k, _label, _d in core.CAMERA_VIEWS]
+    for i, (_k, label, _d) in enumerate(core.CAMERA_VIEWS):
+        if i < len(img.render_slots):
+            img.render_slots[i].name = label
+    i = keys.index(view) if view in keys else 0
+    if i < len(img.render_slots):
+        img.render_slots.active_index = i
+    return i
+
+
+# The chain of the six views runs on a timer, not in a modal operator: a render started while the
+# event system hands a timer event through the panels crashed Blender 5.2.2 in ui::handler_panel
+# (the render window changes the screen under the running handler loop). Esc in the render window
+# cancels the running render; the render_cancel handler then stops the chain.
+_VIEWS = {}
+
+
+@persistent
+def _views_cancelled(scene, *args):
+    if _VIEWS.get("running"):
+        _VIEWS["cancelled"] = True
+
+
+def _views_tick():
+    if not _VIEWS.get("running"):
+        return None
+    if bpy.app.is_job_running('RENDER'):
+        return 0.25
+    try:
+        sc = bpy.data.scenes[_VIEWS["scene"]]
+    except KeyError:
+        _VIEWS.clear()
+        return None
+    if _VIEWS["rendering"]:
+        _VIEWS["rendering"] = False
+        if not _VIEWS["cancelled"]:
+            _VIEWS["done"] += 1
+    if _VIEWS["cancelled"] or not _VIEWS["queue"]:
+        _views_finish(sc)
+        return None
+    view = _VIEWS["queue"].pop(0)
+    ov = _view3d_override()
+    core.camera_view(sc, view, bpy.context.evaluated_depsgraph_get())
+    set_render_slot(view, ov)
+    sc.mecsub.progress_text = f"Rendering view {6 - len(_VIEWS['queue'])} / 6: {view.title()}"
+    try:
+        with bpy.context.temp_override(**ov):
+            r = bpy.ops.render.render('INVOKE_DEFAULT', use_viewport=True)
+    except RuntimeError as e:
+        print("Renderbricker: render of view", view, "not started:", e)
+        r = {'CANCELLED'}
+    if 'RUNNING_MODAL' in r or bpy.app.is_job_running('RENDER'):
+        _VIEWS["rendering"] = True
+    elif 'FINISHED' in r:
+        _VIEWS["done"] += 1
+    else:
+        _VIEWS["cancelled"] = True
+    return 0.25
+
+
+def _views_finish(sc):
+    _swap_back()
+    _RENDER_OP[0] = False
+    done, cancelled = _VIEWS["done"], _VIEWS["cancelled"]
+    core.camera_view(sc, _VIEWS["start_view"], bpy.context.evaluated_depsgraph_get())
+    _VIEWS.clear()
+    sc["rb_views_rendered"] = done
+    sc.mecsub.summary = f"{done} of 6 views rendered into the slots of the Render window" + (
+        " (stopped)" if cancelled else "")
+    sc.mecsub.progress_text = ""
+    try:
+        sc.mecsub.wt_rendered = True
+    except (AttributeError, ReferenceError):
+        pass
+    print("Renderbricker:", sc.mecsub.summary)
+    for w in bpy.context.window_manager.windows:
+        for a in w.screen.areas:
+            a.tag_redraw()
+
+
+class MECSUB_OT_render_views(bpy.types.Operator):
+    bl_idname = "mecsub.render_views"
+    bl_label = "Render all views"
+    bl_description = ("Render the six views of the render camera one after the other with the render level, each "
+                      "into its own slot of the Render window (Slot 1 Front ... Slot 6 Bottom). Esc in the Render "
+                      "window stops the chain; the camera returns to the view it had")
+
+    @classmethod
+    def poll(cls, context):
+        return (core.render_camera_is_on(context.scene) and not bpy.app.is_job_running('RENDER')
+                and not _VIEWS.get("running"))
+
+    def execute(self, context):
+        sc = context.scene
+        sc.pop("rb_views_rendered", None)
+        _VIEWS.clear()
+        _VIEWS.update(running=True, scene=sc.name, start_view=sc.get("rb_camera_view", "FRONT"),
+                      queue=[k for k, _label, _d in core.CAMERA_VIEWS], rendering=False, cancelled=False,
+                      done=0, window=context.window.as_pointer() if context.window else 0)
+        _swap_to_render(sc)
+        _RENDER_OP[0] = True
+        bpy.app.timers.register(_views_tick, first_interval=0.05)
         return {'FINISHED'}
 
 
@@ -507,6 +646,7 @@ def draw_render_camera(L, context, render_button=True):
         row.scale_y = 1.3
         op = row.operator("mecsub.render", text="Render (F12)", icon='RENDER_STILL')
         op.use_viewport = True
+        row.operator("mecsub.render_views", text="All views", icon='RENDERLAYERS')
 
 
 LOG_SUFFIX = "_Renderbricker.log"       # capital R (user, 2026-09-28; before: _renderbricker.log)
@@ -2170,7 +2310,8 @@ classes = (MECSUB_Problem, MECSUB_CollectionItem, MECSUB_Settings, MECSUB_UL_col
            MECSUB_OT_remove, MECSUB_OT_select, MECSUB_OT_headless, MECSUB_PT_panel, MECSUB_OT_move_cache, MECSUB_OT_copy_cache,
            MECSUB_OT_cache_switch, MECSUB_OT_render, MECSUB_PT_about,
            MECSUB_OT_guide_start, MECSUB_OT_guide_nav, MECSUB_OT_guide_exit, MECSUB_OT_level_confirm,
-           MECSUB_OT_frame_camera, MECSUB_OT_render_camera, MECSUB_OT_camera_view, MECSUB_OT_samples)
+           MECSUB_OT_frame_camera, MECSUB_OT_render_camera, MECSUB_OT_camera_view, MECSUB_OT_samples,
+           MECSUB_OT_render_views)
 
 
 @persistent
@@ -2212,7 +2353,8 @@ def _unlock(*args):
 
 
 HANDLERS = ((bpy.app.handlers.render_pre, _render_pre), (bpy.app.handlers.render_post, _render_post),
-            (bpy.app.handlers.render_cancel, _render_post), (bpy.app.handlers.load_post, _unlock))
+            (bpy.app.handlers.render_cancel, _render_post), (bpy.app.handlers.load_post, _unlock),
+            (bpy.app.handlers.render_cancel, _views_cancelled))
 
 def register():
     # always load the rule module fresh: re-enabling or Reload Scripts kept the old one
@@ -2247,6 +2389,9 @@ def unregister():
         except (ReferenceError, RuntimeError):
             pass
     _keymaps.clear()
+    if bpy.app.timers.is_registered(_views_tick):
+        bpy.app.timers.unregister(_views_tick)
+    _VIEWS.clear()
     bpy.types.TOPBAR_MT_render.remove(_render_menu)
     for lst, fn in HANDLERS:
         if fn in lst:

@@ -58,7 +58,8 @@ Renderbricks one – nothing of yours is overwritten:
 - The **camera button** next to it frames the camera *Renderbricks* again, e.g. after adding parts.
 - **Samples:** Low 128, Medium 256, Good 512, High 1024 set the render samples (Cycles and EEVEE)
   while the render camera is on; the current level is highlighted. OFF brings your own samples back.
-- **Render (F12)** below renders through the camera *Renderbricks* with the render level.
+- **Render (F12)** below renders through the camera *Renderbricks* with the render level, into the slot of the current view: Slot 1 Front, 2 Right, 3 Back, 4 Left, 5 Top, 6 Bottom (the slots of the Render window carry the names of the views, so earlier views stay there to compare).
+- **All views** renders the six views one after the other, each into its slot; the camera then returns to the view it had. Esc in the Render window stops the running view and the chain.
 - **Only some collections:** the camera icon of a collection in the *Collection* list marks it for the
   render camera (one or several). With the camera on, only the marked collections are shown and
   rendered, and the camera frames them; marking or unmarking while it is on updates at once. OFF
