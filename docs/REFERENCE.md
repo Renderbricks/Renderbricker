@@ -8,7 +8,7 @@ tooltips in Blender say the same in short.
 
 | Setting | Default | What it does |
 |---|---|---|
-| **All / Selected** | All | Which mesh objects Apply, Check, On/Off, Levels and Remove work on: every mesh object in the scene, or the selected ones. With *Selected*, only the selected links switch to the copy; other links of the same part keep the original until they are converted too. |
+| **All / Selected / Collection** | All | Which mesh objects Apply, Check, On/Off, Levels and Remove work on: every mesh object in the scene, the selected ones, or the ones in a chosen collection and its child collections (the field below *Collection*; when it is empty, the collection active in the Outliner is taken). Only the links in scope switch to the copy; other links of the same part keep the original until they are converted too. *Convert headless* always converts the whole scene. |
 | **Variant** | A – Mecabricks normals | **A:** the subdivision interpolates the custom normals of the import – the shading stays as Mecabricks made it, logos on studs look soft. **B – geometric normals:** normals of the smoothed surface, creased edges sharp – crisper logos, but the shading of the import is not kept. |
 | **Viewport** level | 1 | Subdivision shown in the viewport. 0 shows the original mesh (no viewport copy is stored – the file gets about a fifth smaller). Levels already baked switch at once, others are computed the first time (with a progress bar). |
 | **Render** level | 2 | Subdivision used for rendering; the checks use this level. |

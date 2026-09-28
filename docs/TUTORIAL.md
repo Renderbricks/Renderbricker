@@ -67,7 +67,8 @@ the scene when it is done – the scene needs a file first.
 
 **What it is for:** the defaults suit most scenes; here is what they mean.
 
-1. **All** – every part of the scene. *Selected* converts only the selected objects.
+1. **All** – every part of the scene. *Selected* converts only the selected objects, *Collection*
+   the parts of one collection (with its child collections) – choose it in the field below.
 2. **A – Mecabricks normals** – keeps the shading of the import. *B* gives crisper logos.
 3. **Viewport 1 / Render 2** – smooth enough to judge the viewport, full quality in the render.
 4. **Use several cores** – on; larger scenes run in parallel background Blenders.

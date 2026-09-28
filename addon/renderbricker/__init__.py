@@ -27,7 +27,12 @@ else:
 # ---------------------------------------------------------------- helpers
 def targets(context):
     s = context.scene.mecsub
-    obs = context.selected_objects if s.scope == 'SELECTED' else context.scene.objects
+    if s.scope == 'SELECTED':
+        obs = context.selected_objects
+    elif s.scope == 'COLLECTION':           # the collection and its child collections, objects of this scene
+        obs = [o for o in s.collection.all_objects if context.scene.objects.get(o.name) is o] if s.collection else []
+    else:
+        obs = context.scene.objects
     return [o for o in obs if o.type == 'MESH' and o.data.polygons and not core.is_master(o)
             and o.name != core.WORK_NAME]
 
@@ -302,9 +307,30 @@ def save_after_cache(op, context):
     bpy.app.timers.register(later, first_interval=0.2)
 
 
+def _scope_update(self, context):
+    """Collection chosen without a collection yet: take the active one of the Outliner."""
+    if self.scope == 'COLLECTION' and self.collection is None:
+        c = context.collection
+        if c is not None and c != context.scene.collection:
+            self.collection = c
+
+
+def scope_empty_text(context):
+    s = context.scene.mecsub
+    if s.scope == 'COLLECTION' and s.collection is None:
+        return "Choose a collection first"
+    return "No mesh objects in scope"
+
+
 class MECSUB_Settings(bpy.types.PropertyGroup):
-    scope: EnumProperty(name="Scope", items=[('ALL', "All", "Every mesh object in the scene"),
-                                            ('SELECTED', "Selected", "Selected mesh objects only")], default='ALL')
+    scope: EnumProperty(name="Scope", items=[
+        ('ALL', "All", "Every mesh object in the scene"),
+        ('SELECTED', "Selected", "Selected mesh objects only"),
+        ('COLLECTION', "Collection", "Mesh objects in the chosen collection and its child collections")],
+        default='ALL', update=_scope_update)
+    collection: PointerProperty(type=bpy.types.Collection, name="Collection",
+                                description="Apply, Check, On/Off, Levels and Remove work on the parts in this "
+                                            "collection and its child collections")
     variant: EnumProperty(name="Variant", items=[
         ('A', "A - Mecabricks normals", "Subdivision interpolates the imported custom normals (soft logo)"),
         ('B', "B - geometric normals", "Normals of the smoothed surface, creased edges sharp (crisp logo)")], default='A')
@@ -581,7 +607,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         s = context.scene.mecsub
         self.items = list(by_mesh(targets(context)).items())
         if not self.items:
-            self.report({'WARNING'}, "No mesh objects in scope")
+            self.report({'WARNING'}, scope_empty_text(context))
             return False
         core.LEVELS = s.render_level                    # the checks run at the render level
         core.VIEW_LEVEL, core.RENDER_LEVEL = s.view_level, s.render_level
@@ -1337,6 +1363,8 @@ class MECSUB_PT_panel(bpy.types.Panel):
         body.enabled = not s.running
         col = body.column(align=True)
         col.prop(s, "scope", expand=True)
+        if s.scope == 'COLLECTION':
+            col.prop(s, "collection", text="", icon='OUTLINER_COLLECTION')
         body.prop(s, "variant", text="")
         col = body.column(align=True)
         col.label(text="Subdivision levels")
