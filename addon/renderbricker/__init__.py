@@ -1383,7 +1383,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
 COPYRIGHT = "© 2026 Renderbricks® – Michael Klein"
 TRADEMARK = "Renderbricks® is a registered trademark in Germany."
 DISCLAIMER = ("Renderbricks is about rendering digital LEGO®. LEGO is a trademark of the LEGO Group of companies "
-              "which does not sponsor, authorize or endorse this site.")
+              "which does not sponsor, authorize or endorse this add-on.")
 LINKS = (("www.renderbricks.com", "https://www.renderbricks.com", 'URL'),
          ("Facebook", "https://www.facebook.com/renderbricks", 'COMMUNITY'),
          ("YouTube", "https://www.youtube.com/@renderbricks", 'PLAY'),
