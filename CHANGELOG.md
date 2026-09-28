@@ -1,8 +1,11 @@
 # Changelog
 
-Functional changes of the add-on "Renderbricks: Mecabricks Subdiv". Rules versions refer to [docs/RULES.md](docs/RULES.md).
+All notable changes to this project are documented here. The project follows
+[Semantic Versioning](https://semver.org/): PATCH for fixes, MINOR for new features, MAJOR for
+changes that break existing scenes or settings. Only changes to the add-on itself are listed;
+documentation changes are not. Rules versions refer to [docs/RULES.md](docs/RULES.md).
 
-## 1.0.0 – 2026-09-28 (rules 3.2)
+## [1.0.0] – 2026-09-28 (rules 3.2)
 
 First release.
 
