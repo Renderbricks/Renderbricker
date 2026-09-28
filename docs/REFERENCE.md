@@ -57,6 +57,9 @@ Renderbricks one – nothing of yours is overwritten:
   its view and overlays from before. The camera
   *Renderbricks* and the sky world stay in the file, so ON is quick the next time; a camera you moved
   stays where you put it.
+- **ON again** brings back the Renderbricks settings you had at the last OFF (samples, Transparent,
+  Resolution Scale, the view, the sun …) – they are kept in the scene, also after saving.
+  **Shift+click** on ON starts fresh from the setup scene (samples on *Low*).
 - The **camera button** next to it frames the camera *Renderbricks* again, e.g. after adding parts.
 - **Samples:** Low 128, Medium 256, Good 512, High 1024 set the render samples (Cycles and EEVEE)
   while the render camera is on; the current level is highlighted, ON starts on *Low*. OFF brings

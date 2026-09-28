@@ -2914,6 +2914,7 @@ def say(msg):
 CAMERA_NAME = "Renderbricks"
 SKY_NAME = "Renderbricks Sky"
 START_SAMPLES = 128                     # render camera ON starts on Low (user, 2026-09-28)
+LAST_KEY = "rb_render_last"             # scene: the Renderbricks render settings at the last OFF
 SKY_TAG = "rb_sky"                      # the world made or taken over by the add-on
 CAMERA_ANGLE = (1.1093, 0.0, 0.8149)    # Blender's default camera: three-quarter view from the front right
 CAMERA_MARGIN = 1.05                    # 5 % around the model
@@ -3468,7 +3469,7 @@ def render_camera_is_on(scene):
     return bool(scene.get("rb_render_on"))
 
 
-def render_camera_on(scene, template="", depsgraph=None, collections=None):
+def render_camera_on(scene, template="", depsgraph=None, collections=None, fresh=False):
     """Keep the scene's camera, world and render settings, then make the camera "Renderbricks" and the
     world "Renderbricks Sky" active and take over the setup scene's render settings. A new camera is
     framed; an existing one stays where it is. Returns a short text for the summary."""
@@ -3490,10 +3491,15 @@ def render_camera_on(scene, template="", depsgraph=None, collections=None):
     sky = have or taken or make_sky()
     sky[SKY_TAG] = True
     scene.world = sky
-    for owner, prop in (("cycles", "samples"), ("eevee", "taa_render_samples")):   # start on Low (user)
-        st = getattr(scene, owner, None)
-        if st is not None and hasattr(st, prop):
-            setattr(st, prop, START_SAMPLES)
+    last = None if fresh else scene.get(LAST_KEY)
+    if last:                            # the settings of the last OFF again (user, 2026-09-28)
+        for a, snap in json.loads(last).items():
+            restore_props(getattr(scene, a, None), snap)
+    else:                               # the first time (or fresh): the setup scene, samples on Low
+        for owner, prop in (("cycles", "samples"), ("eevee", "taa_render_samples")):
+            st = getattr(scene, owner, None)
+            if st is not None and hasattr(st, prop):
+                setattr(st, prop, START_SAMPLES)
     cam, made = render_camera(scene, setup=cam_set)
     scene.camera = cam
     hidden = isolate(scene, collections)    # only these collections shown and rendered
@@ -3515,7 +3521,8 @@ def render_camera_on(scene, template="", depsgraph=None, collections=None):
                                                        " framed" if framed else "")
             + (", portrait 9:16" if portrait else ", landscape 16:9")
             + (f", only {', '.join(c.name for c in collections)}" if collections else "")
-            + f", world {scene.world.name}" + (", render settings of the setup scene" if used else "")
+            + f", world {scene.world.name}" + (", your last Renderbricks settings" if last else
+                                               ", render settings of the setup scene" if used else "")
             + (f"; {sky_note}" if sky_note else ""))
 
 
@@ -3525,6 +3532,7 @@ def render_camera_off(scene):
     if not render_camera_is_on(scene):
         return "render camera already off"
     before = json.loads(scene.get("rb_render_before", "{}"))
+    scene[LAST_KEY] = json.dumps({a: snapshot_props(getattr(scene, a, None)) for a in RENDER_STRUCTS})
     unisolate(scene)
     for a, snap in before.get("settings", {}).items():
         restore_props(getattr(scene, a, None), snap)

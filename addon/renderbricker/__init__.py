@@ -557,8 +557,14 @@ class MECSUB_OT_render_camera(bpy.types.Operator):
     bl_description = ("ON: the camera \"Renderbricks\" (framing the whole model) and the world \"Renderbricks Sky\" "
                       "(Physical Sky) become active and the Renderbricks render settings are taken over. OFF: the "
                       "scene's camera, world and render settings from before come back - nothing of your own setup "
-                      "is overwritten")
+                      "is overwritten. ON again brings back the settings you had at the last OFF (samples, "
+                      "Transparent, Resolution Scale ...); Shift+click starts fresh from the setup scene")
     bl_options = {'REGISTER', 'UNDO'}
+    fresh: bpy.props.BoolProperty(default=False, options={'SKIP_SAVE'})
+
+    def invoke(self, context, event):
+        self.fresh = event.shift
+        return self.execute(context)
 
     def execute(self, context):
         object_mode(context)
@@ -568,7 +574,7 @@ class MECSUB_OT_render_camera(bpy.types.Operator):
             viewport_camera(context, False)
         else:
             text = core.render_camera_on(sc, setup_blend(), context.evaluated_depsgraph_get(),
-                                         camera_collections(sc.mecsub))
+                                         camera_collections(sc.mecsub), fresh=self.fresh)
             viewport_camera(context, True)
         context.scene.mecsub.summary = text
         self.report({'INFO'}, "Renderbricker: " + text)
