@@ -2035,8 +2035,8 @@ def subdiv_node_group():
         L.new(gi.outputs["Geometry"], sd.inputs["Mesh"])
         L.new(ce.outputs["Attribute"], sd.inputs["Edge Crease"])
         L.new(cv.outputs["Attribute"], sd.inputs["Vertex Crease"])
-        L.new(sd.outputs["Mesh"], ss.inputs["Mesh"])
-        L.new(ss.outputs["Mesh"], go.inputs["Geometry"])
+        L.new(sd.outputs["Mesh"], ss.inputs[0])            # Set Shade Smooth: "Geometry" up to 4.5, "Mesh" from 5.0
+        L.new(ss.outputs[0], go.inputs["Geometry"])
     bs = ng.nodes["Subdivision"].inputs["Boundary Smooth"]
     if bs.default_value != 'All':           # groups from before run 42 still say Keep Corners
         bs.default_value = 'All'
@@ -2080,8 +2080,10 @@ def smooth_node_group():
         ss.domain = 'FACE'
         ss.inputs["Shade Smooth"].default_value = True
         gi.location, ss.location, go.location = (-300, 0), (0, 0), (300, 0)
-        ng.links.new(gi.outputs["Geometry"], ss.inputs["Mesh"])
-        ng.links.new(ss.outputs["Mesh"], go.inputs["Geometry"])
+        # the geometry socket is the first one; it is called "Geometry" up to Blender 4.5 and
+        # "Mesh" from 5.0 (CI, Blender 4.5.14: KeyError 'Mesh' in variant B)
+        ng.links.new(gi.outputs[0], ss.inputs[0])
+        ng.links.new(ss.outputs[0], go.inputs[0])
     return ng
 
 # ---------------------------------------------------------------- cache file (run 62)
