@@ -3079,8 +3079,8 @@ def frame_camera(scene, cam, depsgraph):
     r = float(np.linalg.norm(pts - c, axis=1).max())
     d = (Vector(loc) - Vector(c.tolist())).length
     cam.data.clip_end = max(CLIP_END, 2.0 * (d + r))     # very large scenes: nothing cut off
-    # very small scenes (NINJAGO City imported at scale 0.001: 0.6 units high): the near clip stays
-    # in front of the model
+    # scenes at real size (NINJAGO City imported under an empty at scale 0.001 = metric like the real
+    # set, 0.63 m high): the near clip stays in front of the model
     cam.data.clip_start = min(cam.data.clip_start, max(1e-4, 0.5 * (d - r)))
     return True
 
