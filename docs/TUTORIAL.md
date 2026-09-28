@@ -6,7 +6,11 @@
 (the text column at 2x); made with the scripts in _CLAUDE_/scripts/tutorial (local). -->
 
 This tuto­rial takes you through the whole work­flow once, step by step. It uses the *Italian
-Riviera* as example – a Mecabricks scene with 3297 parts of 810 dif­fer­ent kinds.
+Riviera* as example – a [Mecabricks](https://www.mecabricks.com) scene with 3297 parts of 810
+dif­fer­ent kinds.
+
+> **Example scene:** [Italian Riviera](https://www.mecabricks.com/en/models/qxv4E8VdadJ) by
+> **Scrubs**, the devel­oper of [Mecabricks](https://www.mecabricks.com) – thank you for the model.
 
 **You need:** Blender 4.5 LTS or newer with the add-on installed ([Install](#0-install-the-add-on)),
 and a scene built in [Mecabricks](https://www.mecabricks.com) and imported into Blender with the
@@ -57,7 +61,8 @@ Con­tents: [0 Install](#0-install-the-add-on) · [1 Open and save](#step-1-open
 **What it is for:** the add-on writes its copies into a cache file next to the scene and saves
 the scene when it is done – the scene needs a file first.
 
-Open the imported scene – here the *Italian Riviera*, as it came from Mecabricks.
+Open the imported scene – here the [*Italian Riviera*](https://www.mecabricks.com/en/models/qxv4E8VdadJ),
+as it came from [Mecabricks](https://www.mecabricks.com).
 
 ![The Italian Riviera with the sidebar tab Renderbricker (1) and Start Guide (2)](images/tutorial/T02_open.webp)
 
@@ -203,6 +208,24 @@ For a quick picture of the model, use the **render camera**:
 slots below in about two minutes.
 
 ![All views: the six slots of the Render window](images/tutorial/T08b_all_views.webp)
+
+### The quality in detail
+
+The same Front view at 8K (7680 × 4320) with 512 samples – about five minutes on an RTX 5090 – and
+four parts of it at full size (1:1):
+
+![The 8K render with the four details (1–4)](images/tutorial/T08c_overview.webp)
+
+![Detail 1: the roof tiles](images/tutorial/T08c_crop1.webp)
+
+![Detail 2: the balcony](images/tutorial/T08c_crop2.webp)
+
+![Detail 3: the square](images/tutorial/T08c_crop3.webp)
+
+![Detail 4: the boat](images/tutorial/T08c_crop4.webp)
+
+Round shapes are round – the tiles, the life ring, the rim of the boat, the studs with their logo –
+while the edges that are sharp on the real bricks stay sharp.
 
 ---
 

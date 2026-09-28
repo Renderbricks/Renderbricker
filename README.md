@@ -65,6 +65,12 @@ Model files, results and the development journal are kept locally beside the cod
 
 Renderbricks® is a registered trademark in Germany.
 
+## Credits
+
+The example scene of the [Tutorial](docs/TUTORIAL.md) is the
+[Italian Riviera](https://www.mecabricks.com/en/models/qxv4E8VdadJ) by **Scrubs**, the developer of
+[Mecabricks](https://www.mecabricks.com) – thank you for the model.
+
 ## License
 
 GPL-3.0-or-later, see [LICENSE](LICENSE).
