@@ -2637,6 +2637,24 @@ def _assign(users, weight, n):
     return part
 
 
+def load_share(source, names):
+    """A worker's meshes from the scene file into this empty Blender (run 119): linked (reading only
+    them is fast, append of a whole scene took 174 s for Dungeon), then made local so they can take
+    their creases. Objects, cameras and lights stay in the file - the worker bakes meshes only; the
+    materials come along linked and are taken off the copies before they are written.
+    Returns (users {mesh: []}, weight, total weight) in the order of `names`."""
+    want = set(names)
+    with bpy.data.libraries.load(source, link=True) as (src, dst):
+        dst.meshes = [n for n in src.meshes if n in want]
+    for me in list(bpy.data.meshes):
+        if me.library is not None and me.name in want:
+            me.make_local()
+    by_name = {me.name: me for me in bpy.data.meshes if me.library is None}
+    users = {by_name[n]: [] for n in names if n in by_name}
+    weight = {me: len(me.polygons) + 50 for me in users}
+    return users, weight, sum(weight.values()) or 1
+
+
 def scene_memory_gb():
     """Memory a worker needs for the open scene alone (run 117: within +0.3 / -0.1 GB of the measured
     load of six scenes; the image term is on the safe side for scenes with few large images)."""
@@ -2654,6 +2672,7 @@ def workers_memory_gb(n, meshes, scene_gb=None):
     if scene_gb is None:
         scene_gb = scene_memory_gb()
     faces = sum(len(me.polygons) for me in meshes)
+    scene_gb = SCENE_GB_BASE + (scene_gb - SCENE_GB_BASE) / max(1, n)     # only its share (run 119)
     bake = max(BAKE_GB_FLOOR, min(BAKE_GB_CAP, BAKE_GB_PER_MFACE * faces / 1e6 / max(1, n)))
     largest = max((memory_need_gb(me, max(2, RENDER_LEVEL)) for me in meshes), default=0.0)
     return TOGETHER * n * (scene_gb + bake) + max(0.0, largest - bake)
@@ -2695,7 +2714,7 @@ def resolve_jobs(value, n_meshes, meshes=None):
             break
     need = workers_memory_gb(n, meshes, scene_gb)
     LAST_MEMORY_PLAN[0] = (f"{n} Blenders: about {need:.0f} GB of {free:.0f} GB free "
-                           f"(scene {scene_gb:.1f} GB each, at most {top} by cores and parts)")
+                           f"(scene {scene_gb:.1f} GB, shared among them; at most {top} by cores and parts)")
     return n
 
 
@@ -2772,15 +2791,18 @@ class Workers:
         self.q = queue.Queue()
         self.done, self.done_w, self.skipped, self.errors, self.retired = [], 0, [], [], 0
         self.peaks = []                 # memory peak of every worker in GB (PEAK lines, run 117)
-        extra = []
-        if names is not None:           # only these meshes (Apply on a selection)
-            pm = os.path.join(self.tmp, "meshes.json")
-            json.dump(sorted(names), open(pm, "w", encoding="utf-8"))
-            extra = ["--meshes", pm]
+        # every worker gets the names of its share and loads only these meshes into an empty Blender
+        # instead of opening the whole scene (run 119: Dungeon 2.9 GB per worker -> 0.6 GB for a quarter)
+        todo = {me: obs for me, obs in users.items() if names is None or me.name in set(names)}
+        part = _assign(todo, self.weight, jobs)
+        source = scene_path or bpy.data.filepath
         self.procs = []
         for i in range(jobs):
-            cmd = [bpy.app.binary_path, "-b", "--factory-startup", scene_path or bpy.data.filepath, "--python",
-                   os.path.abspath(__file__), "--"] + list(opts) + extra + [
+            share = os.path.join(self.tmp, f"share{i}.json")
+            json.dump(sorted(n for n, k in part.items() if k == i), open(share, "w", encoding="utf-8"))
+            cmd = [bpy.app.binary_path, "-b", "--factory-startup", "--python",
+                   os.path.abspath(__file__), "--"] + list(opts) + [
+                   "--source", source, "--share", share,
                    "--worker", str(i), str(jobs), self.part(i, "blend"), self.part(i, "json")]
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             pr = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -3670,11 +3692,16 @@ def main():
         i, n, out_blend, out_json = int(args[k + 1]), int(args[k + 2]), args[k + 3], args[k + 4]
         if os.environ.get("RENDERBRICKER_TEST_SHORT_WORKER") == str(i):     # CI: this worker has no memory
             FREE_OVERRIDE[0] = 0.0
-        if "--meshes" in args:      # Apply on a selection: only these meshes
-            keep = set(json.load(open(args[args.index("--meshes") + 1], encoding="utf-8")))
-            users = {me: obs for me, obs in users.items() if me.name in keep}
-        part = _assign(users, weight, n)
-        pick = [me for me in users if part[me.name] == i]
+        if "--share" in args:       # only the meshes of this worker, from the scene file (run 119)
+            share = json.load(open(args[args.index("--share") + 1], encoding="utf-8"))
+            users, weight, total_w = load_share(args[args.index("--source") + 1], share)
+            pick = list(users)
+        else:                       # the whole scene was opened (before run 119)
+            if "--meshes" in args:      # Apply on a selection: only these meshes
+                keep = set(json.load(open(args[args.index("--meshes") + 1], encoding="utf-8")))
+                users = {me: obs for me, obs in users.items() if me.name in keep}
+            part = _assign(users, weight, n)
+            pick = [me for me in users if part[me.name] == i]
         # the copies are written in batches and freed (run 61): kept to the end, 8 workers on
         # Dungeon (3.4 M faces) used up the memory and skipped 236 meshes
         pending, batch = [], [0]
