@@ -2470,12 +2470,71 @@ NAME_DROP = 1.15                        # header: height of the name's box - the
 HEADER_LOGO_SCALE = 1.15               # header: the logo 15 % larger than an icon
 LOGO_SCALE = 4.37                       # About: the logo as wide as "Renderbricks®" below it (icon units)
 TRADEMARK = ("Renderbricks®", "is a registered word mark in Germany.")   # the name alone under the logo (user)
-DISCLAIMER = ("Renderbricks is about rendering digital LEGO®. LEGO® is a trademark of the LEGO Group of companies "
-              "which does not sponsor, authorize or endorse this add-on.")
+DISCLAIMER = ("Ren|der|bricks is about ren|der|ing dig|i|tal LEGO®. LEGO® is a trade|mark of the LEGO Group of "
+              "com|pa|nies which does not spon|sor, au|tho|rize or en|dorse this add-on.")   # | = hyphenation point
 LINKS = (("www.renderbricks.com", "https://www.renderbricks.com", 'URL'),
          ("Facebook", "https://www.facebook.com/renderbricks", 'COMMUNITY'),
          ("YouTube", "https://www.youtube.com/@renderbricks", 'PLAY'),
          ("Renderbricker on GitHub", "https://github.com/Renderbricks/Renderbricker", 'HELP'))
+
+
+def justified(layout, text, context):
+    """Text in a block: lines as wide as the panel, the space between the words widened with thin and hair
+    spaces (Blender labels have no justification), long words broken at their hyphenation points ("|" in
+    the text) - the legal texts of About (user, 2026-09-29)."""
+    import blf
+    pref = context.preferences
+    size = pref.ui_styles[0].widget.points * pref.system.ui_scale
+    blf.size(0, size)
+    wid = lambda t: blf.dimensions(0, t)[0]
+    region = context.region.width if context.region else 300
+    avail = region - 53 * pref.system.ui_scale            # the width of the buttons above (measured)
+    space = wid(" ")
+    fills = sorted(((wid(c), c) for c in (chr(0x2005), chr(0x2009), chr(0x200a)) if wid(c) > 0), reverse=True)   # 4/6, thin, hair space
+    words = text.split(" ")
+    lines, cur = [], []
+    while words:
+        w = words.pop(0)
+        parts = w.split("|")
+        plain = "".join(parts)
+        if not cur or wid(" ".join(cur + [plain])) <= avail:
+            if wid(" ".join(cur + [plain])) <= avail:
+                cur.append(plain)
+                continue
+        broke = False
+        for k in range(len(parts) - 1, 0, -1):      # a hyphenation point that lets the line end there
+            head = "".join(parts[:k]) + "-"
+            if cur and wid(" ".join(cur + [head])) <= avail:
+                cur.append(head)
+                words.insert(0, "|".join(parts[k:]))
+                broke = True
+                break
+        lines.append(cur)
+        cur = [] if broke else [plain]
+    if cur:
+        lines.append(cur)
+    col = layout.column(align=True)
+    col.scale_y = 0.8
+    for n, line in enumerate(lines):
+        last = n == len(lines) - 1
+        if last or len(line) < 2:
+            col.label(text=" ".join(line))
+            continue
+        gaps = len(line) - 1
+        extra = avail - wid(" ".join(line))
+        out = line[0]
+        given = 0.0
+        for i in range(gaps):
+            want = extra * (i + 1) / gaps - given            # this gap's share of the room left over
+            pad = ""
+            rest = want
+            for fw, ch in fills:
+                while rest >= fw and fw > 0:
+                    pad += ch
+                    rest -= fw
+            given += want - rest
+            out += " " + pad + line[i + 1]
+        col.label(text=out)
 
 
 def wrapped(layout, text, context, center=False):
@@ -2513,7 +2572,7 @@ class MECSUB_PT_about(bpy.types.Panel):
         col = L.column(align=True)
         for text, url, icon in LINKS:
             col.operator("wm.url_open", text=text, icon=icon).url = url
-        wrapped(L, DISCLAIMER, context)
+        justified(L, DISCLAIMER, context)
 
 
 classes = (MECSUB_Problem, MECSUB_CollectionItem, MECSUB_Settings, MECSUB_UL_collections,
