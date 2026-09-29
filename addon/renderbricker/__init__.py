@@ -2258,8 +2258,10 @@ def _g_next(L, context, s):
 
 
 GUIDE = (
-    ("Save the scene", _g_save, (
-        "Renderbricker writes the subdivided parts into a cache file next to the scene - so the scene "
+    ("Import and save", _g_save, (
+        "Import the model from Mecabricks: File > Import > Mecabricks (.zmbx) - the Mecabricks Lite or "
+        "Advanced add-on by Nicolas 'Scrubs' Jarraud.",
+        "Renderbricker writes the smoothed parts into a cache file next to the scene - so the scene "
         "needs a file first.",
         "Save it under the name you want to keep - Save As offers the name of the imported model.")),
     ("Choose the parts", _g_parts, (
@@ -2271,41 +2273,36 @@ GUIDE = (
         "marked collections are shown and rendered.",
         "Parts outside the choice stay as imported.")),
     ("Settings", _g_settings, (
+        "The defaults suit most scenes.",
         "Variant A keeps the shading of the Mecabricks import (soft logos on the studs); B computes it "
         "from the smoothed surface (crisper logos).",
         "Viewport level: how smooth the parts look while you work. 1 keeps the viewport fast.",
         "Render level: how smooth they are in the render. 2 is enough even for close-ups.",
         "Use several Blender processes: larger scenes are converted by several Blenders in the background "
         "at the same time - how many depends on the processor and the free memory.",
-        "Low Memory: how these Blenders share the parts. Off: each gets its share at once - the fastest "
-        "way. On: the parts are cut into small segments, each done by a Blender that ends afterwards and "
-        "frees its memory - slower, but safe on computers with 16 or 32 GB or with very large parts. Auto "
-        "(default) switches it on only when a single part is so large that otherwise just a few Blenders "
-        "could run.",
-        "Cache file: the smoothed parts are stored in <scene>_rbcache.blend next to the scene, so the "
-        "scene file stays small.",
+        "Low Memory: only for very large parts or little memory (16 or 32 GB) - Auto decides.",
+        "Cache file: the copies are stored in <scene>_rbcache.blend next to the scene, so the scene file "
+        "stays small.",
         "Log file: the results of Apply, Check and Convert headless are also written into "
-        "<scene>_Renderbricker.log, with the full list of problems; the icon next to it opens it.",
-
-        "The defaults suit most scenes.")),
+        "<scene>_Renderbricker.log, with the full list of problems; the icon next to it opens it.")),
     ("Apply", _g_apply, (
-        "Apply decides for every edge of every part whether the real brick is sharp or round there, "
+        "Apply decides for every edge of every part whether the real part is sharp or round there, "
         "and sets a crease on the sharp ones.",
-        "It then bakes the smoothed result into a copy of each part mesh; all bricks of the same kind "
-        "share that copy.",
+        "It then bakes the smoothed result into a copy of each part; all links of the part share that copy.",
         "The imported mesh stays unchanged in the file - you can always go back.",
-        "Esc cancels. With the cache file on, the scene is saved at the end.")),
+        "Esc cancels. With the cache file on, the scene is saved at the end.",
+        "Afterwards the button reads Apply: up to date; Shift+click converts all parts again.")),
+    ("Compare with the import", _g_compare, (
+        "The button switches every link between the smoothed copy (ON) and the imported mesh (OFF).",
+        "Switch OFF and back ON: edges that are sharp on the real part stay sharp, round shapes like studs "
+        "and tires turn round.")),
     ("Check", _g_check, (
         "Check looks for folded faces and gaps along seams in the smoothed parts.",
         "The arrow next to a listed part selects it and frames it in the viewport.",
         "Folds can come from faces that are already broken in the import - render a close-up before "
         "you worry.")),
-    ("Compare with the import", _g_compare, (
-        "The button switches every brick between the smoothed copy (ON) and the imported mesh (OFF).",
-        "Switch OFF and back ON: sharp edges of the real part stay sharp, round shapes like studs and "
-        "tires turn round.")),
     ("Render", _g_render, (
-        "F12 (image) and Ctrl+F12 (animation) switch the bricks to the render level while rendering "
+        "F12 (image) and Ctrl+F12 (animation) switch the parts to the render level while rendering "
         "and back to the viewport level afterwards.",
         "The Render menu has the same: Render Image / Animation (Renderbricker levels).",
         "Render camera ON: the camera \"Renderbricks\" frames the whole model, a world \"Renderbricks Sky\" "
@@ -2313,7 +2310,9 @@ GUIDE = (
         "render settings back - nothing is overwritten.",
         "The camera icon frames the model again, e.g. after adding parts.",
         "Front, Right, Back, Left, Top, Bottom turn the camera around the model: Front is the view of the "
-        "render setup, the others go round in 90° steps or look from above and below.")),
+        "render setup, the others go round in 90° steps or look from above and below.",
+        "Below: the sun fixed or turning with the camera, Transparent, Resolution Scale, the samples, "
+        "Render (F12) and All views (each view into its own slot).")),
     ("Done - what next", _g_next, (
         "Save As under another name or folder: the panel then offers Move cache here or Copy cache "
         "here, so the new file gets its cache.",

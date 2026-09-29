@@ -96,7 +96,7 @@ into a cache file next to the scene – so the scene needs a file first.
 > **Start Guide** (2) leads through the same steps inside Blender, one at a time, and shows when a
 > step is done – here with the saved file name (3):
 >
-> ![Guide step 1 of 8: Save the scene, with the saved file name (3)](images/tutorial/T02b_guide_step1.webp)
+> ![Guide step 1 of 8: Import and save, with the saved file name (3)](images/tutorial/T02b_guide_step1.webp)
 
 ---
 
