@@ -1292,11 +1292,13 @@ JOB_GB = 6.0             # free memory per worker Blender when nothing is known 
 SCENE_GB_BASE = 0.35     # a background Blender with an empty scene
 SCENE_GB_PER_MLOOP = 0.10    # the scene's meshes, per million face corners
 SCENE_GB_PER_IMAGE = 0.0009  # its images (Dungeon: 1270 images, 1.2 GB)
-BAKE_GB_PER_MFACE = 20.0     # copies a worker holds, per million faces of its share
-BAKE_GB_CAP = 11.0           # ... until it writes them away (FLUSH_FACES; Coppersteam, Dungeon)
-BAKE_GB_FLOOR = 3.0          # ... but not less, however small the share (Riviera: ~3.2 GB each at 4-10 workers)
-TOGETHER = 0.7               # the workers do not peak at the same time: 65-71 % of the sum of their peaks
-                             # were in use together (Riviera 4 / 8 / 10 workers: 14.9 / 25.4 / 31.9 GB)
+# what the workers hold together, measured as the lowest free memory during the run (run 119, every
+# worker loading only its share): Riviera 10 workers 19.4 GB, Dungeon 3 workers 28.6 GB, NINJAGO City
+# (a 27 GB part) 1 process 23.6 GB
+BAKE_GB_PER_MFACE = 9.0      # copies a worker holds, per million faces of its share ...
+BAKE_GB_CAP = 8.5            # ... until it writes them away (FLUSH_FACES; Dungeon: ~8.3 GB each)
+BAKE_GB_FLOOR = 1.2          # ... and not less (Riviera: ~1.5 GB each at 10 workers)
+LARGEST_SHARE = 0.75         # the part with the largest need peaks only briefly on top
 RESERVE_GB = 4.0             # memory left free for the rest of the computer (at least, or 10 % of it)
 orig_name = [""]
 
@@ -2663,11 +2665,12 @@ def scene_memory_gb():
 
 
 def workers_memory_gb(n, meshes, scene_gb=None):
-    """Memory n worker Blenders need together for these meshes (run 117). Every worker holds the
-    scene and the copies of its share (at least BAKE_GB_FLOOR) until it writes them away; they do
-    not peak at the same time (TOGETHER); only one of them works on the largest part at a time,
-    whose own need (memory_need_gb, with its margin) comes once on top. Riviera: 23 / 30 / 36 GB
-    planned for 4 / 8 / 10 workers, 14.9 / 25.4 / 31.9 GB measured."""
+    """Memory n worker Blenders need together for these meshes (run 117, recalibrated in run 119 on
+    the memory in use together). Every worker holds its share of the scene and the copies of its share
+    (between BAKE_GB_FLOOR and BAKE_GB_CAP) until it writes them away; only one of them works on the
+    largest part at a time, whose extra need (memory_need_gb, with its margin) comes on top, briefly
+    (LARGEST_SHARE). Planned / measured: Riviera 10 workers 22.2 / 19.4 GB, Dungeon 3 workers
+    31.3 / 28.6 GB, NINJAGO City 1 process 24.1 / 23.6 GB."""
     meshes = list(meshes)
     if scene_gb is None:
         scene_gb = scene_memory_gb()
@@ -2675,7 +2678,7 @@ def workers_memory_gb(n, meshes, scene_gb=None):
     scene_gb = SCENE_GB_BASE + (scene_gb - SCENE_GB_BASE) / max(1, n)     # only its share (run 119)
     bake = max(BAKE_GB_FLOOR, min(BAKE_GB_CAP, BAKE_GB_PER_MFACE * faces / 1e6 / max(1, n)))
     largest = max((memory_need_gb(me, max(2, RENDER_LEVEL)) for me in meshes), default=0.0)
-    return TOGETHER * n * (scene_gb + bake) + max(0.0, largest - bake)
+    return n * (scene_gb + bake) + LARGEST_SHARE * max(0.0, largest - bake)
 
 
 JOBS_MAX = 12               # upper bound of worker Blenders (run 59: 8; run 117: Riviera 126 / 87 / 82 s
