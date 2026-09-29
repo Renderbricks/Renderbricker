@@ -2379,11 +2379,31 @@ class MECSUB_OT_guide_exit(bpy.types.Operator):
         return {'FINISHED'}
 
 
+_icons = {}                     # the Renderbricks logo (bpy.utils.previews), loaded in register()
+
+
+def logo_icon(name="logo"):
+    pc = _icons.get("main")
+    return pc[name].icon_id if pc and name in pc else 0
+
+
 class MECSUB_PT_panel(bpy.types.Panel):
-    bl_label = f"Renderbricker {VERSION}"   # version in the header (runs 41/42); the rules version stays internal (user, 2026-09-28)
+    bl_label = ""                           # the name is drawn in draw_header, beside the logo; version in the header (runs 41/42); the rules version stays internal (user, 2026-09-28)
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "Renderbricker"
+
+    def draw_header(self, context):         # the Renderbricks logo in front of the name (user, 2026-09-29)
+        # 15 % larger than an icon (user, 2026-09-29). Its top hangs at the top of the header row - it
+        # cannot be moved up; a larger logo only reaches further below the baseline of the name
+        icon = logo_icon()
+        row = self.layout.row(align=True)   # align: the name close to the logo (user, 2026-09-29)
+        if icon:
+            row.template_icon(icon_value=icon, scale=HEADER_LOGO_SCALE)
+        # the name drawn here, not by Blender: a taller label box sets its baseline on the foot of the logo
+        col = row.column()
+        col.scale_y = NAME_DROP
+        col.label(text=f"Renderbricker {VERSION}")
 
     def draw(self, context):
         s = context.scene.mecsub
@@ -2447,7 +2467,10 @@ class MECSUB_PT_panel(bpy.types.Panel):
 
 
 COPYRIGHT = "© 2026 Renderbricks® – Prof. Michael Klein"
-TRADEMARK = "Renderbricks® is a registered trademark in Germany."
+NAME_DROP = 1.15                        # header: height of the name's box - the logo's B between cap line and baseline (user's mock-up)
+HEADER_LOGO_SCALE = 1.15               # header: the logo 15 % larger than an icon
+LOGO_SCALE = 4.37                       # About: the logo as wide as "Renderbricks®" below it (icon units)
+TRADEMARK = ("Renderbricks®", "is a registered trademark in Germany.")   # the name alone under the logo (user)
 DISCLAIMER = ("Renderbricks is about rendering digital LEGO®. LEGO is a trademark of the LEGO Group of companies "
               "which does not sponsor, authorize or endorse this add-on.")
 LINKS = (("www.renderbricks.com", "https://www.renderbricks.com", 'URL'),
@@ -2456,15 +2479,20 @@ LINKS = (("www.renderbricks.com", "https://www.renderbricks.com", 'URL'),
          ("Renderbricker on GitHub", "https://github.com/Renderbricks/Renderbricker", 'HELP'))
 
 
-def wrapped(layout, text, context):
-    """Label lines that fit the sidebar width (a label does not wrap by itself)."""
+def wrapped(layout, text, context, center=False):
+    """Label lines that fit the sidebar width (a label does not wrap by itself). text: a string, or a
+    tuple of strings that each start a new line; center: every line centred."""
     import textwrap
     width = context.region.width if context.region else 300
     chars = max(20, int(width / (7.5 * context.preferences.system.ui_scale)))
     col = layout.column(align=True)
     col.scale_y = 0.8
-    for line in textwrap.wrap(text, chars):
-        col.label(text=line)
+    for part in ((text,) if isinstance(text, str) else text):
+        for line in textwrap.wrap(part, chars):
+            row = col.row()
+            if center:
+                row.alignment = 'CENTER'
+            row.label(text=line)
 
 
 class MECSUB_PT_about(bpy.types.Panel):
@@ -2477,7 +2505,12 @@ class MECSUB_PT_about(bpy.types.Panel):
 
     def draw(self, context):
         L = self.layout
-        wrapped(L, TRADEMARK, context)
+        icon = logo_icon()
+        if icon:
+            row = L.row()                   # flush with "Renderbricks®" below it (user, 2026-09-29)
+            row.alignment = 'CENTER'
+            row.template_icon(icon_value=icon, scale=LOGO_SCALE)
+        wrapped(L, TRADEMARK, context, center=True)
         col = L.column(align=True)
         for text, url, icon in LINKS:
             col.operator("wm.url_open", text=text, icon=icon).url = url
@@ -2542,7 +2575,13 @@ def register():
     global core
     import importlib
     core = importlib.reload(core)
-    MECSUB_PT_panel.bl_label = f"Renderbricker {VERSION}"
+    import os
+    import bpy.utils.previews
+    pc = bpy.utils.previews.new()
+    logo = os.path.join(os.path.dirname(__file__), "icons", "renderbricks_logo.png")
+    if os.path.isfile(logo):
+        pc.load("logo", logo, 'IMAGE')
+    _icons["main"] = pc
     for c in classes:
         bpy.utils.register_class(c)
     bpy.types.Scene.mecsub = PointerProperty(type=MECSUB_Settings)
@@ -2563,6 +2602,10 @@ def register():
         _keymaps.append((km, kmi))
 
 def unregister():
+    import bpy.utils.previews
+    for pc in _icons.values():
+        bpy.utils.previews.remove(pc)
+    _icons.clear()
     for km, kmi in _keymaps:
         try:
             km.keymap_items.remove(kmi)

@@ -21,4 +21,9 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for fn in sorted(os.listdir(setup)):
             if fn.endswith(".blend"):
                 z.write(f"{setup}/{fn}", f"renderbricker/setup/{fn}")
+    icons = f"{pkg}/icons"                  # the Renderbricks logo (panel header, About)
+    if os.path.isdir(icons):
+        for fn in sorted(os.listdir(icons)):
+            if fn.endswith(".png"):
+                z.write(f"{icons}/{fn}", f"renderbricker/icons/{fn}")
 print("BUILT", out)
