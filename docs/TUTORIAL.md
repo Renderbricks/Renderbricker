@@ -24,6 +24,20 @@ and going back to the plain import.
 
 **Time:** about 15 minutes; the con­ver­sion itself takes under 2 minutes for this scene.
 
+**The times in this tuto­rial** were mea­sured on this com­puter – yours will differ:
+
+| Component | Tutorial computer |
+|---|---|
+| Computer | XMG NEO (E25) laptop |
+| Processor | Intel Core Ultra 9 275HX, 24 cores |
+| Memory | 96 GB DDR5-5600 |
+| Graphics | NVIDIA GeForce RTX 5090 Laptop GPU, 24 GB (renders with OptiX) |
+| System | Windows 11 Pro, Blender 5.2.2 LTS |
+| Scene files | on an external USB hard disk (WD Elements) – loading and saving are faster on an SSD |
+
+The con­ver­sion runs on the pro­ces­sor: Ren­der­bricker starts one Blender process per two cores, as many
+as the free memory allows – here twelve. The graph­ics card only matters for rendering.
+
 **Four words used below:**
 
 | Word | Meaning |
