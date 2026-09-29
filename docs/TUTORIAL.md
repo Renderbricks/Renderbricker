@@ -228,13 +228,13 @@ parts of it at full size. Click a detail to see it pixel for pixel:
 
 ![The 8K render with the four details (1–4)](images/tutorial/T08c_overview.webp)
 
-[![Detail 1: the roof tiles](images/tutorial/T08c_crop1.webp)](images/tutorial/T08c_crop1.webp?raw=true)
+![Detail 1: the roof tiles](images/tutorial/T08c_crop1.webp)
 
-[![Detail 2: the balcony](images/tutorial/T08c_crop2.webp)](images/tutorial/T08c_crop2.webp?raw=true)
+![Detail 2: the balcony](images/tutorial/T08c_crop2.webp)
 
-[![Detail 3: the square](images/tutorial/T08c_crop3.webp)](images/tutorial/T08c_crop3.webp?raw=true)
+![Detail 3: the square](images/tutorial/T08c_crop3.webp)
 
-[![Detail 4: the boat](images/tutorial/T08c_crop4.webp)](images/tutorial/T08c_crop4.webp?raw=true)
+![Detail 4: the boat](images/tutorial/T08c_crop4.webp)
 
 ---
 
