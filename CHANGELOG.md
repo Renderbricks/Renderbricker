@@ -20,6 +20,7 @@ First release – in preparation; improvements are added here until it is publis
 - Apply skips parts that are already converted with the same settings and rules, so adding parts to a converted scene converts only the new ones; Shift+click converts all again.
 - Option Log file: the results of Apply, Check and Convert headless are appended to `<scene>_Renderbricker.log` next to the scene, with date, settings and the full problem list; a button opens it.
 - The results in the panel are listed as compact bullet points.
+- Saving a new scene (from Apply, Convert headless, the cache switch or the Start Guide) offers the name of the imported model as the file name.
 - Scope All, Selected or Collection (a list of collections with their child collections; each can be marked for the render camera, which then shows, renders and frames only the marked ones) for Apply, Check, On/Off, levels and Remove.
 - "Subdivision: ON / OFF" switches all links between copy and original and shows the current state.
 - Checks after every conversion: original untouched, folds, seam gaps.

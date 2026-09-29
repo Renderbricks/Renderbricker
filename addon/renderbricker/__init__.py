@@ -1350,7 +1350,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                 if not bpy.data.filepath:
                     self.report({'WARNING'}, "Save the scene first: Apply with several Blender processes opens it "
                                              "from disk (or switch off 'Use several Blender processes')")
-                    bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT')
+                    bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT', filepath=save_as_name(context))
                     return {'CANCELLED'}
                 return self._start_workers(context, jobs)
         return _Stepped.invoke(self, context, event)
@@ -1742,6 +1742,7 @@ class MECSUB_OT_cache_switch(bpy.types.Operator):
         if self.target:
             if not bpy.data.filepath:
                 self.report({'WARNING'}, "Save the scene first: the cache file lies next to it")
+                bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT', filepath=save_as_name(context))
                 return {'CANCELLED'}
             msg = (f"Write the {n} subdivided copies into {os.path.basename(core.cache_path_for(bpy.data.filepath))} "
                    f"and link them? The scene file gets about as small as the import")
@@ -1956,7 +1957,7 @@ class MECSUB_OT_headless(bpy.types.Operator):
     def invoke(self, context, event):
         if not bpy.data.filepath:
             self.report({'WARNING'}, "Save the scene first, then press Convert headless again")
-            return bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT')
+            return bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT', filepath=save_as_name(context))
         return context.window_manager.invoke_confirm(
             self, event, title="Convert headless",
             message="The scene is saved now and converted in a console window. Continue?")
@@ -2119,12 +2120,25 @@ def scope_state(context):
     return ok, "All parts of the scene" if ok else "The scene has no parts"
 
 
+def save_as_name(context):
+    """File name offered when the scene is saved the first time: the name of the imported model - the
+    top collection with the most mesh objects, as a Mecabricks import brings one (user, 2026-09-29)."""
+    import re
+    best, n = None, 0
+    for c in context.scene.collection.children:
+        k = sum(1 for o in c.all_objects if o.type == 'MESH')
+        if k > n:
+            best, n = c, k
+    name = re.sub(r'[\\/:*?"<>|]+', "_", best.name).strip(" .") if best else ""
+    return (name or "untitled") + ".blend"
+
+
 def _g_save(L, context, s):
     import os
     if bpy.data.filepath:
         L.operator("wm.save_mainfile", text="Save", icon='FILE_TICK')
     else:
-        L.operator("wm.save_as_mainfile", text="Save As...", icon='FILE_TICK', depress=True)
+        L.operator("wm.save_as_mainfile", text="Save As...", icon='FILE_TICK', depress=True).filepath =             save_as_name(context)
     ok = bool(bpy.data.filepath)
     status(L, ok, f"Saved: {os.path.basename(bpy.data.filepath)}" if ok else "Not saved yet")
     return ok
@@ -2213,7 +2227,7 @@ GUIDE = (
     ("Save the scene", _g_save, (
         "Renderbricker writes the subdivided parts into a cache file next to the scene - so the scene "
         "needs a file first.",
-        "Save it under the name you want to keep.")),
+        "Save it under the name you want to keep - Save As offers the name of the imported model.")),
     ("Choose the parts", _g_parts, (
         "All: every part of the scene.",
         "Selected: only the objects selected in the viewport or the Outliner.",
