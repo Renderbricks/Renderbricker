@@ -1396,10 +1396,11 @@ SCENE_GB_PER_MLOOP = 0.10    # the scene's meshes, per million face corners
 SCENE_GB_PER_IMAGE = 0.0009  # its images (Dungeon: 1270 images, 1.2 GB)
 # a worker holds little between its parts - one of Dungeon's workers stayed at 1.4-1.9 GB with its share
 # of the scene - but a large part needs its memory_need_gb for as long as it is baked (91405.004, 86,072
-# faces: 10.5 GB). Several large parts at the same time used up all memory (run 120), so a worker starts
-# a large part only when the shared ledger shows room for it (run 121).
-STEADY_GB = 1.2              # a worker between its parts, on top of its share of the scene
+# faces: 10.5 GB). Several large parts at the same time used up all memory (run 120); since run 124 the
+# parent starts a segment only when there is room for it (Workers.schedule).
+STEADY_GB = 1.2              # a Blender between its parts, on top of what it has loaded
 LEDGER_BIG_GB = 3.0          # parts that need more than this are booked in the ledger before they start
+SLOT_GB = 1.0                # segments: a small part in the works - so a place costs about 2.5 GB (run 125)
 RESERVE_GB = 4.0             # memory left free for the rest of the computer (at least, or 10 % of it)
 orig_name = [""]
 
@@ -2781,13 +2782,17 @@ def workers_memory_gb(n, meshes, scene_gb=None):
 JOBS_MAX = 12               # upper bound of worker Blenders (run 59: 8; run 117: Riviera 126 / 87 / 82 s
                             # with 4 / 8 / 10 - the memory decides, see workers_memory_gb)
 LAST_MEMORY_PLAN = [""]     # the reasoning of the last resolve_jobs, for the log and the panel
+SEGMENTED = [False]         # whether the last resolve_jobs chose segments (Workers, run 126)
 
 
-def resolve_jobs(value, n_meshes, meshes=None, per_process=20):
+def resolve_jobs(value, n_meshes, meshes=None, per_process=20, low_memory=None):
     """--jobs: a number, or 'auto': one Blender per 2 cores, at most JOBS_MAX, at least ~20 meshes each,
     and as many as fit into the free memory less a reserve (RESERVE_GB or 10 %) - estimated per scene
     from its meshes (run 117); without the meshes one per JOB_GB (run 59)."""
     import os
+    if low_memory is None:          # "Low Memory" (run 126): auto, on (always segments) or off (never)
+        low_memory = {"1": "on", "0": "off"}.get(os.environ.get("RENDERBRICKER_SEGMENTS"), opt("--low-memory", "auto"))
+    SEGMENTED[0] = low_memory == "on"
     if value != "auto":
         return max(1, int(value))
     cores = (os.cpu_count() or 2) // 2
@@ -2812,6 +2817,17 @@ def resolve_jobs(value, n_meshes, meshes=None, per_process=20):
         if workers_memory_gb(k, meshes, scene_gb) <= room:
             n = k
             break
+    # a large scene (run 126): when its largest part leaves the ledger less than half the places, it is cut
+    # into segments - NINJAGO City's 27 GB part left one Blender for 1,079 meshes (674 s; segments 229 s).
+    # Otherwise the ledger: segments took Italian Riviera 162 s instead of 84 s and Dungeon 532 s, not 333 s
+    places = max(1, min(top, int(room // (SCENE_GB_BASE + STEADY_GB + SLOT_GB))))
+    SEGMENTED[0] = low_memory == "on" or (low_memory == "auto" and places >= 2 and 2 * n < places)
+    if SEGMENTED[0]:
+        largest = max((memory_need_gb(me, max(2, RENDER_LEVEL)) for me in meshes), default=0.0)
+        LAST_MEMORY_PLAN[0] = (f"{places} places for segments ({free:.0f} GB free, the largest part needs about "
+                               f"{largest:.0f} GB, so only {n} Blenders would fit it; segments start when there "
+                               f"is room; at most {top} by cores and parts)")
+        return places
     need = workers_memory_gb(n, meshes, scene_gb)
     LAST_MEMORY_PLAN[0] = (f"{n} Blenders: about {need:.0f} GB of {free:.0f} GB free "
                            f"(scene {scene_gb:.1f} GB, shared among them; at most {top} by cores and parts)")
@@ -2854,6 +2870,8 @@ def _run_meshes(users, pick, weight, total_w, show_progress, wait=0, after=None,
             skipped.append(me.name)
             print(f"SKIP {me.name!r}: {short}", flush=True)
             continue
+        if wait:                        # a segment process: the parent books the part it works on (run 125)
+            print(f"START {me.name!r}", flush=True)
         try:
             rep = process(me, obs)
         except Exception as e:      # one broken mesh must not end a long headless run
@@ -2956,8 +2974,366 @@ def _run_worker_meshes(users, pick, weight, ledger, after=None, flush=None):
     return skipped, failed, reps
 
 
-class Workers:
-    """Several cores (run 59/60): the saved scene is opened by `jobs` worker Blenders, each
+SEGMENT_FACES = 250_000      # small parts are bundled into segments of at most about this many faces ...
+SEGMENT_MIN_PER_SLOT = 2     # ... and at least twice as many segments as processes, so none waits idle
+SEGMENT_BIG_GB = 6.0         # a part needing more than this is a segment of its own
+SEGMENT_TRIES = 2            # a segment whose process stopped or crashed is queued again this often
+
+
+def process_memory_of(pid):
+    """Memory of another process in GB (Windows: committed private bytes, else resident); None if unknown.
+    The parent measures its running segments with it (run 124)."""
+    import sys
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class PMC(ctypes.Structure):
+                _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                            ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                            ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t),
+                            ("PrivateUsage", ctypes.c_size_t)]
+            k32, psapi = ctypes.WinDLL("kernel32"), ctypes.WinDLL("psapi")
+            k32.OpenProcess.restype = ctypes.c_void_p
+            k32.CloseHandle.argtypes = [ctypes.c_void_p]
+            psapi.GetProcessMemoryInfo.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD]
+            h = k32.OpenProcess(0x1000 | 0x0010, False, int(pid))     # QUERY_LIMITED_INFORMATION | VM_READ
+            if not h:
+                return None
+            try:
+                c = PMC(); c.cb = ctypes.sizeof(PMC)
+                if psapi.GetProcessMemoryInfo(h, ctypes.byref(c), c.cb):
+                    return c.PrivateUsage / 2**30
+            finally:
+                k32.CloseHandle(h)
+        except (AttributeError, OSError):
+            return None
+        return None
+    try:
+        for line in open(f"/proc/{int(pid)}/status"):
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1]) / 2**20
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+class SegmentWorkers:
+    """Several Blender processes (run 59/60; segments since run 124, the maintainer's idea). The meshes
+    are cut into many small segments - every large part a segment of its own, the small ones bundled.
+    Up to `jobs` segments run at the same time, each in a fresh Blender that loads only its meshes from
+    the scene file (run 119), bakes them, writes its copies (without materials) to a part file plus a
+    JSON of the reports and ends - so its memory is given back completely. This process starts the next
+    segment only when the free memory, less what the running segments may still take (booked less
+    measured), less the reserve, is enough for it; with nothing running it starts in any case. A segment
+    whose process stopped or crashed is queued again, then the merge does the rest here. Used by the
+    headless run (main) and by the add-on's Apply in the window (modal).
+    start -> poll() for progress lines (and to start further segments) -> merge() the copies."""
+
+    def __init__(self, users, jobs, opts, names=None, scene_path=None):
+        import os, queue, tempfile
+        self.users = users
+        self.by_name = {me.name: me for me in users}
+        self.weight = {me: len(me.polygons) + 50 for me in users}
+        self.total_w = sum(self.weight.values()) or 1
+        self.jobs = jobs                # the number of segments running at the same time at most
+        self.tmp = tempfile.mkdtemp(prefix="rb_jobs_")
+        self.q = queue.Queue()
+        self.done, self.done_w, self.skipped, self.errors, self.retired = [], 0, [], [], 0
+        self.peaks = []                 # memory peak of every segment process in GB (PEAK lines, run 117)
+        self.opts, self.source = list(opts), scene_path or bpy.data.filepath
+        self.todo = [me for me in users if names is None or me.name in set(names)]
+        level = max(VIEW_LEVEL, RENDER_LEVEL)
+        self.need = {me: memory_need_gb(original_of(me), level) for me in self.todo}
+        self.procs, self.segs, self.booked, self.seen, self.redone = [], [], [], set(), set()
+        self.current = []               # per process: the part it works on (START lines, run 125)
+        self.tries = {}
+        self.tries_max = 0 if os.environ.get("RENDERBRICKER_TEST_ROUND_JOBS") == "1" else SEGMENT_TRIES
+        self.queue = self.segments(self.todo)
+        self.n_segments = len(self.queue)
+        self.schedule()
+
+    def segments(self, meshes):
+        """Large parts alone, small ones bundled - at least SEGMENT_MIN_PER_SLOT segments per process;
+        the segments with the largest need first (they decide how long the run takes)."""
+        big = [[me] for me in meshes if self.need[me] > SEGMENT_BIG_GB]
+        small = sorted((me for me in meshes if self.need[me] <= SEGMENT_BIG_GB),
+                       key=lambda m: (-self.weight[m], m.name))
+        faces = sum(self.weight[m] for m in small)
+        per = max(1, min(SEGMENT_FACES, faces // max(1, SEGMENT_MIN_PER_SLOT * self.jobs)))
+        n = max(1, -(-faces // per)) if small else 0
+        bins, load = [[] for _ in range(n)], [0] * n
+        for me in small:                # largest first onto the lightest segment
+            k = load.index(min(load))
+            bins[k].append(me)
+            load[k] += self.weight[me]
+        segs = big + [b for b in bins if b]
+        return sorted(segs, key=lambda s: (-max(self.need[m] for m in s), -sum(self.weight[m] for m in s)))
+
+    def _book(self, seg):
+        """Memory a segment may take: its largest part (they are baked one after the other and each gives
+        its memory back) and a Blender with the segment loaded."""
+        return max(self.need[m] for m in seg) + SCENE_GB_BASE + STEADY_GB
+
+    def _launch(self, seg):
+        import os, json, threading, subprocess
+        i = len(self.procs)
+        share = os.path.join(self.tmp, f"share{i}.json")
+        json.dump([m.name for m in seg], open(share, "w", encoding="utf-8"))
+        cmd = [bpy.app.binary_path, "-b", "--factory-startup", "--python",
+               os.path.abspath(__file__), "--"] + self.opts + [
+               "--source", self.source, "--share", share,
+               "--worker", str(i), str(self.n_segments), self.part(i, "blend"), self.part(i, "json")]
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        pr = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                              encoding="utf-8", errors="replace", creationflags=flags)
+        self.procs.append(pr)
+        self.segs.append(seg)
+        self.booked.append(self._book(seg))
+        import time                     # the timeline of the segments, for the log (run 124)
+        self.q.put(f"SEGSTART {i} {time.time():.1f} meshes {len(seg)} faces {sum(len(m.polygons) for m in seg)} "
+                   f"book {self.booked[-1]:.1f}" + chr(10))
+        self.current.append(seg[0])     # before its first START: its first part, the largest of the segment
+        threading.Thread(target=self._reader, args=(pr, i), daemon=True).start()
+
+    def _result(self, i):
+        import os, json
+        pj = self.part(i, "json")
+        if not os.path.exists(pj):
+            return None
+        try:
+            return json.load(open(pj, encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def schedule(self):
+        """Queue again what an ended segment left undone, then start segments while there is room."""
+        for i, pr in enumerate(self.procs):
+            if i in self.seen or pr.poll() is None:
+                continue
+            self.seen.add(i)
+            import time
+            self.q.put(f"SEGEND {i} {time.time():.1f} exit {pr.returncode}" + chr(10))
+            got = self._result(i) or {}
+            left = [m for m in self.segs[i] if m.name not in got]
+            if left and all(self.tries.get(m.name, 0) < self.tries_max for m in left):
+                for m in left:
+                    self.tries[m.name] = self.tries.get(m.name, 0) + 1
+                if not got:
+                    self.redone.add(i)      # no error for it at the merge: its meshes are done again
+                self.queue.append(left)
+                self.q.put(f"SEGMENT again: {len(left)} meshes of a stopped process\n")
+        running = [i for i, pr in enumerate(self.procs) if pr.poll() is None]
+        k = 0                           # from the front: the largest segment that fits starts first; one that
+        free = None                     # does not fit waits, the smaller ones behind it go on (run 124: waiting
+        while k < len(self.queue) and len(running) < self.jobs:     # at the front left 9 of 11 places idle)
+            seg = self.queue[k]
+            if running:
+                if free is None:
+                    free = free_memory_gb()
+                if free is not None:
+                    taking = sum(max(0.0, self.need.get(self.current[i], 0.0) + SCENE_GB_BASE + STEADY_GB
+                                     - (process_memory_of(self.procs[i].pid) or 0.0)) for i in running)
+                    if self._book(seg) + taking + RESERVE_GB > free:
+                        k += 1
+                        continue
+            self.queue.pop(k)
+            self._launch(seg)
+            running.append(len(self.procs) - 1)
+
+    def pending(self):
+        """Meshes no ended process has a result for (it stopped for memory or crashed)."""
+        got = set()
+        for i in range(len(self.procs)):
+            got.update(self._result(i) or {})
+        return [me for me in self.todo if me.name not in got]
+
+    def next_round(self):
+        """Kept for callers of run 120: the segments are queued again by schedule() themselves."""
+        return 0
+
+    def part(self, i, ext):
+        import os
+        return os.path.join(self.tmp, f"part{i}.{ext}")
+
+    def _reader(self, pr, i=None):
+        for line in pr.stdout:
+            if i is not None and line.startswith("START '"):
+                me = self.by_name.get(line[7:line.rindex("'")])
+                if me is not None:
+                    self.current[i] = me    # the part this process bakes now
+                continue
+            self.q.put(line)
+
+    def running(self):
+        self.schedule()
+        return any(pr.poll() is None for pr in self.procs) or bool(self.queue) or not self.q.empty()
+
+    def poll(self, timeout=0.0):
+        """Read what the processes printed and start further segments; returns the lines worth showing."""
+        import re, queue
+        self.schedule()
+        out = []
+        while True:
+            try:
+                line = self.q.get(timeout=timeout).rstrip()
+            except queue.Empty:
+                return out
+            timeout = 0.0
+            m = re.match(r"PART '(.+?)' ", line)
+            if m and m.group(1) in self.by_name and m.group(1) not in self.done:
+                self.done.append(m.group(1))
+                self.done_w += self.weight[self.by_name[m.group(1)]]
+                out.append(("PART", m.group(1)))
+            elif line.startswith("SKIP '"):
+                self.skipped.append(line[6:line.index("'", 6)])
+                out.append(("SKIP", line))
+            elif line.startswith("RETIRE"):
+                self.retired += 1
+                out.append(("RETIRE", line))
+            elif line.startswith("SEGMENT again"):
+                out.append(("SEGMENT", line))
+            elif line.startswith(("SEGSTART", "SEGEND")):
+                out.append(("TIMELINE", line))
+            elif line.startswith("PEAK worker"):
+                m = re.search(r": ([\d.]+) GB", line)
+                if m:
+                    self.peaks.append(float(m.group(1)))
+                out.append(("PEAK", line))
+            elif line.startswith(("Error", "Traceback")):
+                self.errors.append(line)
+                out.append(("ERROR", line))
+
+    def kill(self):
+        import shutil
+        self.queue = []
+        for pr in self.procs:
+            if pr.poll() is None:
+                pr.kill()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def merge_to_cache(self, path, on_mesh=None):
+        return run_steps(self.merge_to_cache_steps(path, on_mesh))
+
+    def merge_to_cache_steps(self, path, on_mesh=None):
+        """With the cache on: the workers' part files go straight into the cache (a helper
+        Blender joins them), this file only links the result - the copies are never loaded here
+        (run 66: Dungeon 134 s loading + 65 s writing). Returns (reports, meshes without a
+        worker result)."""
+        import os, json, glob, shutil
+        reps, files = {}, []
+        for i in range(len(self.procs)):
+            pj = self.part(i, "json")
+            if not os.path.exists(pj):
+                if i not in self.redone:
+                    self.errors.append(f"Error: worker {i} wrote no result (exit {self.procs[i].returncode})")
+                continue
+            reps.update(json.load(open(pj, encoding="utf-8")))
+            files += sorted(glob.glob(glob.escape(os.path.splitext(self.part(i, "blend"))[0]) + "_b*.blend"))
+        levels = bake_levels_wanted()
+        fresh, rest = set(), []
+        for k, (me, obs) in enumerate(self.users.items()):
+            if k % 200 == 0:
+                yield (0.05 * k / max(1, len(self.users)), "taking over the copies of the workers")
+            if me.name in reps:
+                orig = prepare(me, obs)
+                for ob in obs:              # off the old copies; the cache links the new ones
+                    ob.data = orig
+                old = all_copies(orig)
+                refs = [c.override_library.reference for c in old
+                        if c.override_library is not None and c.override_library.reference is not None]
+                if old or refs:
+                    bpy.data.batch_remove(list({*old, *refs}))
+                orig["rb_view"] = f"{orig.name} L{VIEW_LEVEL}" if VIEW_LEVEL else ""
+                orig["rb_render"] = f"{orig.name} L{RENDER_LEVEL}" if RENDER_LEVEL else ""
+                orig.use_fake_user = True
+                for ob in obs:
+                    ob.pop("rb_off", None)
+                    ob["rb_show_view"] = 1          # write_cache puts them on the view copy
+                fresh |= {(orig.name, lv) for lv in levels}
+                if on_mesh:
+                    on_mesh(me, obs, reps[me.name])
+            elif me.name not in self.skipped:
+                rest.append(me)
+        steps = write_cache_steps(path, files=files, fresh=fresh)
+        try:
+            while True:
+                st = next(steps)
+                yield (0.05 + 0.95 * st[0],) + tuple(st[1:])
+        except StopIteration as e:
+            n = e.value
+        for ob in bpy.data.objects:
+            ob.pop("rb_show_view", None)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        return reps, rest, n
+
+    def merge(self, on_mesh=None):
+        """Load the workers' copies, give them the materials of their originals and link them
+        as process() does. Returns (reports by mesh name, meshes without a worker result)."""
+        import os, json, glob, shutil
+        made, reps = {}, {}
+        loaded = []
+        for i in range(len(self.procs)):
+            pj = self.part(i, "json")
+            if not os.path.exists(pj):
+                if i not in self.redone:
+                    self.errors.append(f"Error: worker {i} wrote no result (exit {self.procs[i].returncode})")
+                continue
+            reps.update(json.load(open(pj, encoding="utf-8")))
+            for pb in sorted(glob.glob(glob.escape(os.path.splitext(self.part(i, "blend"))[0]) + "_b*.blend")):
+                with bpy.data.libraries.load(pb, link=False) as (src, dst):
+                    dst.meshes = list(src.meshes)
+                loaded += list(dst.meshes)
+        for cp in loaded:
+            if cp is None or cp.get("rb_original") not in self.by_name:
+                continue
+            orig = self.by_name[cp["rb_original"]]
+            cp.use_fake_user = True          # not kept by the append - the render copy has no user
+            for j, mt in enumerate(orig.materials):     # the worker wrote empty slots
+                if j < len(cp.materials):
+                    cp.materials[j] = mt
+                else:
+                    cp.materials.append(mt)
+            made.setdefault(orig.name, {})[int(cp["rb_level"])] = cp
+        rest = []
+        for me, obs in self.users.items():
+            if me.name in made and me.name in reps:
+                orig = prepare(me, obs)
+                finish(orig, obs, made[me.name], reps[me.name], check=False)
+                if on_mesh:
+                    on_mesh(me, obs, reps[me.name])
+            elif me.name not in self.skipped:
+                rest.append(me)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        return reps, rest
+
+
+def clean_for_workers(users):
+    """Headless run on a converted scene (user, 2026-09-28): the links go back to the imported meshes
+    and the copies and the cache library are removed - they are made again anyway. Italian Riviera
+    opened with its cache took 3.9 GB instead of 1.0 GB, in the parent and in every worker. Returns
+    whether anything was removed."""
+    copies = [m for m in bpy.data.meshes if m.get("rb_original") and m.library is None]
+    libs = [l for l in bpy.data.libraries if l.filepath.endswith("_rbcache.blend")]
+    if not copies and not libs:
+        return False
+    for orig, obs in users.items():
+        for o in obs:
+            if o.data != orig:
+                o.data = orig
+    for m in copies:
+        bpy.data.meshes.remove(m)
+    for l in libs:
+        bpy.data.libraries.remove(l)
+    bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
+    return True
+
+
+class LedgerWorkers:
+    """Several Blender processes with the ledger (run 59/60, 121): the saved scene is opened by `jobs` worker Blenders, each
     bakes its share of the meshes and writes only the copies (without materials) to a
     temporary .blend plus a JSON of the reports. Used by the headless run (main) and by the
     add-on's Apply in the window (modal, the window stays usable).
@@ -3199,25 +3575,33 @@ def clean_for_workers(users):
     return True
 
 
+def Workers(users, jobs, opts, names=None, scene_path=None):
+    """The workers resolve_jobs chose (run 126): segments for a large scene, else the ledger."""
+    kind = SegmentWorkers if SEGMENTED[0] else LedgerWorkers
+    return kind(users, jobs, opts, names, scene_path)
+
+
 def _parallel(users, weight, total_w, jobs, scene_path=None):
     """Headless run on several cores (run 59): see Workers. scene_path: the file the workers open."""
     import time
     opts = list(args[1:]) if TARGET else list(args)
-    if "--jobs" in opts:
-        k = opts.index("--jobs")
-        del opts[k:k + 2]
+    for o in ("--jobs", "--low-memory"):     # the parent's choices, not the workers'
+        if o in opts:
+            k = opts.index(o)
+            del opts[k:k + 2]
     w = Workers(users, jobs, opts, scene_path=scene_path)
-    print(f"JOBS {jobs} Blender processes for {len(users)} meshes", flush=True)
+    seg = f" in {w.n_segments} segments" if SEGMENTED[0] else ""
+    print(f"JOBS {jobs} Blender processes for {len(users)} meshes{seg}", flush=True)
     cache = opt("--cache", "")
     t_start = time.time()
     while True:
-        while w.running():
+        while w.running():              # segments are started (and queued again) by poll (run 124)
             for kind, x in w.poll(timeout=0.5):
                 if kind == "PART":
                     print(_progress(len(w.done), len(users), w.done_w, total_w, t_start, x), flush=True)
                 else:
                     print(x, flush=True)
-        more = w.next_round()               # meshes of stopped or crashed workers (run 120)
+        more = w.next_round()           # meshes of stopped or crashed ledger workers (run 120)
         if not more:
             break
         print(f"JOBS round {w.rounds}: {more} Blender processes for the {len(w.pending())} meshes left "
@@ -3367,6 +3751,19 @@ def make_sky():
             nt.nodes.new("ShaderNodeOutputWorld")
         nt.links.new(bg.outputs[0], out.inputs[0])
     nt.links.new(sky.outputs[0], bg.inputs[0])
+    # the values of the setup scene's sky (user, 2026-09-29: strength 0.2, altitude 3000 m)
+    for k, v in (("sky_type", 'MULTIPLE_SCATTERING'), ("sun_elevation", 1.0472), ("sun_rotation", 2.0944),
+                 ("sun_size", 0.009512), ("altitude", 3000.0)):
+        try:
+            setattr(sky, k, v)
+        except (AttributeError, TypeError, ValueError):
+            pass
+    bg.inputs["Strength"].default_value = 0.2
+    out = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeOutputWorld")
+    x = 0
+    for n in (sky, bg, out):            # side by side, left to right
+        n.location = (x, 0)
+        x += n.width + 60
     return w
 
 
@@ -3964,7 +4361,7 @@ def main():
         if "--ledger" in args:      # large parts only when the ledger has room for them (run 121)
             _s, _f, reps = _run_worker_meshes(users, pick, weight, MemoryLedger(args[args.index("--ledger") + 1]),
                                               after=after, flush=flush)
-        else:
+        else:                       # a segment (run 124)
             _s, _f, reps = _run_meshes(users, pick, weight, total_w, False, wait=WORKER_WAIT, after=after,
                                        flush=flush)
         flush()

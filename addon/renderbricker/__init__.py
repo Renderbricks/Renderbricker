@@ -812,7 +812,7 @@ def write_log(context, label):
              f"(Renderbricker {VERSION}, Blender {bpy.app.version_string})",
              f"scene: {bpy.data.filepath}",
              f"settings: {scope}, variant {s.variant}, viewport {s.view_level}, render {s.render_level}, "
-             f"several Blender processes {'on' if s.use_cores else 'off'}, cache file {'on' if s.use_cache else 'off'}"]
+             f"several Blender processes {'on' if s.use_cores else 'off'} (Low Memory {s.low_memory.lower()}), cache file {'on' if s.use_cache else 'off'}"]
     lines += [f"  - {part}" for part in s.summary.split(", ")]
     if len(s.problems):
         lines.append(f"problems ({len(s.problems)}):")
@@ -979,6 +979,17 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
                     "background that share the parts, and loads the result into this scene - the scene is saved "
                     "first. How many depends on the processor and the free memory; every one of them uses "
                     "several processor cores itself")
+    low_memory: bpy.props.EnumProperty(
+        name="Low Memory", default='AUTO',
+        items=[('AUTO', "Auto", "On only when a single part needs so much memory that otherwise less than half "
+                                "the Blender processes could run (a part of many GB, like NINJAGO City's)"),
+               ('OFF', "Off", "Every Blender process gets its share of the parts at once and books large parts "
+                              "in a shared memory ledger - the fastest way when there is memory enough"),
+               ('ON', "On", "The parts are cut into small segments, each baked by a fresh Blender that ends "
+                            "afterwards and gives its memory back; a segment starts only when there is room - "
+                            "slower, for computers with little memory (16 or 32 GB) or very large parts")],
+        description="How the Blender processes share the parts: all at once (fastest) or in small segments "
+                    "that need less memory")
     use_cache: bpy.props.BoolProperty(
         name="Cache file next to the scene", default=True, update=_cache_update,
         description="The subdivided copies are kept in <scene>_rbcache.blend next to the scene and "
@@ -1334,7 +1345,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         if s.use_cores and not bpy.app.background:
             object_mode(context)
             todo = self.collect(context)[0]
-            jobs = core.resolve_jobs("auto", len(todo), [me for me, _obs in todo])
+            jobs = core.resolve_jobs("auto", len(todo), [me for me, _obs in todo], low_memory=s.low_memory.lower())
             if jobs > 1:
                 if not bpy.data.filepath:
                     self.report({'WARNING'}, "Save the scene first: Apply with several Blender processes opens it "
@@ -1966,7 +1977,8 @@ class MECSUB_OT_headless(bpy.types.Operator):
         out = os.path.join(folder, name + ".blend")
         args = ["-b", "--factory-startup", blend, "--python", os.path.join(os.path.dirname(__file__), "core.py"),
                 "--", out, "--view-level", str(s.view_level), "--render-level", str(s.render_level),
-                "--shading", "mecabricks" if s.variant == 'A' else "geometric", "--jobs", "auto"]
+                "--shading", "mecabricks" if s.variant == 'A' else "geometric", "--jobs", "auto",
+                "--low-memory", s.low_memory.lower()]
         if s.use_cache:
             args += ["--cache", core.cache_path_for(out)]
         if s.use_log:
@@ -1981,7 +1993,7 @@ class MECSUB_OT_headless(bpy.types.Operator):
 
 # lines of the conversion worth showing in the terminal (the rest is Blender's own output)
 HEADLESS_SHOW = ("PROGRESS", "SKIP", "SAVED", "Error", "Traceback", "MESHES", "JOBS", "MERGE", "CACHE", "CAMERA",
-                 "RETIRE", "CLEAN", "PEAK", "MEMORY")
+                 "RETIRE", "CLEAN", "PEAK", "MEMORY", "SEGMENT")
 
 
 def write_headless_script(base, stem, blend, out, args):
@@ -2125,10 +2137,18 @@ def _g_parts(L, context, s):
     return ok
 
 
+def draw_low_memory(L, s):
+    sp = L.split(factor=0.4)                # the label in full, the three buttons beside it
+    sp.active = s.use_cores
+    sp.label(text="Low Memory")
+    sp.row(align=True).prop(s, "low_memory", expand=True)
+
+
 def _g_settings(L, context, s):
     L.prop(s, "variant", text="")
     draw_levels(L, s, context)
     L.prop(s, "use_cores")
+    draw_low_memory(L, s)
     L.prop(s, "use_cache")
     draw_log(L, s)
     return True
@@ -2209,6 +2229,11 @@ GUIDE = (
         "Render level: how smooth they are in the render. 2 is enough even for close-ups.",
         "Use several Blender processes: larger scenes are converted by several Blenders in the background "
         "at the same time - how many depends on the processor and the free memory.",
+        "Low Memory: how these Blenders share the parts. Off: each gets its share at once - the fastest "
+        "way. On: the parts are cut into small segments, each done by a Blender that ends afterwards and "
+        "frees its memory - slower, but safe on computers with 16 or 32 GB or with very large parts. Auto "
+        "(default) switches it on only when a single part is so large that otherwise just a few Blenders "
+        "could run.",
         "Cache file: the smoothed parts are stored in <scene>_rbcache.blend next to the scene, so the "
         "scene file stays small.",
         "Log file: the results of Apply, Check and Convert headless are also written into "
@@ -2335,6 +2360,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         draw_levels(body, s, context)
         body.operator("mecsub.apply", icon='MOD_SUBSURF')
         body.prop(s, "use_cores")
+        draw_low_memory(body, s)
         body.prop(s, "use_cache")
         draw_log(body, s)
         draw_render_camera(body, context)
