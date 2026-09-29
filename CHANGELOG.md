@@ -5,9 +5,9 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
-## [1.0.0] – unreleased
+## [1.0.0] – 2026-09-29
 
-First release – in preparation; improvements are added here until it is published.
+First release.
 
 - Rule-based creases for Mecabricks imports: seams welded in a temporary copy, hard edges, bevels, designed corners and hexagon sockets kept sharp, round shapes and polygonised circles smoothed; the imported meshes stay unchanged.
 - One subdivided copy per part, shared by all its links; separate viewport and render levels, F12 / Ctrl+F12 render with the render level.
