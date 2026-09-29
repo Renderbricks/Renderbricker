@@ -148,7 +148,8 @@ con­verted the 810 dif­fer­ent parts in 99 seconds. At the end the scene is s
 
 **Check:** the summary lists what was done (1): 810 meshes for 3297 objects, the time, the set­tings
 and the copies written into the cache file. The button next to *Check* now reads **Sub­di­vi­sion:
-ON** (2), and the panel names the cache file of the scene (3).
+ON** (2), and the panel names the cache file of the scene (3). *Apply* itself reads **Apply: up to
+date** – press­ing it again would only skip the parts; **Shift+click** con­verts all of them again.
 
 **Why a copy:** the imported mesh is never changed. The copies `<part> L1` (view­port) and
 `<part> L2` (render) carry the sub­di­vi­sion; every link of the part points to them. The Riviera uses

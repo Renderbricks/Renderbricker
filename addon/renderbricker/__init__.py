@@ -1299,7 +1299,15 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
             s.summary = (f"All {self.skipped} parts are already converted with these settings, "
                          f"Shift+click on Apply converts all again")
             refresh_state(context)
+            context.scene[APPLIED_KEY] = apply_key(context)
             self.report({'INFO'}, "Renderbricker: " + s.summary)
+            if not bpy.app.background:      # at the mouse - the summary line alone was overlooked (user, 2026-09-29)
+                n = self.skipped
+
+                def draw(menu, _context):
+                    menu.layout.label(text=f"All {n} parts are already converted with these settings.")
+                    menu.layout.label(text="Shift+click on Apply converts all again.")
+                context.window_manager.popup_menu(draw, title="Nothing to do", icon='INFO')
             return False
         self.variant, self.levels = s.variant, (s.view_level, s.render_level)
         self.t0 = time.time()
@@ -1498,6 +1506,8 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                     traceback.print_exc()
                     self.cache_part = f", cache file not written: {type(e).__name__}: {e}"
             s.summary += self.cache_part
+        if not self.cancelled:
+            context.scene[APPLIED_KEY] = apply_key(context)
         self.report({'WARNING'} if self.cancelled else {'INFO'}, "Renderbricker: " + s.summary)
 
 
@@ -2168,11 +2178,34 @@ def _g_settings(L, context, s):
     return True
 
 
+APPLIED_KEY = "rb_applied"      # scene: what the last Apply covered (apply_key)
+
+
+def apply_key(context):
+    """Settings, scope and the number of meshes and objects - when it is the same as after the last
+    Apply, there is nothing to do (cheap enough for drawing; new parts change the numbers)."""
+    s = context.scene.mecsub
+    scope = s.scope
+    if scope == 'COLLECTION':
+        scope += ":" + ",".join(sorted(c.collection.name for c in s.collections if c.collection))
+    elif scope == 'SELECTED':
+        scope += f":{len(context.selected_objects)}:{getattr(context.active_object, 'name', '')}"
+    return (f"{s.variant}|{s.view_level}|{s.render_level}|{scope}|{core.RULES_VERSION}|"
+            f"{len(bpy.data.meshes)}|{len(context.scene.objects)}")
+
+
+def apply_button(L, context, **kw):
+    """Apply, or "Apply: up to date" when the last Apply covered the same (user, 2026-09-29)."""
+    if context.scene.get(APPLIED_KEY) == apply_key(context):
+        return L.operator("mecsub.apply", text="Apply: up to date", icon='CHECKMARK', **kw)
+    return L.operator("mecsub.apply", icon='MOD_SUBSURF', **kw)
+
+
 def _g_apply(L, context, s):
     ok = s.subdiv_state in ("ON", "MIXED")
     row = L.row()
     row.scale_y = 1.3
-    row.operator("mecsub.apply", icon='MOD_SUBSURF', depress=not ok)
+    apply_button(row, context, depress=not ok)
     status(L, ok, "Parts converted" if ok else "Press Apply")
     draw_summary(L, s)
     return ok
@@ -2372,7 +2405,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         draw_scope(body, s)
         body.prop(s, "variant", text="")
         draw_levels(body, s, context)
-        body.operator("mecsub.apply", icon='MOD_SUBSURF')
+        apply_button(body, context)
         body.prop(s, "use_cores")
         draw_low_memory(body, s)
         body.prop(s, "use_cache")
