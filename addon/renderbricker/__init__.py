@@ -2252,8 +2252,7 @@ def _g_render(L, context, s):
 
 def _g_next(L, context, s):
     L.operator("mecsub.headless", icon='CONSOLE')
-    L.operator("wm.url_open", text="Documentation", icon='HELP').url = \
-        "https://github.com/Renderbricks/Renderbricker#documentation"
+    L.operator("wm.url_open", text="Documentation", icon='HELP').url = DOCUMENTATION_URL
     return True
 
 
@@ -2458,24 +2457,27 @@ class MECSUB_PT_panel(bpy.types.Panel):
         body.operator("mecsub.remove", icon='X')
         body.separator()
         body.operator("mecsub.headless", icon='CONSOLE')
+        body.operator("wm.url_open", text="Documentation", icon='HELP').url = DOCUMENTATION_URL
         draw_summary(L, s)
-        col = L.column(align=True)
-        col.scale_y = 0.8
-        for line in COPYRIGHT.split(" – "):         # holder on its own line, the name is never split
-            col.label(text=line)
+        wrapped(L, COPYRIGHT, context, center=True)     # centred under Documentation (user, 2026-09-29)
 
 
-COPYRIGHT = "© 2026 Renderbricks® – Prof. Michael Klein"
+COPYRIGHT = "© 2026 Renderbricks®"                     # centred under Documentation (user, 2026-09-29)
+DOCUMENTATION_URL = "https://github.com/Renderbricks/Renderbricker#documentation"
 NAME_DROP = 1.15                        # header: height of the name's box - the logo's B between cap line and baseline (user's mock-up)
 HEADER_LOGO_SCALE = 1.15               # header: the logo 15 % larger than an icon
 LOGO_SCALE = 4.37                       # About: the logo as wide as "Renderbricks®" below it (icon units)
 TRADEMARK = ("Renderbricks®", "is a registered word mark in Germany.")   # the name alone under the logo (user)
-DISCLAIMER = ("Ren|der|bricks is about ren|der|ing dig|i|tal LEGO®. LEGO® is a trade|mark of the LEGO Group of "
+DISCLAIMER = ("Au|thor: Prof. Mi|chael Klein—Me|di|a|de|sign Uni|ver|si|ty of Ap|plied Sci|ences. "
+              "Ren|der|bricks is about ren|der|ing dig|i|tal LEGO®. LEGO® is a trade|mark of the LEGO Group of "
               "com|pa|nies which does not spon|sor, au|tho|rize or en|dorse this add-on.")   # | = hyphenation point
 LINKS = (("www.renderbricks.com", "https://www.renderbricks.com", 'URL'),
          ("Facebook", "https://www.facebook.com/renderbricks", 'COMMUNITY'),
          ("YouTube", "https://www.youtube.com/@renderbricks", 'PLAY'),
-         ("Renderbricker on GitHub", "https://github.com/Renderbricks/Renderbricker", 'HELP'))
+         ("Renderbricker on GitHub", "https://github.com/Renderbricks/Renderbricker", 'HELP'),
+         ("Digital Film Design—Animation/VFX",
+          "https://www.mediadesign.de/de/bachelor/digital-film-design-animation-vfx-ba",
+          'FILE_MOVIE'))                    # the film strip: the study programme Digital Film Design
 
 
 def justified(layout, text, context):
