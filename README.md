@@ -59,7 +59,9 @@ Model files, results and the development journal are kept locally beside the cod
 
 ## Author
 
-© 2026 Renderbricks® – Prof. Michael Klein, who has worked in CGI since 1987. Developed with Claude (Anthropic).
+© 2026 Renderbricks® – Prof. Michael Klein.
+
+Transparency note on the use of AI: the author is not a programmer but has worked in CGI since 1987. The add-on was developed entirely through vibe coding with Anthropic Claude (Claude Code): Claude wrote the code, the tests and this documentation from his descriptions. The concept, the design decisions, the rules checked against the real LEGO parts, the tests in Blender and the acceptance of every version are the author's; he is responsible for the content.
 
 [www.renderbricks.com](https://www.renderbricks.com) · [Facebook](https://www.facebook.com/renderbricks) · [YouTube](https://www.youtube.com/@renderbricks)
 
@@ -78,6 +80,4 @@ used with his kind permission – thank you for the model.
 
 GPL-3.0-or-later, see [LICENSE](LICENSE).
 
-Renderbricks is about rendering digital LEGO®. LEGO is a trademark of the LEGO Group of companies which does not sponsor, authorize or endorse this site.
-
-Mecabricks is a trademark of its owner, who does not sponsor, authorize or endorse this project.
+LEGO® is a trademark of the LEGO Group; Mecabricks is a trademark of its owner; this and all other trademarks named here belong to their owners, none of whom sponsors, authorizes or endorses this project.
