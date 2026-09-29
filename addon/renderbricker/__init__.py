@@ -2470,7 +2470,7 @@ NAME_DROP = 1.15                        # header: height of the name's box - the
 HEADER_LOGO_SCALE = 1.15               # header: the logo 15 % larger than an icon
 LOGO_SCALE = 4.37                       # About: the logo as wide as "Renderbricks®" below it (icon units)
 TRADEMARK = ("Renderbricks®", "is a registered word mark in Germany.")   # the name alone under the logo (user)
-DISCLAIMER = ("Renderbricks is about rendering digital LEGO®. LEGO is a trademark of the LEGO Group of companies "
+DISCLAIMER = ("Renderbricks is about rendering digital LEGO®. LEGO® is a trademark of the LEGO Group of companies "
               "which does not sponsor, authorize or endorse this add-on.")
 LINKS = (("www.renderbricks.com", "https://www.renderbricks.com", 'URL'),
          ("Facebook", "https://www.facebook.com/renderbricks", 'COMMUNITY'),

@@ -8,8 +8,8 @@ column at 2x); made with the scripts in _CLAUDE_/scripts/tutorial (local). -->
 [![The life ring on the boat: imported (right) and after Renderbricker (left)](images/tutorial/T07_compare.webp)](images/tutorial/T07_compare.webp?raw=true)
 
 > **Built on Mecabricks.** [Mecabricks](https://www.mecabricks.com) by **Nicolas 'Scrubs' Jarraud**
-> is where the models are built: a LEGO® con­struc­tion kit in the web browser with a library of
-> thou­sands of parts. His Blender add-ons **Mecabricks Advanced** and **Mecabricks Lite** bring a
+> is where the models are built: a con­struc­tion kit for digital LEGO® models in the web browser,
+> with a library of thou­sands of parts. His Blender add-ons **Mecabricks Advanced** and **Mecabricks Lite** bring a
 > model into Blender with its materials. Ren­der­bricker starts where the import ends: it makes the
 > imported parts smooth for ren­der­ing, without chang­ing them.
 
@@ -42,7 +42,7 @@ as the free memory allows – here twelve. The graph­ics card only matters for 
 
 | Word | Meaning |
 |---|---|
-| *part* | one kind of LEGO element in the scene – its **mesh** (the 3D shape) |
+| *part* | one kind of LEGO® element in the scene – its **mesh** (the 3D shape) |
 | *link* | a brick in the scene: an object that shows a part; the Riviera has 3297 links of 810 parts |
 | *copy* | the smoothed version of a part that Renderbricker bakes; all links of the part use it |
 | *crease* | how sharp an edge stays when the surface is smoothed |
