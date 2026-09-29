@@ -1390,6 +1390,11 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         context.workspace.status_text_set(
             f"Renderbricker Apply in {self.jobs} Blender processes: {len(w.done)} / {n}{eta}   (Esc: cancel)")
         if not w.running():
+            more = w.next_round()           # meshes of stopped or crashed workers: another round (run 120)
+            if more:
+                self.jobs = more
+                redraw(context)
+                return {'RUNNING_MODAL'}
             phase(f"workers ({self.jobs} Blenders)", self.t_start)
             self.merging = True
             what = ("writing the cache file and linking it" if s.use_cache and bpy.data.filepath

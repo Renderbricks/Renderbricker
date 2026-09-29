@@ -936,10 +936,111 @@ def process_memory_gb(peak=False):
     return None
 
 
-def check_memory(me, level=2):
-    """Raise MemoryShortage before a mesh whose bake would not fit into free memory."""
+def _pid_alive(pid):
+    """Whether a process still runs (a crashed worker's booking must not block the others)."""
+    import os, sys
+    if pid == os.getpid():
+        return True
+    if sys.platform.startswith("win"):
+        import ctypes
+        k32 = ctypes.WinDLL("kernel32")
+        k32.OpenProcess.restype = ctypes.c_void_p            # a handle is a pointer (64 bit)
+        k32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+        k32.CloseHandle.argtypes = [ctypes.c_void_p]
+        h = k32.OpenProcess(0x1000, False, int(pid))          # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        ok = k32.GetExitCodeProcess(h, ctypes.byref(code))
+        k32.CloseHandle(h)
+        return bool(ok) and code.value == 259                # STILL_ACTIVE
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except OSError:
+        return False
+
+
+class MemoryLedger:
+    """The memory the workers of one run have booked for the large parts they bake right now (run 121).
+    A JSON file {pid: GB} next to the workers' part files, changed only under a lock file, so the
+    check "enough free memory for this part" and the booking are one step for all workers together.
+    Bookings of processes that no longer run are ignored."""
+
+    def __init__(self, path):
+        self.path, self.lock_path = path, path + ".lock"
+
+    def _locked(self, fn):
+        import os, sys, time
+        fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT)
+        try:
+            if sys.platform.startswith("win"):
+                import msvcrt
+                while True:
+                    try:
+                        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError:
+                        time.sleep(0.05)
+                try:
+                    return fn()
+                finally:
+                    os.lseek(fd, 0, 0)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            try:
+                return fn()
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+    def _read(self):
+        import json
+        try:
+            d = json.load(open(self.path, encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return {k: v for k, v in d.items() if _pid_alive(int(k))}
+
+    def _write(self, d):
+        import json
+        with open(self.path, "w", encoding="utf-8") as fh:
+            json.dump(d, fh)
+
+    def take(self, need, reserve):
+        """Book `need` GB for this process if the free memory, less what the others have booked and the
+        reserve, is enough. Returns (booked, others' bookings in GB, free GB)."""
+        import os
+
+        def step():
+            d = self._read()
+            others = sum(v for k, v in d.items() if int(k) != os.getpid())
+            free = free_memory_gb()
+            ok = free is None or need + others + reserve <= free
+            if ok:
+                d[str(os.getpid())] = round(need, 2)
+            self._write(d)
+            return ok, others, free
+        return self._locked(step)
+
+    def give_back(self):
+        import os
+
+        def step():
+            d = self._read()
+            d.pop(str(os.getpid()), None)
+            self._write(d)
+        self._locked(step)
+
+
+def check_memory(me, level=2, reserve=0.0):
+    """Raise MemoryShortage before a mesh whose bake would not fit into free memory. Workers keep
+    `reserve` free on top (run 120: eight workers on Dungeon passed their checks together and used up
+    all memory - six of them crashed, and the other programs had none left either)."""
     need, free = memory_need_gb(original_of(me), level), free_memory_gb()
-    if free is not None and need > free:
+    if free is not None and need + reserve > free:
         raise MemoryShortage(f"not enough free memory for {me.name} ({len(me.polygons):,} faces): needs about "
                              f"{need:.0f} GB, {free:.0f} GB free - close other programs and apply again")
 
@@ -1282,7 +1383,8 @@ P = lambda co: tuple(round(x, 4) for x in co)
 RINGS = []
 EXCLUDE_RUNG = set()     # relief tips that bulged (midpoints), see bulge_check
 REPAIR_PASSES = 4
-FLUSH_FACES = 2_000_000  # a worker writes its copies away after this many copy faces (run 61)
+MEMLOG = bool(__import__("os").environ.get("RENDERBRICKER_MEMLOG"))     # memory per mesh (measuring)
+FLUSH_FACES = int(__import__("os").environ.get("RENDERBRICKER_FLUSH_FACES", 2_000_000))   # a worker writes its copies away after this many copy faces (run 61); the variable is for measuring (run 121)
 WORKER_WAIT = 20         # seconds a worker waits for free memory (after writing its copies away) before
                          # it retires; its remaining meshes are done by the parent at the end. Up to
                          # 2026-09-28 it waited 600 s per mesh: all workers of Italian Riviera (converted
@@ -1292,13 +1394,12 @@ JOB_GB = 6.0             # free memory per worker Blender when nothing is known 
 SCENE_GB_BASE = 0.35     # a background Blender with an empty scene
 SCENE_GB_PER_MLOOP = 0.10    # the scene's meshes, per million face corners
 SCENE_GB_PER_IMAGE = 0.0009  # its images (Dungeon: 1270 images, 1.2 GB)
-# what the workers hold together, measured as the lowest free memory during the run (run 119, every
-# worker loading only its share): Riviera 10 workers 19.4 GB, Dungeon 3 workers 28.6 GB, NINJAGO City
-# (a 27 GB part) 1 process 23.6 GB
-BAKE_GB_PER_MFACE = 9.0      # copies a worker holds, per million faces of its share ...
-BAKE_GB_CAP = 8.5            # ... until it writes them away (FLUSH_FACES; Dungeon: ~8.3 GB each)
-BAKE_GB_FLOOR = 1.2          # ... and not less (Riviera: ~1.5 GB each at 10 workers)
-LARGEST_SHARE = 0.75         # the part with the largest need peaks only briefly on top
+# a worker holds little between its parts - one of Dungeon's workers stayed at 1.4-1.9 GB with its share
+# of the scene - but a large part needs its memory_need_gb for as long as it is baked (91405.004, 86,072
+# faces: 10.5 GB). Several large parts at the same time used up all memory (run 120), so a worker starts
+# a large part only when the shared ledger shows room for it (run 121).
+STEADY_GB = 1.2              # a worker between its parts, on top of its share of the scene
+LEDGER_BIG_GB = 3.0          # parts that need more than this are booked in the ledger before they start
 RESERVE_GB = 4.0             # memory left free for the rest of the computer (at least, or 10 % of it)
 orig_name = [""]
 
@@ -2665,20 +2766,16 @@ def scene_memory_gb():
 
 
 def workers_memory_gb(n, meshes, scene_gb=None):
-    """Memory n worker Blenders need together for these meshes (run 117, recalibrated in run 119 on
-    the memory in use together). Every worker holds its share of the scene and the copies of its share
-    (between BAKE_GB_FLOOR and BAKE_GB_CAP) until it writes them away; only one of them works on the
-    largest part at a time, whose extra need (memory_need_gb, with its margin) comes on top, briefly
-    (LARGEST_SHARE). Planned / measured: Riviera 10 workers 22.2 / 19.4 GB, Dungeon 3 workers
-    31.3 / 28.6 GB, NINJAGO City 1 process 24.1 / 23.6 GB."""
+    """Memory n worker Blenders need together for these meshes (run 121): every worker holds its share
+    of the scene and STEADY_GB between its parts; the largest part comes once on top. More large parts at
+    the same time only when the ledger (MemoryLedger) finds room for them - so this is what the plan has
+    to fit, not the worst case."""
     meshes = list(meshes)
     if scene_gb is None:
         scene_gb = scene_memory_gb()
-    faces = sum(len(me.polygons) for me in meshes)
     scene_gb = SCENE_GB_BASE + (scene_gb - SCENE_GB_BASE) / max(1, n)     # only its share (run 119)
-    bake = max(BAKE_GB_FLOOR, min(BAKE_GB_CAP, BAKE_GB_PER_MFACE * faces / 1e6 / max(1, n)))
     largest = max((memory_need_gb(me, max(2, RENDER_LEVEL)) for me in meshes), default=0.0)
-    return n * (scene_gb + bake) + LARGEST_SHARE * max(0.0, largest - bake)
+    return n * (scene_gb + STEADY_GB) + largest
 
 
 JOBS_MAX = 12               # upper bound of worker Blenders (run 59: 8; run 117: Riviera 126 / 87 / 82 s
@@ -2686,7 +2783,7 @@ JOBS_MAX = 12               # upper bound of worker Blenders (run 59: 8; run 117
 LAST_MEMORY_PLAN = [""]     # the reasoning of the last resolve_jobs, for the log and the panel
 
 
-def resolve_jobs(value, n_meshes, meshes=None):
+def resolve_jobs(value, n_meshes, meshes=None, per_process=20):
     """--jobs: a number, or 'auto': one Blender per 2 cores, at most JOBS_MAX, at least ~20 meshes each,
     and as many as fit into the free memory less a reserve (RESERVE_GB or 10 %) - estimated per scene
     from its meshes (run 117); without the meshes one per JOB_GB (run 59)."""
@@ -2694,7 +2791,7 @@ def resolve_jobs(value, n_meshes, meshes=None):
     if value != "auto":
         return max(1, int(value))
     cores = (os.cpu_count() or 2) // 2
-    top = max(1, min(JOBS_MAX, cores, n_meshes // 20))
+    top = max(1, min(JOBS_MAX, cores, n_meshes // per_process))
     free = None
     try:
         free = free_memory_gb()
@@ -2737,7 +2834,7 @@ def _run_meshes(users, pick, weight, total_w, show_progress, wait=0, after=None,
         flushed = False
         while True:
             try:
-                check_memory(me, max(VIEW_LEVEL, RENDER_LEVEL))
+                check_memory(me, max(VIEW_LEVEL, RENDER_LEVEL), RESERVE_GB if wait else 0.0)
                 short = None
                 break
             except MemoryShortage as e:
@@ -2770,9 +2867,92 @@ def _run_meshes(users, pick, weight, total_w, show_progress, wait=0, after=None,
         print(f"PART {me.name!r} objects={len(obs)} {rep}", flush=True)
         if after:
             after(me)
+        if MEMLOG:                  # memory after every mesh (measuring, run 121)
+            print(f"MEMLOG {me.name} faces {len(me.polygons)} need {memory_need_gb(me, 2):.2f} "
+                  f"now {process_memory_gb() or 0:.2f} peak {process_memory_gb(peak=True) or 0:.2f}", flush=True)
         done_w += weight[me]
         if show_progress:
             print(_progress(i, len(pick), done_w, total_w, t_start, me.name), flush=True)
+    return skipped, failed, reps
+
+
+def _run_worker_meshes(users, pick, weight, ledger, after=None, flush=None):
+    """A worker's meshes with the ledger (run 121). A part needing more than LEDGER_BIG_GB is started
+    only when the ledger books it; otherwise the worker bakes its small parts first and tries again.
+    With only large parts left it writes its copies away and waits; after WORKER_WAIT seconds without
+    room it retires (RETIRE) and a further round or the parent does the rest. Returns (skipped,
+    failed, reports) like _run_meshes."""
+    import time
+    from collections import deque
+    level = max(VIEW_LEVEL, RENDER_LEVEL)
+    queue = deque(pick)
+    skipped, failed, reps = [], [], {}
+    waited_since = None
+    while queue:
+        me = queue.popleft()
+        need = memory_need_gb(original_of(me), level)
+        booked = False
+        if need > LEDGER_BIG_GB:
+            ok, others, free = ledger.take(need, RESERVE_GB)
+            if not ok:
+                queue.append(me)
+                if any(memory_need_gb(original_of(m), level) <= LEDGER_BIG_GB for m in queue):
+                    small = next(m for m in queue if memory_need_gb(original_of(m), level) <= LEDGER_BIG_GB)
+                    queue.remove(small)
+                    queue.appendleft(small)
+                    continue
+                if flush:                       # only large parts left: give back what this worker holds
+                    flush()
+                if others > 0:                  # the others' large parts end soon and give their memory back:
+                    waited_since = None         # wait for them (run 122: retiring after 20 s left 22 large
+                    time.sleep(1.0)             # parts to the parent alone)
+                    continue
+                if waited_since is None:        # nothing booked by the others and still no room: a real
+                    waited_since = time.time()  # shortage - retire after WORKER_WAIT
+                if time.time() - waited_since > WORKER_WAIT:
+                    print(f"RETIRE worker short of memory at {me.name!r} ({len(queue)} meshes left, done at the "
+                          f"end): needs about {need:.0f} GB, {free or 0:.0f} GB free, {others:.0f} GB booked "
+                          f"by the others", flush=True)
+                    break
+                time.sleep(1.0)
+                continue
+            booked = True
+        else:
+            try:
+                check_memory(me, level, RESERVE_GB)
+            except MemoryShortage as e:
+                queue.append(me)
+                if flush:
+                    flush()
+                if waited_since is None:
+                    waited_since = time.time()
+                if time.time() - waited_since > WORKER_WAIT:
+                    print(f"RETIRE worker short of memory at {me.name!r} ({len(queue)} meshes left, done at the "
+                          f"end): {e}", flush=True)
+                    break
+                time.sleep(1.0)
+                continue
+        waited_since = None
+        t0 = time.time()
+        try:
+            rep = process(me, users[me])
+        except Exception as e:      # one broken mesh must not end a long headless run
+            import traceback
+            traceback.print_exc()
+            failed.append(me.name)
+            print(f"Error in {me.name!r}: {type(e).__name__}: {e} - mesh left as imported", flush=True)
+            continue
+        finally:
+            if booked:
+                ledger.give_back()
+        rep['seconds'] = round(time.time() - t0, 1)
+        reps[me.name] = rep
+        print(f"PART {me.name!r} objects={len(users[me])} {rep}", flush=True)
+        if after:
+            after(me)
+        if MEMLOG:
+            print(f"MEMLOG {me.name} faces {len(me.polygons)} need {need:.2f} "
+                  f"now {process_memory_gb() or 0:.2f} peak {process_memory_gb(peak=True) or 0:.2f}", flush=True)
     return skipped, failed, reps
 
 
@@ -2796,22 +2976,63 @@ class Workers:
         self.peaks = []                 # memory peak of every worker in GB (PEAK lines, run 117)
         # every worker gets the names of its share and loads only these meshes into an empty Blender
         # instead of opening the whole scene (run 119: Dungeon 2.9 GB per worker -> 0.6 GB for a quarter)
-        todo = {me: obs for me, obs in users.items() if names is None or me.name in set(names)}
-        part = _assign(todo, self.weight, jobs)
-        source = scene_path or bpy.data.filepath
-        self.procs = []
-        for i in range(jobs):
+        self.opts, self.source = list(opts), scene_path or bpy.data.filepath
+        self.todo = [me for me in users if names is None or me.name in set(names)]
+        self.procs, self.rounds, self.redone = [], 0, set()
+        self._start(self.todo, jobs)
+
+    def _start(self, meshes, jobs):
+        """Start `jobs` more worker Blenders for these meshes (a round); every one loads only its share."""
+        import os, json, threading, subprocess
+        part = _assign({me: None for me in meshes}, self.weight, jobs)
+        first = len(self.procs)
+        for k in range(jobs):
+            i = first + k
             share = os.path.join(self.tmp, f"share{i}.json")
-            json.dump(sorted(n for n, k in part.items() if k == i), open(share, "w", encoding="utf-8"))
+            json.dump(sorted(n for n, j in part.items() if j == k), open(share, "w", encoding="utf-8"))
             cmd = [bpy.app.binary_path, "-b", "--factory-startup", "--python",
-                   os.path.abspath(__file__), "--"] + list(opts) + [
-                   "--source", source, "--share", share,
+                   os.path.abspath(__file__), "--"] + self.opts + [
+                   "--source", self.source, "--share", share, "--ledger", os.path.join(self.tmp, "ledger.json"),
                    "--worker", str(i), str(jobs), self.part(i, "blend"), self.part(i, "json")]
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             pr = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                   encoding="utf-8", errors="replace", creationflags=flags)
             self.procs.append(pr)
             threading.Thread(target=self._reader, args=(pr,), daemon=True).start()
+        self.rounds += 1
+        self.jobs = jobs
+
+    def pending(self):
+        """Meshes no finished worker has a result for (it stopped for memory or crashed)."""
+        import os, json
+        got = set()
+        for i in range(len(self.procs)):
+            pj = self.part(i, "json")
+            if os.path.exists(pj):
+                try:
+                    got.update(json.load(open(pj, encoding="utf-8")))
+                except (OSError, ValueError):
+                    pass
+        return [me for me in self.todo if me.name not in got]
+
+    def next_round(self):
+        """After a round: the meshes left get a further round of workers - as many as fit now (run 120:
+        before, this Blender did them alone, 2,076 meshes of Dungeon in 1,371 s). Returns the number
+        of workers started, 0 when nothing is left or one Blender is enough (the merge does the rest)."""
+        import os
+        left = self.pending()
+        if not left or self.rounds >= 3:
+            return 0
+        jobs = resolve_jobs("auto", len(left), left, per_process=1)   # a few large parts are worth it too
+        forced = os.environ.get("RENDERBRICKER_TEST_ROUND_JOBS")     # CI: a further round on a small scene
+        if forced:
+            jobs = int(forced)
+        if jobs < 2:
+            return 0
+        # workers without a result: their meshes are done again now, so no error for them at the merge
+        self.redone |= {i for i in range(len(self.procs)) if not os.path.exists(self.part(i, "json"))}
+        self._start(left, jobs)
+        return jobs
 
     def part(self, i, ext):
         import os
@@ -2835,7 +3056,7 @@ class Workers:
                 return out
             timeout = 0.0
             m = re.match(r"PART '(.+?)' ", line)
-            if m and m.group(1) in self.by_name:
+            if m and m.group(1) in self.by_name and m.group(1) not in self.done:
                 self.done.append(m.group(1))
                 self.done_w += self.weight[self.by_name[m.group(1)]]
                 out.append(("PART", m.group(1)))
@@ -2871,10 +3092,11 @@ class Workers:
         worker result)."""
         import os, json, glob, shutil
         reps, files = {}, []
-        for i in range(self.jobs):
+        for i in range(len(self.procs)):
             pj = self.part(i, "json")
             if not os.path.exists(pj):
-                self.errors.append(f"Error: worker {i} wrote no result (exit {self.procs[i].returncode})")
+                if i not in self.redone:
+                    self.errors.append(f"Error: worker {i} wrote no result (exit {self.procs[i].returncode})")
                 continue
             reps.update(json.load(open(pj, encoding="utf-8")))
             files += sorted(glob.glob(glob.escape(os.path.splitext(self.part(i, "blend"))[0]) + "_b*.blend"))
@@ -2921,10 +3143,11 @@ class Workers:
         import os, json, glob, shutil
         made, reps = {}, {}
         loaded = []
-        for i in range(self.jobs):
+        for i in range(len(self.procs)):
             pj = self.part(i, "json")
             if not os.path.exists(pj):
-                self.errors.append(f"Error: worker {i} wrote no result (exit {self.procs[i].returncode})")
+                if i not in self.redone:
+                    self.errors.append(f"Error: worker {i} wrote no result (exit {self.procs[i].returncode})")
                 continue
             reps.update(json.load(open(pj, encoding="utf-8")))
             for pb in sorted(glob.glob(glob.escape(os.path.splitext(self.part(i, "blend"))[0]) + "_b*.blend")):
@@ -2987,12 +3210,18 @@ def _parallel(users, weight, total_w, jobs, scene_path=None):
     print(f"JOBS {jobs} Blender processes for {len(users)} meshes", flush=True)
     cache = opt("--cache", "")
     t_start = time.time()
-    while w.running():
-        for kind, x in w.poll(timeout=0.5):
-            if kind == "PART":
-                print(_progress(len(w.done), len(users), w.done_w, total_w, t_start, x), flush=True)
-            else:
-                print(x, flush=True)
+    while True:
+        while w.running():
+            for kind, x in w.poll(timeout=0.5):
+                if kind == "PART":
+                    print(_progress(len(w.done), len(users), w.done_w, total_w, t_start, x), flush=True)
+                else:
+                    print(x, flush=True)
+        more = w.next_round()               # meshes of stopped or crashed workers (run 120)
+        if not more:
+            break
+        print(f"JOBS round {w.rounds}: {more} Blender processes for the {len(w.pending())} meshes left "
+              f"({LAST_MEMORY_PLAN[0]})", flush=True)
     print(f"MERGE copies of the workers (bake {time.time() - t_start:.0f} s)", flush=True)
     t_m = time.time()
     if cache:                       # straight into the cache file (run 66)
@@ -3732,7 +3961,12 @@ def main():
                 flush()
 
         loaded = process_memory_gb()
-        _s, _f, reps = _run_meshes(users, pick, weight, total_w, False, wait=WORKER_WAIT, after=after, flush=flush)
+        if "--ledger" in args:      # large parts only when the ledger has room for them (run 121)
+            _s, _f, reps = _run_worker_meshes(users, pick, weight, MemoryLedger(args[args.index("--ledger") + 1]),
+                                              after=after, flush=flush)
+        else:
+            _s, _f, reps = _run_meshes(users, pick, weight, total_w, False, wait=WORKER_WAIT, after=after,
+                                       flush=flush)
         flush()
         peak = process_memory_gb(peak=True)
         if peak is not None:            # for the log and the estimate of the next run
