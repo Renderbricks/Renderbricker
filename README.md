@@ -2,7 +2,7 @@
 
 Smooth, render-ready LEGO® parts from Mecabricks imports – without touching the imported meshes.
 
-Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Mecabricks](https://www.mecabricks.com) and imported with the Mecabricks Advanced add-on. Each part mesh is processed once: seams are welded in a temporary copy, edges get creases by a tested rule set, and the subdivided result is baked into a copy that every link of that part uses. The original import stays unchanged, so the conversion can always be undone.
+Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Mecabricks](https://www.mecabricks.com) by Nicolas 'Scrubs' Jarraud and imported with his Mecabricks Lite or Advanced add-on. Each part mesh is processed once: seams are welded in a temporary copy, edges get creases by a tested rule set, and the subdivided result is baked into a copy that every link of that part uses. The original import stays unchanged, so the conversion can always be undone.
 
 ## Features
 
@@ -16,7 +16,7 @@ Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Meca
 
 - Blender 4.5 LTS or newer (developed with 5.2 LTS and 5.3)
 - Windows, Linux or macOS
-- Scenes from [www.mecabricks.com](https://www.mecabricks.com), imported with the Mecabricks Advanced add-on
+- Scenes from [www.mecabricks.com](https://www.mecabricks.com), imported with the Mecabricks Lite or Advanced add-on
 
 ## Installation
 
@@ -67,9 +67,12 @@ Renderbricks® is a registered trademark in Germany.
 
 ## Credits
 
+Renderbricker is built on [Mecabricks](https://www.mecabricks.com) and its Blender add-ons Mecabricks
+Lite and Mecabricks Advanced, all developed by **Nicolas 'Scrubs' Jarraud**.
+
 The example scene of the [Tutorial](docs/TUTORIAL.md) is the
-[Italian Riviera](https://www.mecabricks.com/en/models/qxv4E8VdadJ) by **Scrubs**, the developer of
-[Mecabricks](https://www.mecabricks.com) – thank you for the model.
+[Italian Riviera](https://www.mecabricks.com/en/models/qxv4E8VdadJ) by Nicolas 'Scrubs' Jarraud,
+used with his kind permission – thank you for the model.
 
 ## License
 
