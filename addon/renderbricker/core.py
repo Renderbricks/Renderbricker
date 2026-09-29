@@ -2752,7 +2752,14 @@ def load_share(source, names):
         dst.meshes = [n for n in src.meshes if n in want]
     for me in list(bpy.data.meshes):
         if me.library is not None and me.name in want:
-            me.make_local()
+            local = me.make_local()
+            if local is None or local.library is not None:
+                # Blender 5.3 alpha (2026-09-29): make_local() leaves a linked mesh linked - the workers
+                # found none of their meshes. A copy of a linked mesh is local; it takes the name back
+                name = me.name
+                local = me.copy()
+                bpy.data.meshes.remove(me)
+                local.name = name
     by_name = {me.name: me for me in bpy.data.meshes if me.library is None}
     users = {by_name[n]: [] for n in names if n in by_name}
     weight = {me: len(me.polygons) + 50 for me in users}
