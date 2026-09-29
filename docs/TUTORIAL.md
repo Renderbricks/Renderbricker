@@ -141,8 +141,8 @@ Every level has three to four times the faces of the one below. A level above 2 
 ![Apply running: progress bar (1) and Esc to cancel (2)](images/tutorial/T04_apply_progress.webp)
 
 A progress bar shows the parts done and the time left (1); **Esc** cancels (2). With *Use several
-Blender pro­cesses*, Blenders in the back­ground share the work – for the Italian Riviera twelve of them
-con­verted the 810 dif­fer­ent parts in 99 seconds. At the end the scene is saved.
+Blender pro­cesses*, Blenders in the back­ground share the work – for the Italian Riviera nine of them
+con­verted the 810 dif­fer­ent parts in 86 seconds. At the end the scene is saved.
 
 ![After Apply: the summary (1), Subdivision: ON (2) and the cache file (3)](images/tutorial/T05_apply_result.webp)
 

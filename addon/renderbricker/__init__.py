@@ -2190,8 +2190,9 @@ def apply_key(context):
         scope += ":" + ",".join(sorted(c.collection.name for c in s.collections if c.collection))
     elif scope == 'SELECTED':
         scope += f":{len(context.selected_objects)}:{getattr(context.active_object, 'name', '')}"
-    return (f"{s.variant}|{s.view_level}|{s.render_level}|{scope}|{core.RULES_VERSION}|"
-            f"{len(bpy.data.meshes)}|{len(context.scene.objects)}")
+    objs = context.scene.objects
+    n = len(objs) - (1 if objs.get(core.CAMERA_NAME) else 0)     # the render camera is not a part
+    return f"{s.variant}|{s.view_level}|{s.render_level}|{scope}|{core.RULES_VERSION}|{len(bpy.data.meshes)}|{n}"
 
 
 def apply_button(L, context, **kw):
