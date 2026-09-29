@@ -87,7 +87,7 @@ of the Blender window shows it.
 **What it is for:** the defaults suit most scenes; here is what they mean. For the Italian Riviera
 all of them stay as they are.
 
-![The panel with its default settings (1–5)](images/tutorial/T03_settings.webp)
+![The panel with its default settings (1–6)](images/tutorial/T03_settings.webp)
 
 1. **All** – every part of the scene. *Selected* con­verts only the objects selected in the view­port
    or the Out­liner, *Col­lec­tion* the parts of chosen col­lec­tions (see below).
@@ -97,7 +97,12 @@ all of them stay as they are.
 4. **Use several Blender pro­cesses** – on; larger scenes are con­verted by several Blenders in the
    back­ground at the same time. How many depends on the pro­ces­sor and the free memory; each of
    them uses several pro­ces­sor cores itself.
-5. **Cache file next to the scene** – on; the smoothed parts go into a file of their own and the
+5. **Low Memory: Auto** – how these Blenders share the parts. *Off* gives each its share at once,
+   the fastest way. *On* cuts the parts into small seg­ments; each is done by a Blender that ends
+   after­wards and frees its memory – slower, but safe on com­put­ers with 16 or 32 GB or with very
+   large parts. *Auto* switches it on only when a single part is so large that oth­er­wise just a few
+   Blenders could run; the Italian Riviera does not need it.
+6. **Cache file next to the scene** – on; the smoothed parts go into a file of their own and the
    scene file stays small.
 
 **Log file** (off) also writes the results of Apply and Check, with the full list of prob­lems, into
@@ -137,7 +142,7 @@ Every level has three to four times the faces of the one below. A level above 2 
 
 A progress bar shows the parts done and the time left (1); **Esc** cancels (2). With *Use several
 Blender pro­cesses*, Blenders in the back­ground share the work – for the Italian Riviera twelve of them
-con­verted the 810 dif­fer­ent parts in 84 seconds. At the end the scene is saved.
+con­verted the 810 dif­fer­ent parts in 99 seconds. At the end the scene is saved.
 
 ![After Apply: the summary (1), Subdivision: ON (2) and the cache file (3)](images/tutorial/T05_apply_result.webp)
 
@@ -214,17 +219,17 @@ slots below in about two minutes.
 ### The quality in detail
 
 The same Front view at 8K (7680 × 4320) with 512 samples – about five minutes on an RTX 5090 – and
-four parts of it at full size (1:1):
+four parts of it at full size (1:1) – click a detail to see it pixel for pixel:
 
 ![The 8K render with the four details (1–4)](images/tutorial/T08c_overview.webp)
 
-![Detail 1: the roof tiles](images/tutorial/T08c_crop1.webp)
+[![Detail 1: the roof tiles](images/tutorial/T08c_crop1.webp)](images/tutorial/T08c_crop1.webp?raw=true)
 
-![Detail 2: the balcony](images/tutorial/T08c_crop2.webp)
+[![Detail 2: the balcony](images/tutorial/T08c_crop2.webp)](images/tutorial/T08c_crop2.webp?raw=true)
 
-![Detail 3: the square](images/tutorial/T08c_crop3.webp)
+[![Detail 3: the square](images/tutorial/T08c_crop3.webp)](images/tutorial/T08c_crop3.webp?raw=true)
 
-![Detail 4: the boat](images/tutorial/T08c_crop4.webp)
+[![Detail 4: the boat](images/tutorial/T08c_crop4.webp)](images/tutorial/T08c_crop4.webp?raw=true)
 
 Round shapes are round – the tiles, the life ring, the rim of the boat, the studs with their logo –
 while the edges that are sharp on the real bricks stay sharp.
