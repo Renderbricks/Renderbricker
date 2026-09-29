@@ -9,7 +9,7 @@ Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Meca
 - **Rule-based creases** – sharp where the real part is sharp, round where it is round; the rules are documented with the part and finding they come from in [docs/RULES.md](docs/RULES.md).
 - **One copy per part** – thousands of links share one subdivided mesh; viewport and render level can differ (the render level is switched in for F12 and back afterwards).
 - **Cache file** – the copies can live in `<scene>_rbcache.blend` next to the scene, linked as library overrides, so the scene file stays small; move or copy the cache with the scene, switch it off to take the copies back into the scene.
-- **Several cores** – Apply and the headless conversion run the parts in parallel background Blenders.
+- **Several Blender processes** – Apply and the headless conversion share the parts among several Blenders in the background; how many depends on the processor and the free memory.
 - **Checks** – the original is verified untouched, folds and seam gaps are measured after every conversion.
 
 ## Requirements

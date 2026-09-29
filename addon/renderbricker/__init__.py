@@ -812,7 +812,7 @@ def write_log(context, label):
              f"(Renderbricker {VERSION}, Blender {bpy.app.version_string})",
              f"scene: {bpy.data.filepath}",
              f"settings: {scope}, variant {s.variant}, viewport {s.view_level}, render {s.render_level}, "
-             f"several cores {'on' if s.use_cores else 'off'}, cache file {'on' if s.use_cache else 'off'}"]
+             f"several Blender processes {'on' if s.use_cores else 'off'}, cache file {'on' if s.use_cache else 'off'}"]
     lines += [f"  - {part}" for part in s.summary.split(", ")]
     if len(s.problems):
         lines.append(f"problems ({len(s.problems)}):")
@@ -974,9 +974,11 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
     prev_view_level: IntProperty(default=1)     # the confirmed levels (question above 2)
     prev_render_level: IntProperty(default=2)
     use_cores: bpy.props.BoolProperty(
-        name="Use several cores", default=True,
-        description="Apply on larger scenes (about 40 meshes and more) runs in background Blenders on "
-                    "several cores and loads the result into this scene - the scene is saved first")
+        name="Use several Blender processes", default=True,
+        description="Apply on larger scenes (about 40 meshes and more) starts several Blenders in the "
+                    "background that share the parts, and loads the result into this scene - the scene is saved "
+                    "first. How many depends on the processor and the free memory; every one of them uses "
+                    "several processor cores itself")
     use_cache: bpy.props.BoolProperty(
         name="Cache file next to the scene", default=True, update=_cache_update,
         description="The subdivided copies are kept in <scene>_rbcache.blend next to the scene and "
@@ -1331,11 +1333,12 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
             self.force = True
         if s.use_cores and not bpy.app.background:
             object_mode(context)
-            jobs = core.resolve_jobs("auto", len(self.collect(context)[0]))
+            todo = self.collect(context)[0]
+            jobs = core.resolve_jobs("auto", len(todo), [me for me, _obs in todo])
             if jobs > 1:
                 if not bpy.data.filepath:
-                    self.report({'WARNING'}, "Save the scene first: Apply on several cores opens it from disk "
-                                             "(or switch off 'Use several cores')")
+                    self.report({'WARNING'}, "Save the scene first: Apply with several Blender processes opens it "
+                                             "from disk (or switch off 'Use several Blender processes')")
                     bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT')
                     return {'CANCELLED'}
                 return self._start_workers(context, jobs)
@@ -1383,9 +1386,9 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                 if w.done_w and elapsed > 10.0 and w.done_w >= 0.03 * w.total_w else None)
         eta = "" if left is None else f"   about {fmt_time(left)} left"
         short = f", {w.retired} stopped for memory" if w.retired else ""
-        s.progress_text = f"{len(w.done)} / {n}   {self.jobs} cores{short}{eta}"
+        s.progress_text = f"{len(w.done)} / {n}   {self.jobs} processes{short}{eta}"
         context.workspace.status_text_set(
-            f"Renderbricker Apply on {self.jobs} cores: {len(w.done)} / {n}{eta}   (Esc: cancel)")
+            f"Renderbricker Apply in {self.jobs} Blender processes: {len(w.done)} / {n}{eta}   (Esc: cancel)")
         if not w.running():
             phase(f"workers ({self.jobs} Blenders)", self.t_start)
             self.merging = True
@@ -1460,7 +1463,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         s = context.scene.mecsub
         n = len(self.items)
         objs = sum(len(o) for _, o in self.items[:self.done])
-        cores = f", {self.jobs} cores" if getattr(self, "workers", None) else ""
+        cores = f", {self.jobs} Blender processes" if getattr(self, "workers", None) else ""
         skipped = getattr(self, "skipped", 0)
         s.summary = ((f"Cancelled after {self.done} of {n} meshes, " if self.cancelled else f"{n} mesh{'' if n == 1 else 'es'}, ")
                      + (f"{skipped} already up to date (skipped), " if skipped else "")
@@ -1931,8 +1934,8 @@ class MECSUB_OT_headless(bpy.types.Operator):
     bl_idname = "mecsub.headless"
     bl_label = "Convert headless"
     bl_description = ("Save the scene, write a start script next to it (.bat on Windows, .command on macOS, .sh on "
-                      "Linux) and run it in a terminal: Blender converts the whole scene in the background on several "
-                      "cores and saves the result as <scene>_subdiv_<add-on version>.blend. The open scene is not changed")
+                      "Linux) and run it in a terminal: Blender converts the whole scene in the background with several "
+                      "Blender processes and saves the result as <scene>_subdiv_<add-on version>.blend. The open scene is not changed")
 
     def invoke(self, context, event):
         if not bpy.data.filepath:
@@ -1973,7 +1976,7 @@ class MECSUB_OT_headless(bpy.types.Operator):
 
 # lines of the conversion worth showing in the terminal (the rest is Blender's own output)
 HEADLESS_SHOW = ("PROGRESS", "SKIP", "SAVED", "Error", "Traceback", "MESHES", "JOBS", "MERGE", "CACHE", "CAMERA",
-                 "RETIRE", "CLEAN")
+                 "RETIRE", "CLEAN", "PEAK", "MEMORY")
 
 
 def write_headless_script(base, stem, blend, out, args):
@@ -2199,7 +2202,8 @@ GUIDE = (
         "from the smoothed surface (crisper logos).",
         "Viewport level: how smooth the parts look while you work. 1 keeps the viewport fast.",
         "Render level: how smooth they are in the render. 2 is enough even for close-ups.",
-        "Use several cores: larger scenes are converted in parallel background Blenders.",
+        "Use several Blender processes: larger scenes are converted by several Blenders in the background "
+        "at the same time - how many depends on the processor and the free memory.",
         "Cache file: the smoothed parts are stored in <scene>_rbcache.blend next to the scene, so the "
         "scene file stays small.",
         "Log file: the results of Apply, Check and Convert headless are also written into "

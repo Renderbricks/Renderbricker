@@ -897,6 +897,45 @@ def free_memory_gb():
     return None
 
 
+def process_memory_gb(peak=False):
+    """Memory of this Blender in GB (peak=True: the highest so far); None if unknown.
+    Windows: committed memory (private bytes - what counts against the commit limit).
+    Linux / macOS: resident memory (the peak from getrusage, the current from /proc)."""
+    import sys
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            from ctypes import wintypes
+            class PMC(ctypes.Structure):
+                _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                            ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                            ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t),
+                            ("PrivateUsage", ctypes.c_size_t)]
+            c = PMC(); c.cb = ctypes.sizeof(PMC)
+            k32 = ctypes.WinDLL("kernel32")
+            psapi = ctypes.WinDLL("psapi")
+            h = k32.GetCurrentProcess()
+            h = ctypes.c_void_p(h)
+            if psapi.GetProcessMemoryInfo(h, ctypes.byref(c), c.cb):
+                return (c.PeakPagefileUsage if peak else c.PrivateUsage) / 2**30
+        except (AttributeError, OSError):
+            return None
+        return None
+    try:
+        if peak:
+            import resource
+            r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            return r / 2**30 if sys.platform == "darwin" else r / 2**20     # bytes on macOS, KB on Linux
+        for line in open("/proc/self/status"):
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1]) / 2**20
+    except (OSError, ValueError, ImportError):
+        return None
+    return None
+
+
 def check_memory(me, level=2):
     """Raise MemoryShortage before a mesh whose bake would not fit into free memory."""
     need, free = memory_need_gb(original_of(me), level), free_memory_gb()
@@ -1248,7 +1287,17 @@ WORKER_WAIT = 20         # seconds a worker waits for free memory (after writing
                          # it retires; its remaining meshes are done by the parent at the end. Up to
                          # 2026-09-28 it waited 600 s per mesh: all workers of Italian Riviera (converted
                          # scene, commit memory full) waited for each other, the run stood still (user)
-JOB_GB = 6.0             # free memory per worker Blender of a parallel headless run (run 59)
+JOB_GB = 6.0             # free memory per worker Blender when nothing is known about the meshes (run 59)
+# memory of the worker Blenders, measured on six scenes (run 117: peak commit of every worker):
+SCENE_GB_BASE = 0.35     # a background Blender with an empty scene
+SCENE_GB_PER_MLOOP = 0.10    # the scene's meshes, per million face corners
+SCENE_GB_PER_IMAGE = 0.0009  # its images (Dungeon: 1270 images, 1.2 GB)
+BAKE_GB_PER_MFACE = 20.0     # copies a worker holds, per million faces of its share
+BAKE_GB_CAP = 11.0           # ... until it writes them away (FLUSH_FACES; Coppersteam, Dungeon)
+BAKE_GB_FLOOR = 3.0          # ... but not less, however small the share (Riviera: ~3.2 GB each at 4-10 workers)
+TOGETHER = 0.7               # the workers do not peak at the same time: 65-71 % of the sum of their peaks
+                             # were in use together (Riviera 4 / 8 / 10 workers: 14.9 / 25.4 / 31.9 GB)
+RESERVE_GB = 4.0             # memory left free for the rest of the computer (at least, or 10 % of it)
 orig_name = [""]
 
 
@@ -2588,18 +2637,66 @@ def _assign(users, weight, n):
     return part
 
 
-def resolve_jobs(value, n_meshes):
-    """--jobs: a number, or 'auto' - one Blender per 2 cores, one per JOB_GB of free memory
-    (each worker holds the whole scene), at most 8, at least ~20 meshes each (run 59)."""
+def scene_memory_gb():
+    """Memory a worker needs for the open scene alone (run 117: within +0.3 / -0.1 GB of the measured
+    load of six scenes; the image term is on the safe side for scenes with few large images)."""
+    loops = sum(len(m.loops) for m in bpy.data.meshes if m.library is None)
+    return SCENE_GB_BASE + SCENE_GB_PER_MLOOP * loops / 1e6 + SCENE_GB_PER_IMAGE * len(bpy.data.images)
+
+
+def workers_memory_gb(n, meshes, scene_gb=None):
+    """Memory n worker Blenders need together for these meshes (run 117). Every worker holds the
+    scene and the copies of its share (at least BAKE_GB_FLOOR) until it writes them away; they do
+    not peak at the same time (TOGETHER); only one of them works on the largest part at a time,
+    whose own need (memory_need_gb, with its margin) comes once on top. Riviera: 23 / 30 / 36 GB
+    planned for 4 / 8 / 10 workers, 14.9 / 25.4 / 31.9 GB measured."""
+    meshes = list(meshes)
+    if scene_gb is None:
+        scene_gb = scene_memory_gb()
+    faces = sum(len(me.polygons) for me in meshes)
+    bake = max(BAKE_GB_FLOOR, min(BAKE_GB_CAP, BAKE_GB_PER_MFACE * faces / 1e6 / max(1, n)))
+    largest = max((memory_need_gb(me, max(2, RENDER_LEVEL)) for me in meshes), default=0.0)
+    return TOGETHER * n * (scene_gb + bake) + max(0.0, largest - bake)
+
+
+JOBS_MAX = 12               # upper bound of worker Blenders (run 59: 8; run 117: Riviera 126 / 87 / 82 s
+                            # with 4 / 8 / 10 - the memory decides, see workers_memory_gb)
+LAST_MEMORY_PLAN = [""]     # the reasoning of the last resolve_jobs, for the log and the panel
+
+
+def resolve_jobs(value, n_meshes, meshes=None):
+    """--jobs: a number, or 'auto': one Blender per 2 cores, at most JOBS_MAX, at least ~20 meshes each,
+    and as many as fit into the free memory less a reserve (RESERVE_GB or 10 %) - estimated per scene
+    from its meshes (run 117); without the meshes one per JOB_GB (run 59)."""
     import os
     if value != "auto":
         return max(1, int(value))
     cores = (os.cpu_count() or 2) // 2
+    top = max(1, min(JOBS_MAX, cores, n_meshes // 20))
+    free = None
     try:
-        mem = int(free_memory_gb() // JOB_GB)
+        free = free_memory_gb()
     except Exception:
-        mem = 2
-    return max(1, min(8, cores, mem, n_meshes // 20))
+        pass
+    if free is None:
+        LAST_MEMORY_PLAN[0] = "free memory unknown: 2 Blenders"
+        return max(1, min(2, top))
+    if not meshes:
+        n = max(1, min(top, int(free // JOB_GB)))
+        LAST_MEMORY_PLAN[0] = f"{n} Blenders ({free:.0f} GB free, {JOB_GB:.0f} GB each)"
+        return n
+    meshes = list(meshes)
+    scene_gb = scene_memory_gb()
+    n = 1
+    room = free - max(RESERVE_GB, 0.1 * free)
+    for k in range(top, 0, -1):
+        if workers_memory_gb(k, meshes, scene_gb) <= room:
+            n = k
+            break
+    need = workers_memory_gb(n, meshes, scene_gb)
+    LAST_MEMORY_PLAN[0] = (f"{n} Blenders: about {need:.0f} GB of {free:.0f} GB free "
+                           f"(scene {scene_gb:.1f} GB each, at most {top} by cores and parts)")
+    return n
 
 
 def _run_meshes(users, pick, weight, total_w, show_progress, wait=0, after=None, flush=None):
@@ -2674,6 +2771,7 @@ class Workers:
         self.tmp = tempfile.mkdtemp(prefix="rb_jobs_")
         self.q = queue.Queue()
         self.done, self.done_w, self.skipped, self.errors, self.retired = [], 0, [], [], 0
+        self.peaks = []                 # memory peak of every worker in GB (PEAK lines, run 117)
         extra = []
         if names is not None:           # only these meshes (Apply on a selection)
             pm = os.path.join(self.tmp, "meshes.json")
@@ -2722,6 +2820,11 @@ class Workers:
             elif line.startswith("RETIRE"):
                 self.retired += 1
                 out.append(("RETIRE", line))
+            elif line.startswith("PEAK worker"):
+                m = re.search(r": ([\d.]+) GB", line)
+                if m:
+                    self.peaks.append(float(m.group(1)))
+                out.append(("PEAK", line))
             elif line.startswith(("Error", "Traceback")):
                 self.errors.append(line)
                 out.append(("ERROR", line))
@@ -3598,8 +3701,12 @@ def main():
             if sum(len(m.polygons) for m in bpy.data.meshes if m.get("rb_original") in set(pending)) >= FLUSH_FACES:
                 flush()
 
+        loaded = process_memory_gb()
         _s, _f, reps = _run_meshes(users, pick, weight, total_w, False, wait=WORKER_WAIT, after=after, flush=flush)
         flush()
+        peak = process_memory_gb(peak=True)
+        if peak is not None:            # for the log and the estimate of the next run
+            print(f"PEAK worker {i}: {peak:.2f} GB (scene loaded {loaded or 0:.2f} GB, {len(pick)} meshes)", flush=True)
         json.dump(reps, open(out_json, "w", encoding="utf-8"), default=str)     # written last: worker done
         return
     if LOG:
@@ -3616,7 +3723,9 @@ def main():
     clean = clean_for_workers(users) if TARGET else False
     if clean:
         say("CLEAN the previous conversion was removed from the working copy - it is made again")
-    jobs = resolve_jobs(opt("--jobs", "1"), len(users)) if bpy.data.filepath else 1
+    jobs = resolve_jobs(opt("--jobs", "1"), len(users), list(users)) if bpy.data.filepath else 1
+    if LAST_MEMORY_PLAN[0] and opt("--jobs", "1") == "auto":
+        say(f"MEMORY {LAST_MEMORY_PLAN[0]}")
     if jobs > 1:
         scene_path = None
         if clean:                   # the workers open the cleaned scene, not the file on disk

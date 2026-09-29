@@ -1,6 +1,6 @@
 # Troubleshooting
 
-**"Save the scene first".** Several cores, the cache file and *Convert headless* work with the
+**"Save the scene first".** Several Blender processes, the cache file and *Convert headless* work with the
 scene file on disk. Save the scene (Ctrl+S) and press the button again.
 
 **"Cache missing: …" – the objects show their original meshes.** The cache file was moved,

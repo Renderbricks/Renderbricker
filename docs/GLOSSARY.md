@@ -22,4 +22,4 @@ The scene links them as *library overrides*, so its own file stays small.
 into the subdivided copy, so the parts shade as Mecabricks made them.
 
 **Headless.** Blender without a window, started from a terminal – used by *Convert headless* and
-by the background Blenders of *Use several cores*.
+by the background Blenders of *Use several Blender processes*.

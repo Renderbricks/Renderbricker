@@ -94,7 +94,9 @@ all of them stay as they are.
 2. **A – Mecabricks normals** – keeps the shading of the import. *B* com­putes it from the smoothed
    surface and gives crisper logos on the studs.
 3. **View­port 1 / Render 2** – smooth enough to judge the view­port, full quality in the render.
-4. **Use several cores** – on; larger scenes are con­verted in par­al­lel back­ground Blenders.
+4. **Use several Blender pro­cesses** – on; larger scenes are con­verted by several Blenders in the
+   back­ground at the same time. How many depends on the pro­ces­sor and the free memory; each of
+   them uses several pro­ces­sor cores itself.
 5. **Cache file next to the scene** – on; the smoothed parts go into a file of their own and the
    scene file stays small.
 
@@ -134,8 +136,8 @@ Every level has three to four times the faces of the one below. A level above 2 
 ![Apply running: progress bar (1) and Esc to cancel (2)](images/tutorial/T04_apply_progress.webp)
 
 A progress bar shows the parts done and the time left (1); **Esc** cancels (2). With *Use several
-cores*, back­ground Blenders share the work – for the Italian Riviera seven of them con­verted the 810
-dif­fer­ent parts in 109 seconds. At the end the scene is saved.
+Blender pro­cesses*, Blenders in the back­ground share the work – for the Italian Riviera eight of them
+con­verted the 810 dif­fer­ent parts in 96 seconds. At the end the scene is saved.
 
 ![After Apply: the summary (1), Subdivision: ON (2) and the cache file (3)](images/tutorial/T05_apply_result.webp)
 
