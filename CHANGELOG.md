@@ -7,8 +7,6 @@ documentation changes are not.
 
 ## [1.0.0] – 2026-09-29
 
-First release.
-
 - **Smooth parts for rendering:** Apply sets creases on the parts of a Mecabricks import by a tested rule set – sharp where the real part is sharp, round where it is round – and bakes the subdivided result into one copy per part, shared by all its links. The imported meshes stay unchanged; Remove goes back to them.
 - **Viewport and render level** separately; F12 and Ctrl+F12 render with the render level.
 - **Scope:** All, Selected or chosen collections with their child collections.
