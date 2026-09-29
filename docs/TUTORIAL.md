@@ -224,17 +224,18 @@ level 2). *All views* at 50 % gives the six slots below in about two minutes.
 ### The quality in detail
 
 The same view at 8K (7680 × 4320) with 512 samples – about five minutes on an RTX 5090 – and four
-parts of it at full size. Click a detail to see it pixel for pixel:
+parts of it at full size. Click a detail for a 4K section around it; the over­view down­loads the
+whole 8K render (1.8 MB):
 
-![The 8K render with the four details (1–4)](images/tutorial/T08c_overview.webp)
+[![The 8K render with the four details (1–4)](images/tutorial/T08c_overview.webp)](https://github.com/Renderbricks/Renderbricker/releases/download/v1.0.0/Italian_Riviera_8K_512_samples.webp)
 
-![Detail 1: the roof tiles](images/tutorial/T08c_crop1.webp)
+[![Detail 1: the roof tiles](images/tutorial/T08c_crop1.webp)](https://raw.githubusercontent.com/Renderbricks/Renderbricker/main/docs/images/tutorial/T08c_crop1_4k.webp)
 
-![Detail 2: the balcony](images/tutorial/T08c_crop2.webp)
+[![Detail 2: the balcony](images/tutorial/T08c_crop2.webp)](https://raw.githubusercontent.com/Renderbricks/Renderbricker/main/docs/images/tutorial/T08c_crop2_4k.webp)
 
-![Detail 3: the square](images/tutorial/T08c_crop3.webp)
+[![Detail 3: the square](images/tutorial/T08c_crop3.webp)](https://raw.githubusercontent.com/Renderbricks/Renderbricker/main/docs/images/tutorial/T08c_crop3_4k.webp)
 
-![Detail 4: the boat](images/tutorial/T08c_crop4.webp)
+[![Detail 4: the boat](images/tutorial/T08c_crop4.webp)](https://raw.githubusercontent.com/Renderbricks/Renderbricker/main/docs/images/tutorial/T08c_crop4_4k.webp)
 
 ---
 
