@@ -65,12 +65,12 @@ Transparency note on the use of AI: the author is not a programmer but has worke
 
 [www.renderbricks.com](https://www.renderbricks.com) · [Facebook](https://www.facebook.com/renderbricks) · [YouTube](https://www.youtube.com/@renderbricks)
 
-Renderbricks® is a registered trademark in Germany.
+Renderbricks® is a registered word mark in Germany.
 
 ## Credits
 
 Renderbricker is built on [Mecabricks](https://www.mecabricks.com) and its Blender add-ons Mecabricks
-Lite and Mecabricks Advanced, all developed by **Nicolas 'Scrubs' Jarraud**.
+Lite and Mecabricks Advanced – their developer and creator is **Nicolas 'Scrubs' Jarraud**.
 
 The example scene of the [Tutorial](docs/TUTORIAL.md) is the
 [Italian Riviera](https://www.mecabricks.com/en/models/qxv4E8VdadJ) by Nicolas 'Scrubs' Jarraud,
@@ -80,4 +80,4 @@ used with his kind permission – thank you for the model.
 
 GPL-3.0-or-later, see [LICENSE](LICENSE).
 
-LEGO® is a trademark of the LEGO Group; Mecabricks is a trademark of its owner; this and all other trademarks named here belong to their owners, none of whom sponsors, authorizes or endorses this project.
+LEGO® is a trademark of the LEGO Group; all other names and marks mentioned here belong to their owners, none of whom sponsors, authorizes or endorses this project.

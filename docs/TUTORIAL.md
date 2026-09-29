@@ -351,13 +351,13 @@ Next: all set­tings in the [Ref­er­ence](REFERENCE.md); the rules and where e
 ## Credits and trademarks
 
 - [Mecabricks](https://www.mecabricks.com) and the Blender add-ons Mecabricks Advanced and
-  Mecabricks Lite are devel­oped by Nicolas 'Scrubs' Jarraud.
+  Mecabricks Lite: devel­oper and creator Nicolas 'Scrubs' Jarraud.
 - Example scene: [Italian Riviera](https://www.mecabricks.com/en/models/qxv4E8VdadJ) by Nicolas
   'Scrubs' Jarraud – used with his kind permission. Thank you!
-- Ren­der­bricks® is a reg­is­tered trade­mark in Germany.
+- Ren­der­bricks® is a reg­is­tered word mark in Germany.
 
 Trans­parency note on the use of AI: the author is not a pro­gram­mer but has worked in CGI since 1987. The add-on was devel­oped entirely through vibe coding with Anthropic Claude (Claude Code): Claude wrote the code, the tests and this doc­u­men­ta­tion from his descriptions. The concept, the design deci­sions, the rules checked against the real LEGO parts, the tests in Blender and the accep­tance of every version are the author's; he is respon­si­ble for the content.
 
-LEGO® is a trade­mark of the LEGO Group; Mecabricks is a trade­mark of its owner; this and all other trade­marks named here belong to their owners, none of whom spon­sors, autho­rizes or endorses this project.
+LEGO® is a trade­mark of the LEGO Group; all other names and marks men­tioned here belong to their owners, none of whom spon­sors, autho­rizes or endorses this project.
 
 </div>
