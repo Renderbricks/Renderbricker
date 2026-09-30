@@ -145,7 +145,7 @@ with level 1, and F12 switches to level 2 only while it renders.
 
 A progress bar shows the parts done and the time left (1); **Esc** cancels (2). Blenders in the
 back­ground share the work – for the Italian Riviera twelve of them con­verted the 810 parts in
-84 seconds. At the end the scene is saved.
+87 seconds. At the end the scene is saved.
 
 ![After Apply: the summary (1), Subdivision: ON (2) and the cache file (3)](images/tutorial/T05_apply_result.webp)
 
