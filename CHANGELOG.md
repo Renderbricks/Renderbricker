@@ -5,6 +5,10 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
+## [1.0.1] – 2026-09-30
+
+- No functional changes – the add-on's code is split into modules by task (panel, operators, Start Guide; the core as its own package), so it is easier to read and to extend.
+
 ## [1.0.0] – 2026-09-29
 
 - **Smooth parts for rendering:** Apply sets creases on the parts of a Mecabricks import by a tested rule set – sharp where the real part is sharp, round where it is round – and bakes the subdivided result into one copy per part, shared by all its links. The imported meshes stay unchanged; Remove goes back to them.
