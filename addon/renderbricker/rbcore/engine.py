@@ -186,7 +186,9 @@ def eevee_best(scene):
     wanted = {"use_shadows": True, "shadow_ray_count": 4, "shadow_step_count": 16, "shadow_resolution_scale": 1.0,
               "use_raytracing": True, "ray_tracing_method": 'SCREEN', "use_fast_gi": True,
               "fast_gi_method": 'GLOBAL_ILLUMINATION', "fast_gi_quality": 1.0, "fast_gi_step_count": 16,
-              "fast_gi_ray_count": 4, "fast_gi_resolution": '1'}
+              "fast_gi_ray_count": 4, "fast_gi_resolution": '1',
+              "use_shadow_jitter_viewport": True}   # soft shadows in the viewport too: without jitter the shadow
+                                                    # map's texels show as steps on curved parts (run 201)
     for k, v in wanted.items():
         if hasattr(e, k):
             try:
