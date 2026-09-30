@@ -92,8 +92,8 @@ into a cache file next to the scene – so the scene needs a file first.
 ![File → Import with Mecabricks (.zmbx) (1)](images/tutorial/T02a_import.webp)
 
 1. In [Mecabricks](https://www.mecabricks.com), export the model for Blender – a `.zmbx` file.
-2. In Blender: *File → Import → **Mecabricks (.zmbx)*** (1) (Mecabricks Lite or Advanced add-on) and
-   pick the file.
+2. In Blender: *File → Import → **Mecabricks (.zmbx)*** (1) – or **Import from Mecabricks** at the top
+   of the Ren­der­bricker panel (Mecabricks Lite or Advanced add-on) – and pick the file.
 3. Save the scene (*File → Save As*). Ren­der­bricker offers the name of the imported model; the cache
    file will carry the same name:
 
@@ -208,6 +208,11 @@ set­tings of its own, without touch­ing yours.
    *Ren­der­bricks Sky*. **OFF** brings back your camera, world and set­tings exactly as they were.
 2. **Front … Bottom** turn the camera around the model and frame it again.
 3. **Sun: fixed** keeps the sun in place; *turns with the camera* lights every view like Front.
+   Below it, four sliders set the sky: **Ele­va­tion** (−15° to 195°, over the top to the other side),
+   **Rota­tion** (0° to 360°), **Alti­tude** (0 to 10,000 m on the first half of the slider, up to
+   100,000 m on the second) and **Strength** (0.01 to 0.1). The arrows beside a slider go one step
+   (10°, 1,000 m, 0.01), the round arrow sets it back to the standard. **Sun in picture:** *off* (the start) hides the sun disc
+   from the camera – it still gives the high­lights and sharp shadows.
 4. **Trans­par­ent** leaves the sky out of the picture, glass included.
 5. **Res­o­lu­tion Scale** – e.g. 50 % for quick tests.
 6. **Samples:** *Low* 128 (the start), *Medium* 256, *Good* 512, *High* 1024.
@@ -215,6 +220,9 @@ set­tings of its own, without touch­ing yours.
 8. **All views** renders the six views one after the other; **Esc** stops the chain.
 
 ![Render of the Front view, 128 samples](images/tutorial/T08a_render_front.webp)
+
+> **Tip – a Blender feature for every slider:** hold **Shift** while drag­ging for fine control,
+> **Ctrl** for coarse steps. A double-click lets you type an exact value.
 
 **Check:** the Front view at *Low* (1920 × 1080, 105 seconds on an RTX 5090 includ­ing the switch to
 level 2). *All views* at 50 % gives the six slots below in about two minutes.

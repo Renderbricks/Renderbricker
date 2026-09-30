@@ -6,6 +6,7 @@ from . import camera_ui, logfile, panels, props, widgets
 
 def _g_save(L, context, s):
     import os
+    camera_ui.draw_import(L, context)
     if bpy.data.filepath:
         L.operator("wm.save_mainfile", text="Save", icon='FILE_TICK')
     else:
@@ -88,8 +89,8 @@ def _g_next(L, context, s):
 
 GUIDE = (
     ("Import and save", _g_save, (
-        "Import the model from Mecabricks: File > Import > Mecabricks (.zmbx) - the Mecabricks Lite or "
-        "Advanced add-on by Nicolas 'Scrubs' Jarraud.",
+        "Import the model from Mecabricks: Import from Mecabricks below (the same as File > Import > "
+        "Mecabricks (.zmbx)) - it needs the Mecabricks Lite or Advanced add-on by Nicolas 'Scrubs' Jarraud.",
         "Renderbricker writes the smoothed parts into a cache file next to the scene - so the scene "
         "needs a file first.",
         "Save it under the name you want to keep - Save As offers the name of the imported model.")),

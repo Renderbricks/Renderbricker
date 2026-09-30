@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
+## [1.1.0] – 2026-09-30
+
+- **Import from Mecabricks** at the top of the panel (and in step 1 of the Start Guide) – the same as File > Import > Mecabricks (.zmbx). Greyed out, with a note and a link to www.mecabricks.com, while neither Mecabricks Lite nor Advanced is enabled.
+- **Sun sliders** in the render camera: Elevation (−15° to 195°, over the top to the other side), Rotation (0° to 360°), Altitude (0 to 100,000 m) and Strength of the sky (0.01 to 0.1), each with step arrows and a button back to the standard. Typed values stay as they are. With the view Bottom the mirrored sky follows a moment after the last change.
+- **Sun in picture: on/off** below the sun sliders (default off): the sun disc lights the model as before – highlights, sharp shadows and reflections – but is not seen in the picture (Cycles; EEVEE never shows it).
+- **New standard sky:** Strength 0.03 instead of 0.2.
+- **Tidy world nodes:** the nodes of the Renderbricks sky (and of the mirrored sky of Bottom) are laid out in columns along the signal, without overlaps. A world with nodes of your own is left as it is.
+
 ## [1.0.1] – 2026-09-30
 
 - No functional changes – the add-on's code is split into modules by task (panel, operators, Start Guide; the core as its own package), so it is easier to read and to extend.

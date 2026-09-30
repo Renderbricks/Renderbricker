@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Renderbricker",
     "author": "Renderbricks® – Prof. Michael Klein",
-    "version": (1, 0, 1),
+    "version": (1, 1, 0),
     "blender": (4, 5, 0),
     "location": "3D Viewport > Sidebar > Renderbricker",
     "description": "Creases and subdivision for imported Mecabricks parts: each mesh is processed once, "
@@ -74,7 +74,8 @@ classes = (props.MECSUB_Problem, props.MECSUB_CollectionItem, props.MECSUB_Setti
            guide.MECSUB_OT_guide_start, guide.MECSUB_OT_guide_nav, guide.MECSUB_OT_guide_exit, props.MECSUB_OT_level_confirm,
            camera_ui.MECSUB_OT_frame_camera, camera_ui.MECSUB_OT_render_camera, camera_ui.MECSUB_OT_camera_view, camera_ui.MECSUB_OT_samples,
            render.MECSUB_OT_render_views, camera_ui.MECSUB_OT_sun_follow,
-           camera_ui.MECSUB_OT_transparent)
+           camera_ui.MECSUB_OT_transparent, camera_ui.MECSUB_OT_sun_step, camera_ui.MECSUB_OT_sun_reset,
+           camera_ui.MECSUB_OT_import_mecabricks, camera_ui.MECSUB_OT_sun_picture)
 
 
 @persistent

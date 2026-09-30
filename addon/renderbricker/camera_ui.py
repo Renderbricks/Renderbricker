@@ -166,6 +166,153 @@ class MECSUB_OT_sun_follow(bpy.types.Operator):
         return {'FINISHED'}
 
 
+SUN_ROWS = (("sun_elevation", "elevation", "Elevation"), ("sun_rotation", "rotation", "Rotation"),
+            ("sun_altitude", "altitude", "Altitude (m)"), ("sky_strength", "strength", "Strength"))
+
+
+def sun_poll(context):
+    return core.render_camera_is_on(context.scene) and core.sky_world() is not None
+
+
+class MECSUB_OT_sun_step(bpy.types.Operator):
+    bl_idname = "mecsub.sun_step"
+    bl_label = "Sun step"
+    bl_options = {'REGISTER', 'UNDO'}
+    key: bpy.props.StringProperty(options={'SKIP_SAVE'})
+    direction: IntProperty(default=1, options={'SKIP_SAVE'})
+
+    @classmethod
+    def description(cls, context, properties):
+        size = {"elevation": "10°", "rotation": "10°", "altitude": "1,000 m (10,000 m above 10,000 m)",
+                "strength": "0.01"}.get(properties.key, "")
+        return f"One step {'up' if properties.direction > 0 else 'down'} ({size})"
+
+    @classmethod
+    def poll(cls, context):
+        return sun_poll(context)
+
+    def execute(self, context):
+        sc = context.scene
+        now = core.sun_values(core.sky_world())[self.key]
+        props.sun_changed(sc, core.set_sun(sc, self.key, core.sun_step(self.key, now, self.direction)))
+        convert.redraw(context)
+        return {'FINISHED'}
+
+
+class MECSUB_OT_sun_reset(bpy.types.Operator):
+    bl_idname = "mecsub.sun_reset"
+    bl_label = "Back to the standard"
+    bl_options = {'REGISTER', 'UNDO'}
+    key: bpy.props.StringProperty(options={'SKIP_SAVE'})
+
+    @classmethod
+    def description(cls, context, properties):
+        v = core.SUN_STANDARD.get(properties.key, 0)
+        unit = {"elevation": "°", "rotation": "°", "altitude": " m"}.get(properties.key, "")
+        return f"Back to the Renderbricks standard: {v:g}{unit}"
+
+    @classmethod
+    def poll(cls, context):
+        return sun_poll(context)
+
+    def execute(self, context):
+        sc = context.scene
+        props.sun_changed(sc, core.set_sun(sc, self.key, core.SUN_STANDARD[self.key]))
+        convert.redraw(context)
+        return {'FINISHED'}
+
+
+def draw_sun(col, context):
+    """The four sun sliders, each with step arrows and a reset button (user, 2026-09-30)."""
+    if core.sky_world() is None:
+        return
+    s = context.scene.mecsub
+    col.separator(factor=0.5)
+    for prop, key, label in SUN_ROWS:
+        row = col.row(align=True)
+        op = row.operator("mecsub.sun_step", text="", icon='TRIA_LEFT')
+        op.key, op.direction = key, -1
+        if key == "altitude":               # the slider shows its position, the name the metres
+            label = f"Altitude {core.sun_values(core.sky_world())['altitude']:,.0f} m"
+        row.prop(s, prop, text=label, slider=True)
+        op = row.operator("mecsub.sun_step", text="", icon='TRIA_RIGHT')
+        op.key, op.direction = key, 1
+        row.operator("mecsub.sun_reset", text="", icon='LOOP_BACK').key = key
+    seen = bool(core.sky_world().get(core.SUN_PICTURE))      # user, 2026-09-30
+    col.operator("mecsub.sun_picture", text="Sun in picture: on" if seen else "Sun in picture: off",
+                 icon='HIDE_OFF' if seen else 'HIDE_ON', depress=seen)
+    col.separator(factor=0.5)
+
+
+class MECSUB_OT_sun_picture(bpy.types.Operator):
+    bl_idname = "mecsub.sun_picture"
+    bl_label = "Sun in picture"
+    bl_description = ("Off (default): the sun disc is not seen in the picture, but it lights the model as before - "
+                      "highlights, sharp shadows and reflections stay. On: the sun disc is seen where the camera "
+                      "looks at the sky")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return sun_poll(context)
+
+    def execute(self, context):
+        sc = context.scene
+        w = core.sky_world()
+        w[core.SUN_PICTURE] = not bool(w.get(core.SUN_PICTURE))
+        core.sun_picture_setup(w)
+        convert.redraw(context)
+        return {'FINISHED'}
+
+
+def mecabricks_import_available():
+    """The import operator of Mecabricks Lite or Advanced is registered."""
+    try:
+        bpy.ops.import_mecabricks.zmbx.get_rna_type()
+        return True
+    except (KeyError, AttributeError):
+        return False
+
+
+MECABRICKS_URL = "https://www.mecabricks.com"
+
+
+class MECSUB_OT_import_mecabricks(bpy.types.Operator):
+    bl_idname = "mecsub.import_mecabricks"
+    bl_label = "Import from Mecabricks"
+
+    @classmethod
+    def description(cls, context, properties):
+        if mecabricks_import_available():
+            return ("Import a Mecabricks scene (.zmbx) with the Mecabricks add-on - the same as File > Import > "
+                    "Mecabricks (.zmbx)")
+        return ("Needs the Mecabricks Lite or Advanced add-on by Nicolas 'Scrubs' Jarraud, installed and "
+                "enabled - available at www.mecabricks.com")
+
+    @classmethod
+    def poll(cls, context):
+        return mecabricks_import_available()
+
+    def execute(self, context):
+        bpy.ops.import_mecabricks.zmbx('INVOKE_DEFAULT')
+        return {'FINISHED'}
+
+
+def draw_import(L, context):
+    """Import from Mecabricks at the top of the panel; greyed out with a note while no Mecabricks
+    add-on is enabled (user, 2026-09-30)."""
+    ok = mecabricks_import_available()
+    row = L.row()
+    row.scale_y = 1.3
+    row.operator("mecsub.import_mecabricks", icon='IMPORT')
+    if not ok:
+        col = L.column(align=True)
+        col.scale_y = 0.8
+        col.label(text="Needs the Mecabricks add-on", icon='INFO')
+        col.label(text="(Lite or Advanced), enabled", icon='BLANK1')
+        L.operator("wm.url_open", text="www.mecabricks.com", icon='URL').url = MECABRICKS_URL
+
+
 def is_transparent(scene):
     cyc = getattr(scene, "cycles", None)
     return scene.render.film_transparent and (cyc is None or getattr(cyc, "film_transparent_glass", True))
@@ -240,6 +387,7 @@ def draw_render_camera(L, context, render_button=True):
         follow = bool(sc.get(core.SUN_FOLLOW))  # sun fixed or turning with the camera (user, 2026-09-28)
         col.operator("mecsub.sun_follow", text="Sun: turns with the camera" if follow else "Sun: fixed",
                      icon='LIGHT_SUN', depress=follow)
+        draw_sun(col, context)
         clear = is_transparent(sc)            # background and glass transparent (user, 2026-09-28)
         col.operator("mecsub.transparent", text="Transparent: on" if clear else "Transparent: off",
                      icon='TEXTURE' if clear else 'WORLD', depress=clear)

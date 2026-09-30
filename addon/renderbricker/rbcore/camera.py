@@ -130,20 +130,261 @@ def make_sky():
             nt.nodes.new("ShaderNodeOutputWorld")
         nt.links.new(bg.outputs[0], out.inputs[0])
     nt.links.new(sky.outputs[0], bg.inputs[0])
-    # the values of the setup scene's sky (user, 2026-09-29: strength 0.2, altitude 3000 m)
-    for k, v in (("sky_type", 'MULTIPLE_SCATTERING'), ("sun_elevation", 1.0472), ("sun_rotation", 2.0944),
-                 ("sun_size", 0.009512), ("altitude", 3000.0)):
+    # the values of the setup scene's sky (user, 2026-09-29: altitude 3000 m; 2026-09-30: strength
+    # 0.03; the sun disc stays on - it gives the highlights and the sharpness of the shadows)
+    for k, v in (("sky_type", 'MULTIPLE_SCATTERING'), ("sun_elevation", math.radians(SUN_STANDARD["elevation"])),
+                 ("sun_rotation", math.radians(SUN_STANDARD["rotation"])), ("sun_size", 0.009512),
+                 ("altitude", SUN_STANDARD["altitude"]), ("sun_disc", True)):
         try:
             setattr(sky, k, v)
         except (AttributeError, TypeError, ValueError):
             pass
-    bg.inputs["Strength"].default_value = 0.2
-    out = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeOutputWorld")
-    x = 0
-    for n in (sky, bg, out):            # side by side, left to right
-        n.location = (x, 0)
-        x += n.width + 60
+    bg.inputs["Strength"].default_value = SUN_STANDARD["strength"]
+    arrange_world(nt)
     return w
+
+
+# ---------------------------------------------------------------- tidy node trees (user, 2026-09-30)
+# The add-on's world trees are laid out in columns along the signal (inputs left, World Output right),
+# every column centred on one line, NODE_GAP apart. node.dimensions is only known once a node editor has
+# drawn the node, so the sizes Blender 5.2 draws them in are the fallback (measured,
+# _CLAUDE_/scripts/tools/measure_world_nodes.py). A tree with nodes of the user's is never moved.
+NODE_GAP = (60, 40)                     # between columns, between nodes of one column
+
+
+NODE_SIZE = {"ShaderNodeOutputWorld": (140, 96), "ShaderNodeBackground": (140, 99),
+             "ShaderNodeTexSky": (160, 309), "ShaderNodeLightPath": (140, 358), "ShaderNodeMix": (140, 220),
+             "ShaderNodeTexCoord": (140, 236), "ShaderNodeMapping": (140, 351),
+             "ShaderNodeTexEnvironment": (240, 199)}
+
+
+def _node_size(n):
+    w, h = n.dimensions
+    if w > 0 and h > 0:
+        s = bpy.context.preferences.system.ui_scale if bpy.context.preferences else 1.0
+        return w / s, h / s
+    h = NODE_SIZE[n.bl_idname][1]
+    if n.bl_idname == "ShaderNodeTexSky" and not getattr(n, "sun_disc", True):
+        h = 284                         # without the disc its size and intensity rows are hidden
+    return n.width, h
+
+
+def arrange_world(nt):
+    """Lay out a world tree of the add-on; False (nothing moved) when it holds other nodes."""
+    if any(n.bl_idname not in NODE_SIZE for n in nt.nodes):
+        return False
+    out = next((n for n in nt.nodes if n.bl_idname == "ShaderNodeOutputWorld"), None)
+    if out is None:
+        return False
+    # column = longest way to the World Output; within a column in the order of the sockets fed
+    col, order = {out: 0}, {out: (0,)}
+    todo = [out]
+    while todo:
+        n = todo.pop(0)
+        for i, s in enumerate(n.inputs):
+            for l in s.links:
+                f = l.from_node
+                if col.get(f, -1) < col[n] + 1:
+                    col[f], order[f] = col[n] + 1, order[n] + (i,)
+                    todo.append(f)
+    first = max(col.values())
+    for n in nt.nodes:                  # not linked (Light Path while the sun is in the picture): on top of
+        col.setdefault(n, first)        # the first column, where it stands when linked
+        order.setdefault(n, (-1,))
+    x = 0.0
+    for c in range(max(col.values()), -1, -1):
+        nodes = sorted((n for n in nt.nodes if col[n] == c), key=lambda n: order[n])
+        if not nodes:
+            continue
+        sizes = [_node_size(n) for n in nodes]
+        y = (sum(h for _, h in sizes) + NODE_GAP[1] * (len(nodes) - 1)) / 2
+        for n, (w, h) in zip(nodes, sizes):   # location is the top left corner; column centred on y = 0
+            n.location = (x, y)
+            y -= h + NODE_GAP[1]
+        x += max(w for w, _ in sizes) + NODE_GAP[0]
+    return True
+
+
+# ---------------------------------------------------------------- sun sliders (user, 2026-09-30)
+# While the render camera is on, four sliders set the add-on's sky: elevation, rotation, altitude and
+# the strength of the Background. Their values are kept on the sky world (rb_sun); the sky nodes follow.
+# Elevation runs from below the horizon over the zenith to the other side (-15 ... 195 deg).
+SUN_KEY = "rb_sun"
+
+
+SUN_STANDARD = {"elevation": 60.0, "rotation": 120.0, "altitude": 3000.0, "strength": 0.03}
+
+
+SUN_GRID = {                            # the values the step buttons go to
+    "elevation": [-15.0] + [float(d) for d in range(-10, 191, 10)] + [195.0],
+    "rotation": [float(d) for d in range(0, 361, 10)],
+    "altitude": [float(m) for m in range(0, 10001, 1000)] + [float(m) for m in range(20000, 100001, 10000)],
+    "strength": [round(0.01 * i, 2) for i in range(1, 11)],
+}
+
+
+ALTITUDE_KNEE = 10000.0                 # the altitude slider: 0 ... 10,000 m on its first half (user, 2026-09-30)
+
+
+def altitude_position(m):
+    """Altitude in metres -> position on the slider (0 ... 1): 0 ... 10,000 m on the first half,
+    10,000 ... 100,000 m on the second."""
+    m = min(max(m, 0.0), 100000.0)
+    if m <= ALTITUDE_KNEE:
+        return 0.5 * m / ALTITUDE_KNEE
+    return 0.5 + 0.5 * (m - ALTITUDE_KNEE) / (100000.0 - ALTITUDE_KNEE)
+
+
+def altitude_from_position(p):
+    p = min(max(p, 0.0), 1.0)
+    if p <= 0.5:
+        return ALTITUDE_KNEE * p / 0.5
+    return ALTITUDE_KNEE + (100000.0 - ALTITUDE_KNEE) * (p - 0.5) / 0.5
+
+
+def sun_values(world):
+    """The slider values of the sky (degrees, metres, strength): the stored ones, else read from its
+    first Sky Texture and Background."""
+    out = dict(SUN_STANDARD)
+    if world is None:
+        return out
+    nodes = sky_nodes(world)
+    if nodes:
+        n = _main_sky(world) or nodes[0]
+        out["elevation"] = math.degrees(n.sun_elevation)
+        out["rotation"] = math.degrees(sun_rotations(world)[nodes.index(n)]) % 360.0
+        out["altitude"] = float(n.altitude)
+    bg = [n for n in world.node_tree.nodes if n.bl_idname == "ShaderNodeBackground"] if world.node_tree else []
+    if bg:
+        out["strength"] = float(bg[0].inputs["Strength"].default_value)
+    stored = world.get(SUN_KEY)
+    if stored is not None:
+        for k in SUN_STANDARD:
+            if k in stored:
+                out[k] = float(stored[k])
+    return out
+
+
+def sun_step(key, value, direction):
+    """The next value of the grid above (direction 1) or below (-1); rotation goes round."""
+    grid = SUN_GRID[key]
+    eps = 1e-6 * max(1.0, abs(value))
+    if direction > 0:
+        up = [g for g in grid if g > value + eps]
+        if up:
+            return up[0]
+        return grid[1] if key == "rotation" else grid[-1]
+    down = [g for g in grid if g < value - eps]
+    if down:
+        return down[-1]
+    return grid[-2] if key == "rotation" else grid[0]
+
+
+def set_sun(scene, key, value):
+    """Set one slider value on the add-on's sky and its nodes. Returns True when the scene shows the
+    mirrored sky of Bottom, which then has to be made again."""
+    w = sky_world()
+    if w is None:
+        return False
+    vals = sun_values(w)
+    vals[key] = float(value)
+    w[SUN_KEY] = vals
+    elev, rot = vals["elevation"], vals["rotation"]
+    over = elev > 90.0 and _elevation_max() < math.pi / 2 + 1e-4     # older Blender: over the zenith by
+    if over:                                                            # turning the sun round
+        elev, rot = 180.0 - elev, rot + 180.0
+    r = math.radians(rot % 360.0)
+    nodes = sky_nodes(w)
+    turn = 0.0
+    if w.get(SUN_BASE) is not None:                     # the sun turns with the camera: the base moves
+        w[SUN_BASE] = [r] * len(nodes)
+        turn = camera_turn(scene)
+    for n in nodes:
+        n.sun_elevation = math.radians(elev)
+        n.sun_rotation = r - turn
+        try:
+            n.altitude = vals["altitude"]
+        except (AttributeError, TypeError, ValueError):
+            pass
+    for n in w.node_tree.nodes:
+        if n.bl_idname == "ShaderNodeBackground":
+            n.inputs["Strength"].default_value = vals["strength"]
+    return bool(scene.world is not None and scene.world.get(BELOW_TAG))
+
+
+# ---------------------------------------------------------------- sun in picture (user, 2026-09-30)
+# The sun disc gives the highlights and the sharpness of the shadows, but it need not be seen in the
+# picture: a second Sky Texture without the disc (same values) is shown to camera rays only - a Mix by
+# Light Path > Is Camera Ray in front of the Background. The switch links or unlinks that factor.
+SUN_PICTURE = "rb_sun_in_picture"       # sky world: the sun disc is seen by the camera (default False)
+
+
+CAMERA_SKY = "Sky (camera)"
+
+
+PICTURE_MIX = "Sun in picture"
+
+
+def _main_sky(world):
+    return next((n for n in sky_nodes(world) if n.name != CAMERA_SKY), None)
+
+
+def sun_picture_setup(world):
+    """Make (once) and set the switch of the sky: the camera sees the sky without the sun disc unless
+    SUN_PICTURE is set. The camera's sky takes the values of the main sky every time. False when the
+    node tree has no Sky Texture into a Background."""
+    if world is None or not world.node_tree:
+        return False
+    nt = world.node_tree
+    main = _main_sky(world)
+    if main is None:
+        return False
+    cam = nt.nodes.get(CAMERA_SKY)
+    mix = nt.nodes.get(PICTURE_MIX)
+    if cam is None or mix is None:
+        link = next((l for l in nt.links if l.from_node == main and l.to_node.bl_idname == "ShaderNodeBackground"), None)
+        if link is None:
+            return False
+        to_socket = link.to_socket
+        nt.links.remove(link)
+        cam = nt.nodes.new("ShaderNodeTexSky")
+        cam.name = cam.label = CAMERA_SKY
+        path = nt.nodes.new("ShaderNodeLightPath")
+        path.name = "Light Path"
+        mix = nt.nodes.new("ShaderNodeMix")
+        mix.data_type = 'RGBA'
+        mix.name = mix.label = PICTURE_MIX
+        rgba = [i for i in mix.inputs if i.type == 'RGBA']       # the colour sockets (the Mix node has
+        out = next(o for o in mix.outputs if o.type == 'RGBA')    # float, vector ... ones as well)
+        nt.links.new(main.outputs["Color"], rgba[0])              # A: with the disc (all other rays)
+        nt.links.new(cam.outputs["Color"], rgba[1])               # B: without (camera rays)
+        nt.links.new(out, to_socket)
+        base = world.get(SUN_BASE)
+        if base is not None:                                      # the sun turning with the camera
+            world[SUN_BASE] = list(base) + [float(base[0])]
+    for prop in _SKY_PROPS + ("sun_rotation",):
+        if prop != "sun_disc" and hasattr(main, prop):
+            try:
+                setattr(cam, prop, getattr(main, prop))
+            except (AttributeError, TypeError, ValueError):
+                pass
+    cam.sun_disc = False
+    path = nt.nodes.get("Light Path")
+    fac = mix.inputs[0]
+    for l in list(nt.links):
+        if l.to_socket == fac:
+            nt.links.remove(l)
+    if world.get(SUN_PICTURE):
+        fac.default_value = 0.0
+    elif path is not None:
+        nt.links.new(path.outputs["Is Camera Ray"], fac)
+    arrange_world(nt)                   # also tidies the trees of the test builds before
+    return True
+
+
+def _elevation_max():
+    rna = bpy.types.ShaderNodeTexSky.bl_rna.properties["sun_elevation"]
+    return rna.hard_max
 
 
 BELOW_TAG = "rb_sky_below"              # the world of the view Bottom: the sky mirrored vertically
@@ -222,6 +463,13 @@ with bpy.data.libraries.load(lib) as (src, dst):
     dst.worlds = [name]
 sc = bpy.context.scene
 sc.world = dst.worlds[0]
+nt = sc.world.node_tree
+mix = nt.nodes.get("Sun in picture")        # the panorama lights Bottom: the sky with the sun disc
+if mix is not None:
+    for l in list(nt.links):
+        if l.to_socket == mix.inputs[0]:
+            nt.links.remove(l)
+    mix.inputs[0].default_value = 0.0
 for o in list(sc.objects):
     bpy.data.objects.remove(o)
 cam = bpy.data.objects.new("pano", bpy.data.cameras.new("pano"))
@@ -314,6 +562,7 @@ def sky_below(sky):
     env = next((n for n in nt.nodes if n.bl_idname == "ShaderNodeTexEnvironment"), None)
     if env is not None and nt.nodes.get("Mirror") is not None:
         env.image = img
+        arrange_world(nt)
         return w
     nt.nodes.clear()
     coord = nt.nodes.new("ShaderNodeTexCoord")
@@ -325,12 +574,11 @@ def sky_below(sky):
     env.image = img
     bg = nt.nodes.new("ShaderNodeBackground")
     out = nt.nodes.new("ShaderNodeOutputWorld")
-    for i, n in enumerate((coord, m, env, bg, out)):
-        n.location = (-800 + 220 * i, 0)
     nt.links.new(coord.outputs["Generated"], m.inputs["Vector"])
     nt.links.new(m.outputs["Vector"], env.inputs["Vector"])
     nt.links.new(env.outputs["Color"], bg.inputs["Color"])
     nt.links.new(bg.outputs[0], out.inputs[0])
+    arrange_world(nt)
     return w
 
 
@@ -353,6 +601,7 @@ def apply_sky(scene, view):
     sky = sky_world()
     if sky is None:
         return ""
+    sun_picture_setup(sky)                          # the sun disc lights, the camera does not see it
     nodes = sky_nodes(sky)
     follow = bool(scene.get(SUN_FOLLOW))
     turn = camera_turn(scene) if follow else 0.0

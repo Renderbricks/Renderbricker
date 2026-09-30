@@ -4,6 +4,13 @@ The panel is in the 3D Viewport sidebar (press N), tab **Renderbricker**. Its he
 add-on version. Defaults in brackets. The
 tooltips in Blender say the same in short.
 
+## Import from Mecabricks
+
+**Import from Mecabricks** at the very top of the panel imports a Mecabricks scene (`.zmbx`) – the same
+as *File > Import > Mecabricks (.zmbx)*. It needs the Mecabricks Lite or Advanced add-on by Nicolas
+'Scrubs' Jarraud, installed and enabled; without it the button is greyed out, with a note and a link to
+[www.mecabricks.com](https://www.mecabricks.com) below it.
+
 ## Start Guide
 
 **Start Guide** at the top of the panel replaces the panel by a guide through the workflow in eight
@@ -87,6 +94,23 @@ Renderbricks one – nothing of yours is overwritten:
 - **Sun: fixed / Sun: turns with the camera** – fixed (the default): the sun stays where it is, and
   the views show the model from every side in the same light. Turning: the sun goes round with the
   camera, so every view is lit like *Front*. Switching back puts the sun back to its place.
+- **Elevation, Rotation, Altitude, Strength** (shown below the sun button while the render camera is
+  on) set the sky *Renderbricks Sky*. *Elevation* (60°) is the height of the sun from 15° below the
+  horizon over the top (90°) to the other side (195°); *Rotation* (120°) its direction, 0° to 360° –
+  with *Sun: turns with the camera* the direction for *Front*; *Altitude* (3,000 m) the height of the
+  viewer, 0 to 100,000 m – the first half of the slider covers 0 to 10,000 m, the slider shows its
+  position and the name the metres, a typed number above 100 is taken as metres; *Strength* (0.03)
+  the brightness of the sky, 0.01 to 0.1 on the slider, any value typed. The arrows beside a slider go
+  one step (10°; 1,000 m up to 10,000 m, 10,000 m above; 0.01), the round arrow sets it back to the
+  standard in brackets. The values are kept with the sky in the file. With
+  *Bottom* the mirrored sky is made again a moment after the last change.
+- **Sun in picture: off / on** (off) – off: the sun disc is not seen where the camera looks at the sky,
+  but it lights the model exactly as before – highlights, the sharpness of the shadows and
+  reflections stay. The sky has a second Sky Texture without the disc for the camera rays (Light
+  Path > *Is Camera Ray*, node *Sun in picture*); the sliders set both. On: the disc is seen. EEVEE
+  never shows the disc in the background.
+- **Dragging a slider** (a Blender feature): **Shift** for fine control, **Ctrl** for coarse steps;
+  a double-click types an exact value.
 
 Apply and Convert headless never change the camera, world or render settings.
 

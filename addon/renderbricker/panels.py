@@ -43,6 +43,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         if s.wt_active:
             guide.draw_guide(L, context)
             return
+        camera_ui.draw_import(L, context)       # at the very top (user, 2026-09-30)
         row = L.row()
         row.scale_y = 1.3
         row.operator("mecsub.guide_start", icon='HELP')

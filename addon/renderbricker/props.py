@@ -263,6 +263,63 @@ def scope_empty_text(context):
     return "No mesh objects in scope"
 
 
+# ---------------------------------------------------------------- sun sliders (user, 2026-09-30)
+_BELOW_DUE = [0.0, None]        # when the mirrored sky of Bottom is made again, for which scene
+
+
+def _below_tick():
+    """Make the mirrored sky of Bottom again once the sliders have rested for a moment (every slider
+    change would otherwise start a panorama render)."""
+    import time
+    if time.monotonic() < _BELOW_DUE[0]:
+        return 0.25
+    sc = bpy.data.scenes.get(_BELOW_DUE[1] or "")
+    _BELOW_DUE[1] = None
+    if sc is not None and sc.world is not None and sc.world.get(core.BELOW_TAG):
+        core.apply_sky(sc, "BOTTOM")
+        for win in bpy.context.window_manager.windows:
+            for area in win.screen.areas:
+                area.tag_redraw()
+    return None
+
+
+def sun_changed(scene, below):
+    """After a slider change: the mirrored sky of Bottom is made again a little later."""
+    if not below:
+        return
+    import time
+    _BELOW_DUE[0], _BELOW_DUE[1] = time.monotonic() + 0.8, scene.name
+    if bpy.app.background:
+        _BELOW_DUE[0] = 0.0
+        _below_tick()
+    elif not bpy.app.timers.is_registered(_below_tick):
+        bpy.app.timers.register(_below_tick, first_interval=0.3)
+
+
+def _altitude_get(self):
+    return 100.0 * core.altitude_position(core.sun_values(core.sky_world())["altitude"])
+
+
+def _altitude_set(self, value):
+    """Dragged or typed up to 100: a position on the slider (%); typed above 100: metres, as they are."""
+    m = value if value > 100.0 else core.altitude_from_position(value / 100.0)
+    sc = self.id_data
+    sun_changed(sc, core.set_sun(sc, "altitude", m))
+
+
+def _sun_prop(key, angle=False):
+    import math
+
+    def get(self):
+        v = core.sun_values(core.sky_world())[key]
+        return math.radians(v) if angle else v
+
+    def set(self, value):
+        sc = self.id_data
+        sun_changed(sc, core.set_sun(sc, key, math.degrees(value) if angle else value))
+    return get, set
+
+
 class MECSUB_Settings(bpy.types.PropertyGroup):
     scope: EnumProperty(name="Scope", items=[
         ('ALL', "All", "Every mesh object in the scene"),
@@ -326,3 +383,27 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
     wt_bad: IntProperty(default=0)                         # parts with problems in that Check
     wt_compared: bpy.props.BoolProperty(default=False)     # switched OFF and back ON
     wt_rendered: bpy.props.BoolProperty(default=False)     # rendered through the add-on
+    # the sun of the add-on's sky, while the render camera is on (user, 2026-09-30): the values live on the
+    # sky world, these only show them; the arrows beside them step in 10 deg / 1,000 m / 0.01
+    sun_elevation: bpy.props.FloatProperty(
+        name="Elevation", subtype='ANGLE', min=-0.2618, max=3.4034, precision=0,
+        get=_sun_prop("elevation", True)[0], set=_sun_prop("elevation", True)[1],
+        description="Height of the sun above the horizon: from 15° below it over the top (90°) to the other "
+                    "side (195°). The arrows go in 10° steps, a typed value stays as it is")
+    sun_rotation: bpy.props.FloatProperty(
+        name="Rotation", subtype='ANGLE', min=0.0, max=6.2832, precision=0,
+        get=_sun_prop("rotation", True)[0], set=_sun_prop("rotation", True)[1],
+        description="Direction of the sun around the model. The arrows go in 10° steps, a typed value "
+                    "stays as it is. With \"Sun turns with the camera\" this is the direction for the Front view")
+    sun_altitude: bpy.props.FloatProperty(       # the slider's position; 0 ... 10,000 m on its first half
+        name="Altitude", subtype='PERCENTAGE', min=0.0, max=100000.0, soft_min=0.0, soft_max=100.0, precision=0,
+        get=_altitude_get, set=_altitude_set,
+        description="Height of the viewer above the ground - the higher, the clearer and darker the sky. The "
+                    "first half of the slider covers 0 to 10,000 m, the second 10,000 to 100,000 m. A typed "
+                    "number above 100 is taken as metres. The arrows go in steps of 1,000 m up to 10,000 m and "
+                    "of 10,000 m above")
+    sky_strength: bpy.props.FloatProperty(
+        name="Strength", min=0.0, max=10.0, soft_min=0.01, soft_max=0.1, precision=3,
+        get=_sun_prop("strength")[0], set=_sun_prop("strength")[1],
+        description="Brightness of the sky (Strength of the Background node): the slider goes from 0.01 to "
+                    "0.1, a typed value can lie outside. The arrows go in steps of 0.01")
