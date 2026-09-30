@@ -222,6 +222,33 @@ class MECSUB_OT_sun_reset(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class MECSUB_OT_render_engine(bpy.types.Operator):
+    """Cycles or EEVEE with the Renderbricks sky (user, 2026-09-30)"""
+    bl_idname = "mecsub.render_engine"
+    bl_label = "Render engine"
+    bl_options = {'REGISTER', 'UNDO'}
+    engine: EnumProperty(items=(('CYCLES', "Cycles", ""), ('EEVEE', "EEVEE", "")), options={'SKIP_SAVE'})
+
+    @classmethod
+    def description(cls, context, properties):
+        if properties.engine == 'EEVEE':
+            return ("Render with EEVEE, using everything it can do (ray tracing, global illumination, soft "
+                    "shadows). The sky lights without its sun disc and the lamp \"Renderbricks Sun\" stands in "
+                    "for the sun, linked to the sun sliders - EEVEE takes the sky's sun only very weakly")
+        return "Render with Cycles: the physical sky with its sun disc lights the model"
+
+    @classmethod
+    def poll(cls, context):
+        return core.render_camera_is_on(context.scene)
+
+    def execute(self, context):
+        note = core.set_engine(context.scene, self.engine)
+        if note:
+            self.report({'WARNING'}, "Renderbricker: " + note)
+        convert.redraw(context)
+        return {'FINISHED'}
+
+
 def draw_sun(col, context):
     """The four sun sliders, each with step arrows and a reset button (user, 2026-09-30)."""
     if core.sky_world() is None:
@@ -384,6 +411,10 @@ def draw_render_camera(L, context, render_button=True):
             row = col.row(align=True)
             for k, label, _d in keys:
                 row.operator("mecsub.camera_view", text=label, depress=(k == current)).view = k
+        eevee = core.is_eevee(sc)                # Cycles or EEVEE with the sky (user, 2026-09-30)
+        row = col.row(align=True)
+        row.operator("mecsub.render_engine", text="Cycles", depress=not eevee).engine = 'CYCLES'
+        row.operator("mecsub.render_engine", text="EEVEE", depress=eevee).engine = 'EEVEE'
         follow = bool(sc.get(core.SUN_FOLLOW))  # sun fixed or turning with the camera (user, 2026-09-28)
         col.operator("mecsub.sun_follow", text="Sun: turns with the camera" if follow else "Sun: fixed",
                      icon='LIGHT_SUN', depress=follow)

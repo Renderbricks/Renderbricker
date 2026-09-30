@@ -14,7 +14,7 @@ out = f"{ROOT}/addon/dist/renderbricker-{'.'.join(ver)}.zip"
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     for sub in ("", "rbcore/"):             # the UI modules and the core package
         for fn in sorted(os.listdir(f"{pkg}/{sub}")):
-            if fn.endswith(".py"):
+            if fn.endswith(".py") or (sub and fn.endswith(".json")):     # rbcore: sun lamp table
                 z.write(f"{pkg}/{sub}{fn}", f"renderbricker/{sub}{fn}")
     setup = f"{pkg}/setup"                  # the Renderbricks setup scene (render settings, sky)
     if os.path.isdir(setup):

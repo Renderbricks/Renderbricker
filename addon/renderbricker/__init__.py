@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Renderbricker",
     "author": "Renderbricks® – Prof. Michael Klein",
-    "version": (1, 1, 0),
+    "version": (1, 2, 0),
     "blender": (4, 5, 0),
     "location": "3D Viewport > Sidebar > Renderbricker",
     "description": "Creases and subdivision for imported Mecabricks parts: each mesh is processed once, "
@@ -75,7 +75,8 @@ classes = (props.MECSUB_Problem, props.MECSUB_CollectionItem, props.MECSUB_Setti
            camera_ui.MECSUB_OT_frame_camera, camera_ui.MECSUB_OT_render_camera, camera_ui.MECSUB_OT_camera_view, camera_ui.MECSUB_OT_samples,
            render.MECSUB_OT_render_views, camera_ui.MECSUB_OT_sun_follow,
            camera_ui.MECSUB_OT_transparent, camera_ui.MECSUB_OT_sun_step, camera_ui.MECSUB_OT_sun_reset,
-           camera_ui.MECSUB_OT_import_mecabricks, camera_ui.MECSUB_OT_sun_picture)
+           camera_ui.MECSUB_OT_import_mecabricks, camera_ui.MECSUB_OT_sun_picture,
+           camera_ui.MECSUB_OT_render_engine)
 
 
 @persistent
@@ -116,7 +117,17 @@ def _unlock(*args):
     return None
 
 
-HANDLERS = ((bpy.app.handlers.render_pre, render._render_pre), (bpy.app.handlers.render_post, render._render_post),
+@persistent
+def _engine_watch(scene, depsgraph=None):
+    """EEVEE's sun lamp follows direct edits of the sky and an engine switched elsewhere."""
+    try:
+        core.on_depsgraph(scene, depsgraph)
+    except Exception:
+        pass
+
+
+HANDLERS = ((bpy.app.handlers.depsgraph_update_post, _engine_watch),
+            (bpy.app.handlers.render_pre, render._render_pre), (bpy.app.handlers.render_post, render._render_post),
             (bpy.app.handlers.render_cancel, render._render_post), (bpy.app.handlers.load_post, _unlock),
             (bpy.app.handlers.render_cancel, render._views_cancelled))
 

@@ -116,6 +116,24 @@ def sky_world():
     return next((w for w in bpy.data.worlds if w.get(SKY_TAG)), None)
 
 
+def valid_sky_types(world):
+    """A sky type this Blender does not know (the setup scene, saved by 5.x with Multiple Scattering,
+    read by 4.5) reads as "" and crashed Cycles in 4.5: such skies become Nishita, the physical sky of
+    4.5. Returns the number of nodes changed."""
+    n = 0
+    for node in (world.node_tree.nodes if world is not None and world.node_tree else []):
+        if node.bl_idname != "ShaderNodeTexSky":
+            continue
+        known = {i.identifier for i in node.bl_rna.properties["sky_type"].enum_items}
+        if node.sky_type not in known:
+            for t in ('MULTIPLE_SCATTERING', 'NISHITA'):
+                if t in known:
+                    node.sky_type = t
+                    n += 1
+                    break
+    return n
+
+
 def make_sky():
     """A Physical Sky world of its own (when the setup scene is not there)."""
     w = bpy.data.worlds.new(SKY_NAME)
@@ -309,6 +327,8 @@ def set_sun(scene, key, value):
     for n in w.node_tree.nodes:
         if n.bl_idname == "ShaderNodeBackground":
             n.inputs["Strength"].default_value = vals["strength"]
+    from . import engine                    # the sun lamp of EEVEE follows
+    engine.sync(scene)
     return bool(scene.world is not None and scene.world.get(BELOW_TAG))
 
 
@@ -368,13 +388,16 @@ def sun_picture_setup(world):
                 setattr(cam, prop, getattr(main, prop))
             except (AttributeError, TypeError, ValueError):
                 pass
-    cam.sun_disc = False
+    # EEVEE (engine.py): the lighting sky has no disc, so the camera's sky carries it when the sun is
+    # to be seen, and camera rays always see the camera's sky
+    eevee = bool(world.get("rb_eevee"))
+    cam.sun_disc = eevee and bool(world.get(SUN_PICTURE))
     path = nt.nodes.get("Light Path")
     fac = mix.inputs[0]
     for l in list(nt.links):
         if l.to_socket == fac:
             nt.links.remove(l)
-    if world.get(SUN_PICTURE):
+    if world.get(SUN_PICTURE) and not eevee:
         fac.default_value = 0.0
     elif path is not None:
         nt.links.new(path.outputs["Is Camera Ray"], fac)
@@ -591,6 +614,14 @@ def camera_turn(scene):
 
 
 def apply_sky(scene, view):
+    """_apply_sky_worlds, then the sun lamp of EEVEE follows (engine.sync)."""
+    note = _apply_sky_worlds(scene, view)
+    from . import engine
+    engine.sync(scene)
+    return note
+
+
+def _apply_sky_worlds(scene, view):
     """The add-on's sky for a view: the sun at its fixed place, or turned with the camera (scene
     rb_sun_follow, user 2026-09-28; sun_rotation turns the other way round than the camera: the sun's
     azimuth is 90 deg - sun_rotation); the view Bottom gets the mirrored sky. A world of the user is
@@ -882,6 +913,7 @@ def render_camera_on(scene, template="", depsgraph=None, collections=None, fresh
         taken = None
     sky = have or taken or make_sky()
     sky[SKY_TAG] = True
+    valid_sky_types(sky)
     scene.world = sky
     last = None if fresh else scene.get(LAST_KEY)
     if last:                            # the settings of the last OFF again (user, 2026-09-28)
@@ -936,4 +968,6 @@ def render_camera_off(scene):
     scene["rb_render_on"] = False
     if "rb_render_before" in scene:
         del scene["rb_render_before"]
+    from . import engine                    # the sun lamp of EEVEE only with the render camera
+    engine.sync(scene)
     return "render camera off: camera, world and render settings as before"

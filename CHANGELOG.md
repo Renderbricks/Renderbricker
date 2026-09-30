@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
+## [Unreleased]
+
+- **Cycles | EEVEE** in the render camera: two buttons switch the render engine with the matching light, any time and back. Cycles lights with the physical sky and its sun disc as before. EEVEE takes the sky's sun only very weakly, so there the sky lights without its disc and a sun lamp "Renderbricks Sun" stands in for the sun: linked to the sun sliders (direction, over the top, "Sun turns with the camera", the mirrored sky of Bottom, direct edits of the Sky node), with the strength and colour the sun has in Cycles at that elevation and altitude. The model is as bright in EEVEE as in Cycles (before: about 60 %). EEVEE is set to everything it can do: ray tracing and global illumination at full resolution, soft shadows with the most rays and steps, a sharp world probe. In Cycles the lamp is hidden; with the render camera off it is hidden too.
+- **Blender 4.5:** Cycles crashed when rendering with the Renderbricks sky, whose sky type (Multiple Scattering, Blender 5.x) 4.5 does not know – such a sky now becomes Nishita.
+
 ## [1.1.0] – 2026-09-30
 
 - **Import from Mecabricks** at the top of the panel (and in step 1 of the Start Guide) – the same as File > Import > Mecabricks (.zmbx). Greyed out, with a note and a link to www.mecabricks.com, while neither Mecabricks Lite nor Advanced is enabled.

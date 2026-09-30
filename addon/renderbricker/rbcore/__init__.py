@@ -10,6 +10,7 @@
     cache     the cache file next to the scene
     workers   several Blender processes (shares, segments, merge)
     camera    the render camera
+    engine    Cycles or EEVEE with the Renderbricks sky (EEVEE: sun lamp linked to the sky)
     headless  the run without a window (run.py)
 
 The package reads and writes like one module: rbcore.NAME finds NAME in the module that holds it, and
@@ -18,9 +19,9 @@ Without a window: blender -b scene.blend --python rbcore/run.py -- result.blend 
 """
 import importlib, sys, types as _types
 
-from . import config, creases, checks, copies, shading, memory, welding, cache, workers, camera, headless
+from . import config, creases, checks, copies, shading, memory, welding, cache, workers, camera, engine, headless
 
-MODULES = (config, creases, checks, copies, shading, memory, welding, cache, workers, camera, headless,)
+MODULES = (config, creases, checks, copies, shading, memory, welding, cache, workers, camera, engine, headless,)
 
 def _owners(modules):
     """name -> module that defines it: everything a module binds itself (functions and classes defined
