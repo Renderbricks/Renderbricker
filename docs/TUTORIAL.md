@@ -224,8 +224,8 @@ set­tings of its own, without touch­ing yours.
 > **Tip – a Blender feature for every slider:** hold **Shift** while drag­ging for fine control,
 > **Ctrl** for coarse steps. A double-click lets you type an exact value.
 
-**Check:** the Front view at *Low* (1920 × 1080, 105 seconds on an RTX 5090 includ­ing the switch to
-level 2). *All views* at 50 % gives the six slots below in about two minutes.
+**Check:** the Front view at *Low* (1920 × 1080, 133 seconds on an RTX 5090 includ­ing the switch to
+level 2). *All views* at 50 % gives the six slots below in about two and a half minutes.
 
 ![All views: the six slots of the Render window](images/tutorial/T08b_all_views.webp)
 
@@ -233,9 +233,9 @@ level 2). *All views* at 50 % gives the six slots below in about two minutes.
 
 The same view at 8K (7680 × 4320) with 512 samples – about five minutes on an RTX 5090 – and four
 parts of it at full size. Click a detail for a 4K section around it; the over­view down­loads the
-whole 8K render (1.8 MB):
+whole 8K render (1.7 MB):
 
-[![The 8K render with the four details (1–4)](images/tutorial/T08c_overview.webp)](https://github.com/Renderbricks/Renderbricker/releases/download/v1.0.0/Italian_Riviera_8K_512_samples.webp)
+[![The 8K render with the four details (1–4)](images/tutorial/T08c_overview.webp)](https://github.com/Renderbricks/Renderbricker/releases/download/v1.1.0/Italian_Riviera_8K_512_samples.webp)
 
 [![Detail 1: the roof tiles](images/tutorial/T08c_crop1.webp)](https://raw.githubusercontent.com/Renderbricks/Renderbricker/main/docs/images/tutorial/T08c_crop1_4k.webp)
 
