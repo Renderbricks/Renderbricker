@@ -12,7 +12,8 @@ one decision; the [tutorial](TUTORIAL.md) explains every step with pictures. New
 | 4 | **Apply** | progress bar, then *… copies in <scene>_rbcache.blend, scene saved* |
 | 5 | **Check** | *Check: … meshes, 0 with problems* |
 | 6 | **Subdivision: ON / OFF** to compare with the import | the button shows the state |
-| 7 | **F12** | the render uses the render level |
+| 7 | **Render camera: ON**, then **Cycles** or **EEVEE** | the viewport shows the model in the Renderbricks sky |
+| 8 | **F12** | the render uses the render level |
 
 Large scene? Use **Convert headless** instead of step 4: the conversion runs in a terminal and
 writes `<scene>_subdiv_<version>.blend` next to your scene, which stays unchanged.

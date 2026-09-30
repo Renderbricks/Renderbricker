@@ -69,6 +69,20 @@ Renderbricks one – nothing of yours is overwritten:
   Resolution Scale, the view, the sun …) – they are kept in the scene, also after saving.
   **Shift+click** on ON starts fresh from the setup scene (samples on *Low*).
 - The **camera button** next to it frames the camera *Renderbricks* again, e.g. after adding parts.
+- **Cycles | EEVEE** right below: two switches, both off at the start. **Cycles** on: the 3D views
+  render with Cycles (*Rendered*) and F12 renders with Cycles – the physical sky with its sun disc
+  lights the model. **EEVEE** on: the 3D views show EEVEE (*Material Preview* with the scene's world
+  and lights) and F12 renders with EEVEE. Pressed again, the views go back to the shading they had;
+  the engine for F12 stays the last one chosen. EEVEE takes the sky's sun only very weakly, so with
+  EEVEE the sky lights without its disc and the lamp *Renderbricks Sun* stands in for the sun: it
+  follows the sun sliders, *Sun: turns with the camera*, *Bottom* and direct edits of the Sky node,
+  with the strength and colour the sun has in Cycles (measured over elevation and altitude). EEVEE is
+  set to everything it can do: ray tracing and global illumination at full resolution, soft shadows
+  with the most rays and steps, also in the viewport, a sharp world probe. In Cycles, and with the
+  render camera off, the lamp is hidden.
+- **Models at real size** (import scale 0.001, as the reworked Mecabricks importers use): EEVEE's
+  shadow and ray-tracing sizes follow the scale of the parts, and when the scale is changed in the
+  Mecabricks panel the camera *Renderbricks* moves with the model – the picture stays as it was.
 - **Samples:** Low 128, Medium 256, Good 512, High 1024 set the render samples (Cycles and EEVEE)
   while the render camera is on; the current level is highlighted, ON starts on *Low*. OFF brings
   your own samples back.

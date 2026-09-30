@@ -139,10 +139,13 @@ GUIDE = (
         "(Physical Sky) and the Renderbricks render settings are used. OFF brings your own camera, world and "
         "render settings back - nothing is overwritten.",
         "The camera icon frames the model again, e.g. after adding parts.",
+        "Cycles or EEVEE below it shows the render in the viewport and sets the engine for F12; pressed "
+        "again, the view is as before. EEVEE gets a sun lamp that follows the sky.",
         "Front, Right, Back, Left, Top, Bottom turn the camera around the model: Front is the view of the "
         "render setup, the others go round in 90° steps or look from above and below.",
-        "Below: the sun fixed or turning with the camera, Transparent, Resolution Scale, the samples, "
-        "Render (F12) and All views (each view into its own slot).")),
+        "Below: the sun fixed or turning with the camera, the sun sliders (elevation, rotation, altitude, "
+        "strength), Sun in picture, Transparent, Resolution Scale, the samples, Render (F12) and All views "
+        "(each view into its own slot).")),
     ("Done - what next", _g_next, (
         "Save As under another name or folder: the panel then offers Move cache here or Copy cache "
         "here, so the new file gets its cache.",

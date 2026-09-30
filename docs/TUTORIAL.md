@@ -146,7 +146,7 @@ with level 1, and F12 switches to level 2 only while it renders.
 
 A progress bar shows the parts done and the time left (1); **Esc** cancels (2). Blenders in the
 back­ground share the work – for the Italian Riviera twelve of them con­verted the 810 parts in
-102 seconds. At the end the scene is saved.
+79 seconds. At the end the scene is saved.
 
 ![After Apply: the summary (1), Subdivision: ON (2) and the cache file (3)](images/tutorial/T05_apply_result.webp)
 
@@ -207,6 +207,9 @@ set­tings of its own, without touch­ing yours.
 
 1. **Render camera: ON** creates the camera *Ren­der­bricks* framing the whole model and the world
    *Ren­der­bricks Sky*. **OFF** brings back your camera, world and set­tings exactly as they were.
+   Right below, **Cycles** and **EEVEE** switch the view­port to that engine (*Ren­dered* or *Mate­rial
+   Preview* with the sky) and F12 renders with it; pressed again, the view is as before. EEVEE gets a
+   sun lamp that follows the sky, so it comes close to Cycles.
 2. **Front … Bottom** turn the camera around the model and frame it again.
 3. **Sun: fixed** keeps the sun in place; *turns with the camera* lights every view like Front.
    Below it, four sliders set the sky: **Ele­va­tion** (−15° to 195°, over the top to the other side),
@@ -229,6 +232,13 @@ set­tings of its own, without touch­ing yours.
 level 2). *All views* at 50 % gives the six slots below in about two and a half minutes.
 
 ![All views: the six slots of the Render window](images/tutorial/T08b_all_views.webp)
+
+**Cycles or EEVEE:** the same view with both engines, each at *Low* (128 samples). EEVEE comes close in
+light and shadow – its sun lamp follows the sky – but glass looks milky where Cycles shows the room
+behind it, and insides are lighter (see [Known issues](KNOWN_ISSUES.md#eevee-glass-and-insides)). EEVEE
+is the quick preview; for the final picture, and always with glass in front, use Cycles.
+
+![Cycles (left) and EEVEE (right), the same view at 128 samples](images/tutorial/T08d_cycles_eevee.webp)
 
 ### The quality in detail
 

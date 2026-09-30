@@ -11,6 +11,9 @@ Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Meca
 - **Cache file** – the copies can live in `<scene>_rbcache.blend` next to the scene, linked as library overrides, so the scene file stays small; move or copy the cache with the scene, switch it off to take the copies back into the scene.
 - **Several Blender processes** – Apply and the headless conversion share the parts among several Blenders in the background; how many depends on the processor and the free memory.
 - **Checks** – the original is verified untouched, folds and seam gaps are measured after every conversion.
+- **Render camera** – a camera, a physical sky and render settings of their own, switched on and off without touching yours: six views around the model, sun sliders, transparent background, sample levels, all views in one go.
+- **Cycles | EEVEE** – either engine in the viewport and for rendering; EEVEE gets a sun lamp that follows the sky and comes close to Cycles.
+- **Real size** – models imported at scale 0.001 (the metric real size) work like those at scale 1; the render camera follows scale changes.
 
 ## Requirements
 

@@ -23,3 +23,7 @@ into the subdivided copy, so the parts shade as Mecabricks made them.
 
 **Headless.** Blender without a window, started from a terminal – used by *Convert headless* and
 by the background Blenders of *Use several Blender processes*.
+
+**Renderbricks Sky / Renderbricks Sun.** The world of the render camera: Blender's physical sky (Sky Texture) with a sun at a height and direction set by the sun sliders. Cycles is lit by the sky and its sun disc; EEVEE takes that sun only very weakly, so with EEVEE a sun lamp *Renderbricks Sun* follows the sky, with the strength and colour the sun has in Cycles.
+
+**Import scale 0.001.** Mecabricks parts at their real size in Blender's metric units (a 2×4 brick 3.2 cm long). The reworked Mecabricks importers use it by default; scale 1 makes one millimetre one unit.

@@ -20,3 +20,7 @@ these faults are kept rather than repaired.
 Variant B (geometric normals) gives crisper logos but does not keep the custom normals of the
 import, so the shading of some surfaces differs from Mecabricks. Variant A keeps it and is the
 default.
+
+## EEVEE: glass and insides
+
+EEVEE refracts only what is already in the picture. Behind a window pane the room is hidden by the pane itself, so EEVEE shows the sky there and the glass looks milky, where Cycles shows the dark room behind it. For the same reason EEVEE lights the insides of arches and rooms brighter than Cycles. Real transparency, thicker panes or a reflection probe did not change this in tests; for pictures with glass in front, use Cycles.
