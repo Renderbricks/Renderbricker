@@ -2,20 +2,20 @@
 
 Usage:
   python build_addon.py
-Copies scripts/core/mecabricks_subdiv.py into addon/renderbricker/core.py
-(one source of truth for the rules) and zips the package to
+Zips the package addon/renderbricker (the UI modules and the core package rbcore) to
 addon/dist/renderbricker-<version>.zip for Preferences > Add-ons > Install.
 """
 import os, re, shutil, zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))).replace(os.sep, "/")
 pkg = f"{ROOT}/addon/renderbricker"
-shutil.copyfile(f"{ROOT}/scripts/core/mecabricks_subdiv.py", f"{pkg}/core.py")
 ver = re.search(r'"version": \((\d+), (\d+), (\d+)\)', open(f"{pkg}/__init__.py", encoding="utf-8").read()).groups()
 os.makedirs(f"{ROOT}/addon/dist", exist_ok=True)
 out = f"{ROOT}/addon/dist/renderbricker-{'.'.join(ver)}.zip"
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-    for fn in ("__init__.py", "core.py"):
-        z.write(f"{pkg}/{fn}", f"renderbricker/{fn}")
+    for sub in ("", "rbcore/"):             # the UI modules and the core package
+        for fn in sorted(os.listdir(f"{pkg}/{sub}")):
+            if fn.endswith(".py"):
+                z.write(f"{pkg}/{sub}{fn}", f"renderbricker/{sub}{fn}")
     setup = f"{pkg}/setup"                  # the Renderbricks setup scene (render settings, sky)
     if os.path.isdir(setup):
         for fn in sorted(os.listdir(setup)):

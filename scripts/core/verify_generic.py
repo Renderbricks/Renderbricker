@@ -26,9 +26,9 @@ IMPORT = A[0]
 NO_GAPS = "--no-gaps" in A
 DEBUG = "--debug" in A
 GAP_NEAR = 1.0
-sp = importlib.util.spec_from_file_location(
-    "rbcore", __file__.replace("verify_generic.py", "mecabricks_subdiv.py"))
-c = importlib.util.module_from_spec(sp); sp.loader.exec_module(c)
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "addon", "renderbricker"))
+import rbcore as c
 
 users = {}
 for o in bpy.data.objects:

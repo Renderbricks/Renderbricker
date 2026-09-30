@@ -218,7 +218,7 @@ def convert_steps(name, row, blender, rv, force, stale, vonly, prog, imp, out, l
     t0 = time.time()
     prog.set_stage(2, "convert")
     tmp = f"{RESULTS}/_building_{name}.blend"   # replace the result only when the build succeeded (no .blend1)
-    blog = run(blender, ["-b", imp, "--factory-startup", "--python", f"{S}/core/mecabricks_subdiv.py", "--", tmp],
+    blog = run(blender, ["-b", imp, "--factory-startup", "--python", f"{S}/../addon/renderbricker/rbcore/run.py", "--", tmp],
                f"{LOGS}/{name}_build.log", prog, "PART '")
     tb = time.time() - t0
     if os.path.exists(tmp):

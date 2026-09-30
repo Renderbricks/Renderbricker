@@ -50,8 +50,9 @@ It expects `01_Sources/<model>.zmbx` beside the code, writes `02_Imports/` and `
 ## Repository layout
 
 ```
-addon/renderbricker/       Blender add-on (core.py is a copy of scripts/core/mecabricks_subdiv.py)
-scripts/core/              rule set (mecabricks_subdiv.py), batch conversion, import, verification
+addon/renderbricker/       Blender add-on: registration and UI modules
+addon/renderbricker/rbcore/  the core: crease rules, conversion, copies, cache, workers, render camera
+scripts/core/              batch conversion, import, verification
 docs/RULES.md              the rule set with the origin of every rule
 ```
 

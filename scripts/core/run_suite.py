@@ -1,7 +1,7 @@
 """Test-run driver: build, verify and render a set of parts into one run folder.
 
 Usage (system Python, not Blender):
-  python run_suite.py <NN> <slug> [--parts NAME ...] [--blender PATH] [--no-render] [-- extra args for mecabricks_subdiv]
+  python run_suite.py <NN> <slug> [--parts NAME ...] [--blender PATH] [--no-render] [-- extra args for rbcore/run.py]
 
 - Sources: <project>/02_Imports/<NAME>.blend. Default: every import in
   02_Imports.
@@ -59,7 +59,7 @@ def main():
         t0 = time.time()
         prog.title = f"Mecabricks run {nn:02d} {k}/{len(parts)} {p}"
         prog.set_stage(1, "convert meshes")
-        blog = run_blender([blender, "-b", src, "--factory-startup", "--python", f"{S}/core/mecabricks_subdiv.py",
+        blog = run_blender([blender, "-b", src, "--factory-startup", "--python", f"{S}/../addon/renderbricker/rbcore/run.py",
                             "--", out] + extra, f"{run}/logs/{p}_build.log", prog, "PART '", "MESHES")
         tb = time.time() - t0
         prog.set_stage(2, "verify meshes")

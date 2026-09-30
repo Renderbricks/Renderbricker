@@ -1,0 +1,347 @@
+"""The subdivided copies of a part: baking a level, UVs, links pointing to the copy of a level, masters."""
+import bpy
+import numpy as np
+from . import config, creases, shading, welding
+
+
+WORK_NAME = "RB work"
+
+
+def original_of(me):
+    """The imported mesh behind a (possibly subdivided) mesh."""
+    name = me.get("rb_original")
+    return bpy.data.meshes.get((name, None), me) if name else me     # the local one (run 65)
+
+
+def copy_of(orig, which="view"):
+    """The subdivided copy used in the viewport or the render (None: the original itself)."""
+    name = orig.get(f"rb_{which}", "")
+    return bpy.data.meshes.get((name, None)) if name else None      # local: the override, not its reference
+
+
+# While a batch over many meshes runs (level switch, run 72) the copies are looked up in an
+# index built once: searching all 13,845 meshes of Dungeon for each of its 2,769 originals
+# took 23 s before the progress bar could even appear.
+_COPY_INDEX = [None]
+
+
+def copy_index_begin():
+    idx = {}
+    for m in bpy.data.meshes:
+        if m.library is None:
+            n = m.get("rb_original")
+            if n:
+                idx.setdefault(n, []).append(m)
+    _COPY_INDEX[0] = idx
+    return idx
+
+
+def copy_index_end():
+    _COPY_INDEX[0] = None
+
+
+def all_copies(orig):
+    """The copies of a mesh in this file (linked meshes of a cache are only the references of
+    their overrides, run 65)."""
+    idx = _COPY_INDEX[0]
+    if idx is not None:
+        out = []
+        for m in idx.get(orig.name, ()):
+            try:
+                if m.get("rb_original") == orig.name:
+                    out.append(m)
+            except ReferenceError:              # removed meanwhile
+                pass
+        return out
+    return [m for m in bpy.data.meshes if m.library is None and m.get("rb_original") == orig.name]
+
+
+WORK_SCENE = "RB work scene"
+
+
+def work_scene():
+    """A scene of its own for the temporary work object (run 52): evaluating it in the user's
+    scene re-evaluated the whole dependency graph each time - 96 ms per evaluation with the
+    4,966 objects of NINJAGO_City, 1 ms in a scene of its own."""
+    sc = bpy.data.scenes.get(WORK_SCENE)
+    if sc is None:
+        sc = bpy.data.scenes.new(WORK_SCENE)
+    return sc
+
+
+def drop_work_scene():
+    sc = bpy.data.scenes.get(WORK_SCENE)
+    if sc is not None and not sc.collection.all_objects:
+        bpy.data.scenes.remove(sc)
+
+
+def link_work(ob):
+    work_scene().collection.objects.link(ob)
+    return ob
+
+
+def depsgraph_of(ob):
+    """Evaluated dependency graph of the scene the object lives in."""
+    sc = ob.users_scene[0] if ob.users_scene else bpy.context.scene
+    if sc == bpy.context.scene:
+        return bpy.context.evaluated_depsgraph_get()
+    with bpy.context.temp_override(scene=sc, view_layer=sc.view_layers[0]):
+        return bpy.context.evaluated_depsgraph_get()
+
+
+def work_object(me):
+    """Temporary object in a scene of its own: the only thing that ever carries a modifier."""
+    return link_work(bpy.data.objects.new(WORK_NAME, me))
+
+
+def bake_copy(orig, work, level):
+    """Evaluate `work` (the original with the finished creases) at `level` and store the
+    result as a mesh of its own - positions and custom normals identical to the modifier
+    (run 38: max. difference 0.0 on all 254 Porsche meshes)."""
+    pass
+    keep = config.LEVELS
+    config.LEVELS = level
+    try:
+        mod = work.modifiers.get("Subdivision")
+        if mod:
+            creases.add_subsurf(work)                   # level and custom normals for this copy
+            # the limit surface near free two-edge boundary vertices is only approximated at
+            # the default quality 3: seams opened by up to 0.018 (run 42). Quality 10 is exact
+            # there (0.0); used only for the copies, the checks keep the fast default.
+            mod.quality = bake_quality(orig)
+        dg = depsgraph_of(work)
+        oe = work.evaluated_get(dg)
+        cp = bpy.data.meshes.new_from_object(oe, preserve_all_data_layers=True, depsgraph=dg)
+    finally:
+        config.LEVELS = keep
+    cp.name = f"{orig.name} L{level}"
+    cp["rb_original"], cp["rb_level"], cp["rb_variant"] = orig.name, level, config.SHADING
+    cp["rb_rules"] = config.RULES_VERSION          # Apply skips meshes whose copies are up to date (user, 2026-09-28)
+    if _COPY_INDEX[0] is not None:
+        _COPY_INDEX[0].setdefault(orig.name, []).append(cp)
+    cp.use_fake_user = True      # a copy no link uses right now (L1, the render copy) is saved too (run 40)
+    if welding.UV_PROJECT:
+        project_uvs(orig, cp, level)
+    strip_copy(cp)
+    return cp
+
+
+# Data of the welded work mesh that the finished copies do not need (run 61: 11 % of an L2
+# copy of Ratatouille): creases (already in the geometry), island and face numbers of the
+# rules, the selection flags of the import (a copy is never edited).
+COPY_DROP = ("crease_edge", "crease_vert", "rb_island", "rb_fi")
+
+
+COPY_DROP_PREFIX = (".select_", ".uv_select_", ".vs.", ".es.", ".pn.")
+
+
+def strip_copy(cp):
+    for a in [a.name for a in cp.attributes]:
+        if a in COPY_DROP or a.startswith(COPY_DROP_PREFIX):
+            try:
+                cp.attributes.remove(cp.attributes[a])
+            except (RuntimeError, KeyError):
+                pass
+
+
+def project_uvs(orig, cp, level):
+    """Optional (UV_PROJECT, off - run 58): UVs of the copy taken from the original. Every
+    corner of a child face is placed on the triangles of its own original face and gets the
+    UVs interpolated there. Exact for points on the original face, but the subdivision also
+    moves vertices within a plane, across face borders - clamped to their own face, the
+    lettering of 86209 was distorted. Kept for tests; the copies use smoothed UVs (W14).
+    Welding keeps the face order, so child faces follow their original face in blocks."""
+    if not orig.uv_layers or not cp.uv_layers or not len(orig.polygons):
+        return
+    orig.calc_loop_triangles()
+    nt = len(orig.loop_triangles)
+    tl = np.empty(nt * 3, np.int64); orig.loop_triangles.foreach_get("loops", tl); tl = tl.reshape(-1, 3)
+    tp = np.empty(nt, np.int64); orig.loop_triangles.foreach_get("polygon_index", tp)
+    order = np.argsort(tp, kind="stable"); tl, tp = tl[order], tp[order]
+    npoly = len(orig.polygons)
+    tcount = np.bincount(tp, minlength=npoly); tstart = np.concatenate(([0], np.cumsum(tcount)[:-1]))
+    lv = np.empty(len(orig.loops), np.int64); orig.loops.foreach_get("vertex_index", lv)
+    oc = np.empty(len(orig.vertices) * 3); orig.vertices.foreach_get("co", oc); oc = oc.reshape(-1, 3)
+    A, B, C = oc[lv[tl[:, 0]]], oc[lv[tl[:, 1]]], oc[lv[tl[:, 2]]]
+    # child faces -> original face (blocks of loop_total * 4^(level-1) faces)
+    sizes = np.empty(npoly, np.int64); orig.polygons.foreach_get("loop_total", sizes)
+    per = sizes * 4 ** (level - 1)
+    if per.sum() != len(cp.polygons):
+        return                                  # not a plain subdivision of this original
+    owner_f = np.repeat(np.arange(npoly), per)
+    ctot = np.empty(len(cp.polygons), np.int64); cp.polygons.foreach_get("loop_total", ctot)
+    owner = np.repeat(owner_f, ctot)            # per loop of the copy
+    cl = np.empty(len(cp.loops), np.int64); cp.loops.foreach_get("vertex_index", cl)
+    cc = np.empty(len(cp.vertices) * 3); cp.vertices.foreach_get("co", cc); cc = cc.reshape(-1, 3)
+    n = len(cl)
+    best = np.full(n, np.inf); btri = np.full(n, -1, np.int64); bw = np.zeros((n, 3))
+    kmax = int(tcount.max()) if nt else 0
+    for k in range(kmax):
+        for c0 in range(0, n, welding.UV_CHUNK):          # chunks: a 4.5 M-face copy has 18 M corners
+            idx = np.nonzero(tcount[owner[c0:c0 + welding.UV_CHUNK]] > k)[0] + c0
+            if not len(idx):
+                continue
+            t = tstart[owner[idx]] + k
+            a, b, c, x = A[t], B[t], C[t], cc[cl[idx]]
+            v0, v1, v2 = b - a, c - a, x - a
+            d00, d01, d11 = (v0 * v0).sum(1), (v0 * v1).sum(1), (v1 * v1).sum(1)
+            d20, d21 = (v2 * v0).sum(1), (v2 * v1).sum(1)
+            den = d00 * d11 - d01 * d01
+            ok = den > 1e-18
+            den = np.where(ok, den, 1.0)
+            wv = (d11 * d20 - d01 * d21) / den
+            ww = (d00 * d21 - d01 * d20) / den
+            w = np.stack((1.0 - wv - ww, wv, ww), 1)
+            out = np.clip(-w, 0, None).sum(1)       # how far outside the triangle (0: inside)
+            w = np.clip(w, 0, None)
+            w /= np.maximum(w.sum(1, keepdims=True), 1e-12)
+            p = a * w[:, :1] + b * w[:, 1:2] + c * w[:, 2:]
+            score = np.where(ok, out * 1e3 + np.linalg.norm(x - p, axis=1), np.inf)
+            better = score < best[idx]
+            j = idx[better]
+            best[j], btri[j], bw[j] = score[better], t[better], w[better]
+    hit = btri >= 0
+    if not hit.any():
+        return
+    for lay in orig.uv_layers:
+        dst = cp.uv_layers.get(lay.name)
+        if dst is None:
+            continue
+        ou = np.empty(len(orig.loops) * 2); lay.data.foreach_get("uv", ou); ou = ou.reshape(-1, 2)
+        cu = np.empty(n * 2); dst.data.foreach_get("uv", cu); cu = cu.reshape(-1, 2)
+        tt = tl[btri[hit]]
+        cu[hit] = (ou[tt[:, 0]] * bw[hit, :1] + ou[tt[:, 1]] * bw[hit, 1:2] + ou[tt[:, 2]] * bw[hit, 2:])
+        dst.data.foreach_set("uv", cu.ravel())
+
+
+def real_users(m):
+    return m.users - (1 if m.use_fake_user else 0)
+
+
+def point_links(obs, orig, which="view"):
+    """Let the objects use the viewport (or render) copy of their original."""
+    target = copy_of(orig, which) or orig
+    for ob in obs:
+        if ob.data != target:
+            ob.data = target
+
+
+def drop_copies(orig, keep=()):
+    """Remove the copies of a mesh that nothing uses any more (keep: the copies to keep)."""
+    for m in all_copies(orig):
+        if m not in keep and real_users(m) == 0:
+            bpy.data.meshes.remove(m)
+
+
+def bake_quality(me):
+    return config.BAKE_QUALITY if len(me.polygons) <= config.QUALITY_FACE_LIMIT else config.BAKE_QUALITY_LARGE
+
+
+def copies_by_level(orig):
+    return {int(m.get("rb_level", 0)): m for m in all_copies(orig)}
+
+
+def missing_levels(orig, view, render):
+    have = copies_by_level(orig)
+    return sorted(lv for lv in {view, render} - {0} if lv not in have)
+
+
+def up_to_date(orig, view, render):
+    """The copies of this mesh for the viewport and render level exist and come from the current rules,
+    variant and method - Apply can skip the mesh (user, 2026-09-28). Copies made before 1.0.0 carry no
+    rules version and are converted again."""
+    have = copies_by_level(orig)
+    need = {lv for lv in (view, render) if lv}
+    if not need or any(lv not in have for lv in need):
+        return False
+    return all(have[lv].get("rb_rules") == config.RULES_VERSION and have[lv].get("rb_variant") == config.SHADING
+               and (have[lv].get("rb_method") == "weld") == (config.METHOD == "weld") for lv in need)
+
+
+def bake_levels(orig, levels):
+    """Bake further copies of an already processed mesh - the creases are on the original,
+    so no rules run: only the subdivision (variant of the existing copies)."""
+    pass
+    have = copies_by_level(orig)
+    variant = next((m.get("rb_variant") for m in have.values() if m.get("rb_variant")), config.SHADING)
+    if config.METHOD == "weld" and (not have or any(m.get("rb_method") == "weld" for m in have.values())):
+        keep, config.SHADING = config.SHADING, variant       # weld copies: the creases live only in the welded copy
+        try:
+            made, _ = welding._bake_weld(orig, levels)
+        finally:
+            config.SHADING = keep
+        for lv, cp in made.items():
+            cp.name = f"{orig.name} L{lv}"
+        return made
+    keep, config.SHADING = config.SHADING, variant
+    work = work_object(orig)
+    made = {}
+    try:
+        creases.add_subsurf(work)
+        if variant == "geometric":
+            E = {i for i, d in enumerate(orig.attributes["crease_edge"].data) if d.value > 0}
+            shading.geometric_shading(work, orig, E)
+        for lv in levels:
+            made[lv] = bake_copy(orig, work, lv)
+            made[lv].name = f"{orig.name} L{lv}"
+    finally:
+        bpy.data.objects.remove(work)
+        drop_work_scene()
+        config.SHADING = keep
+    return made
+
+
+def set_levels(orig, view, render, obs=None):
+    """Viewport / render level of a processed mesh: bake what is missing, point the links
+    (all objects of this mesh unless `obs` is given; switched-off ones stay off), drop
+    copies of other levels that nothing uses. Returns the number of copies baked."""
+    missing = missing_levels(orig, view, render)
+    if missing:
+        bake_levels(orig, missing)
+    have = copies_by_level(orig)
+    orig["rb_view"] = have[view].name if view else ""
+    orig["rb_render"] = have[render].name if render else ""
+    if obs is None:
+        obs = [o for o in bpy.data.objects if o.type == 'MESH' and original_of(o.data) == orig]
+    point_links([o for o in obs if not o.get("rb_off")], orig, "view")
+    keep = {have[lv] for lv in (set(config.PRE_LEVELS) | {view, render}) if lv in have}
+    drop_copies(orig, keep)
+    return len(missing)
+
+
+# ---- up to add-on 1.3: masters, instances and per-object modifiers (removed on Apply)
+MASTER_COLL = "Renderbricks Masters"
+
+
+MOD_INST = "Renderbricks Instance"
+
+
+OLD_MODS = ("Subdivision", "Mecabricks Subdiv", "Mecabricks Smooth", "Smooth After Subdiv")
+
+
+def find_master(me):
+    coll = bpy.data.collections.get(MASTER_COLL)
+    return next((o for o in coll.objects if o.data == me), None) if coll else None
+
+
+def is_master(ob):
+    coll = bpy.data.collections.get(MASTER_COLL)
+    return bool(coll) and ob.name in coll.objects
+
+
+def unlink_instance(ob):
+    for name in (MOD_INST,) + OLD_MODS:
+        if ob.modifiers.get(name):
+            ob.modifiers.remove(ob.modifiers[name])
+
+
+def remove_master(me):
+    m = find_master(me)
+    ng = bpy.data.node_groups.get(f"RB Instance {me.name}")
+    if ng:
+        bpy.data.node_groups.remove(ng)
+    if m:
+        bpy.data.objects.remove(m)
+    coll = bpy.data.collections.get(MASTER_COLL)
+    if coll and not coll.objects:
+        bpy.data.collections.remove(coll)

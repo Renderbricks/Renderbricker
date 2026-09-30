@@ -11,8 +11,8 @@ A = sys.argv[sys.argv.index("--") + 1:]
 HERE = os.path.dirname(os.path.abspath(__file__))
 src = A[0]
 out = A[1] if len(A) > 1 else os.path.join(HERE, "..", "..", "addon", "renderbricker", "setup", "renderbricks_setup.blend")
-sp = importlib.util.spec_from_file_location("rbcore", os.path.join(HERE, "mecabricks_subdiv.py"))
-core = importlib.util.module_from_spec(sp); sp.loader.exec_module(core)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "addon", "renderbricker"))
+import rbcore as core
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
 with bpy.data.libraries.load(src, link=False) as (s, d):

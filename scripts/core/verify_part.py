@@ -13,9 +13,9 @@ from mathutils import Vector
 from mathutils.geometry import intersect_line_line_2d
 
 orig_path = sys.argv[sys.argv.index("--") + 1]
-import importlib.util as _ilu
-_sp = _ilu.spec_from_file_location("rbcore", __file__.replace("verify_part.py", "mecabricks_subdiv.py"))
-CORE = _ilu.module_from_spec(_sp); _sp.loader.exec_module(CORE)
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "addon", "renderbricker"))
+import rbcore as CORE
 LEVELS_GUESS = 2
 
 with bpy.data.libraries.load(orig_path) as (src, dst):
@@ -26,7 +26,7 @@ originals = dict(zip(names, dst.meshes))
 
 
 def self_intersecting(cos):
-    """K11 as in mecabricks_subdiv.py: polygon whose edges cross (bowtie quad of the import)."""
+    """K11 as in rbcore/checks.py: polygon whose edges cross (bowtie quad of the import)."""
     n = len(cos)
     if n < 4:
         return False

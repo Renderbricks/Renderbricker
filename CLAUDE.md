@@ -5,7 +5,7 @@ Blender add-on "Renderbricker" (sidebar tab Renderbricker) plus batch pipeline: 
 ## Stack and commands
 
 - **Language:** Python (Blender's interpreter for everything under `addon/` and the Blender-side scripts; system Python 3.10+ for `build_addon.py`, `convert_models.py`, `run_suite.py`)
-- **Build the add-on:** `python scripts/core/build_addon.py` – copies `scripts/core/mecabricks_subdiv.py` to `addon/renderbricker/core.py` and zips to `addon/dist/renderbricker-<version>.zip`
+- **Build the add-on:** `python scripts/core/build_addon.py` – zips `addon/renderbricker` (UI modules + core package `rbcore`) to `addon/dist/renderbricker-<version>.zip`
 - **Batch conversion:** `python scripts/core/convert_models.py [--models ...] [--stale|--force|--verify-only]`
 - **Rule test runs:** `python scripts/core/run_suite.py NN slug --parts <models>` → `_CLAUDE_/runs/runNN_slug/`
 - **Blender path:** `RENDERBRICKER_BLENDER`, else `_CLAUDE_/blender_path.txt`, else `blender` on PATH
@@ -13,8 +13,9 @@ Blender add-on "Renderbricker" (sidebar tab Renderbricker) plus batch pipeline: 
 ## Structure
 
 ```
-addon/renderbricker/       add-on; core.py is generated – edit scripts/core/mecabricks_subdiv.py
-scripts/core/              rules (mecabricks_subdiv.py), import, batch, verification
+addon/renderbricker/       add-on: __init__ (registration), UI modules (props, convert, operators, guide, panels, ...)
+addon/renderbricker/rbcore/  the core, one source of truth: creases (rules), welding, copies, cache, workers, camera, run.py
+scripts/core/              import, batch conversion, verification (they use rbcore)
 docs/RULES.md              rule set – every rule with its origin (part, run); version = RULES_VERSION
 01_Sources … 06_User       local model data, not in git
 _CLAUDE_/                  local R&D: journals, runs, logs, backups, tools (own local git history)
@@ -34,9 +35,9 @@ _dev/                      private test repo Renderbricker-CI (own git): platfor
 
 ## Versioning and releases (same standard as Gaussian Render Capture, maintainer 2026-09-28)
 
-- **Semantic Versioning from 1.0.0:** PATCH fixes, MINOR features, MAJOR changes that break existing scenes or settings. The version is `bl_info["version"]` in `addon/renderbricker/__init__.py`; a rules change in `scripts/core/mecabricks_subdiv.py` counts as an add-on change.
+- **Semantic Versioning from 1.0.0:** PATCH fixes, MINOR features, MAJOR changes that break existing scenes or settings. The version is `bl_info["version"]` in `addon/renderbricker/__init__.py`; a rules change in `addon/renderbricker/rbcore/` counts as an add-on change.
 - **Collect changes:** commit locally, build and install into Blender 5.2 and 5.3, CHANGELOG entry under `## [Unreleased]`. The maintainer decides when a version is published.
-- **Version bump only for changes to the add-on** (`addon/`, `scripts/core/mecabricks_subdiv.py`). README, docs, CHANGELOG, images never bump the version; they are pushed (after asking) without a release. Wording-only changes inside the add-on raise PATCH but are collected and published with the next functional release; such a version says "No functional changes – texts in the add-on and the documentation were revised in content and form."
+- **Version bump only for changes to the add-on** (`addon/`). README, docs, CHANGELOG, images never bump the version; they are pushed (after asking) without a release. Wording-only changes inside the add-on raise PATCH but are collected and published with the next functional release; such a version says "No functional changes – texts in the add-on and the documentation were revised in content and form."
 - **CHANGELOG and release notes list functional changes only** (English, format `## [X.Y.Z] – YYYY-MM-DD`). Release notes = the CHANGELOG section + an install line.
 - **Before a release:** candidate test – build the zip, install into 5.2 and 5.3, add-on test (Apply with cache, Save As / Move / Copy cache, reopen), window test for UI changes, batch on the test models. Then, after the maintainer's acceptance: push, tag `vX.Y.Z`, GitHub release.
 - The internal detail of every change goes into the local R&D record (`_CLAUDE_/JOURNAL_<date>.md`, `CHRONOLOGY.md`), not into the repository.
