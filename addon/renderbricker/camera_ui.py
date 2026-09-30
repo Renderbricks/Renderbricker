@@ -403,6 +403,12 @@ def draw_render_camera(L, context, render_button=True):
                  icon='OUTLINER_OB_CAMERA' if on else 'CAMERA_DATA', depress=on)
     row.operator("mecsub.frame_camera", text="", icon='VIEW_CAMERA')
     if on:
+        # the engine right under the camera button (user, 2026-09-30)
+        eevee = core.is_eevee(sc)                # Cycles or EEVEE with the sky
+        row = col.row(align=True)
+        row.operator("mecsub.render_engine", text="Cycles", icon='SHADING_RENDERED',     # the viewport's icons:
+                     depress=not eevee).engine = 'CYCLES'                          # Rendered, Material Preview
+        row.operator("mecsub.render_engine", text="EEVEE", icon='MATERIAL', depress=eevee).engine = 'EEVEE'
         only = props.camera_collections(sc.mecsub)
         if only:
             col.label(text="Only: " + ", ".join(c.name for c in only), icon='HIDE_OFF')
@@ -411,10 +417,6 @@ def draw_render_camera(L, context, render_button=True):
             row = col.row(align=True)
             for k, label, _d in keys:
                 row.operator("mecsub.camera_view", text=label, depress=(k == current)).view = k
-        eevee = core.is_eevee(sc)                # Cycles or EEVEE with the sky (user, 2026-09-30)
-        row = col.row(align=True)
-        row.operator("mecsub.render_engine", text="Cycles", depress=not eevee).engine = 'CYCLES'
-        row.operator("mecsub.render_engine", text="EEVEE", depress=eevee).engine = 'EEVEE'
         follow = bool(sc.get(core.SUN_FOLLOW))  # sun fixed or turning with the camera (user, 2026-09-28)
         col.operator("mecsub.sun_follow", text="Sun: turns with the camera" if follow else "Sun: fixed",
                      icon='LIGHT_SUN', depress=follow)

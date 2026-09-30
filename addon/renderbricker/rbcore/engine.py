@@ -110,6 +110,39 @@ def _show(ob, on):
             setattr(ob, prop, not on)
 
 
+# EEVEE sizes in world units (run 197, user 2026-09-30: blotchy shadows at import scale 0.001, fine at 1):
+# the lamp's shadow map texel and the thickness of Fast GI and screen tracing are absolute lengths. They are
+# set for parts at scale 1 (1 unit = 1 mm, the setup scene's values) and follow the scale of the parts - the
+# importer forks import at 0.001 (real size) and their panel scales the models.
+EEVEE_SIZES = {"shadow_maximum_resolution": 0.001, "fast_gi_thickness_near": 0.25, "screen_trace_thickness": 0.2}
+
+
+def world_unit(scene, sample=200):
+    """Scale of the parts in the world: the median object scale of the visible meshes (1 for imports at
+    scale 1, 0.001 for the importer forks' real size)."""
+    obs = camera.visible_meshes(scene)
+    if not obs:
+        return 1.0
+    step = max(1, len(obs) // sample)
+    s = sorted(sum(abs(x) for x in o.matrix_world.to_scale()) / 3.0 for o in obs[::step])
+    u = s[len(s) // 2]
+    return u if u > 0 else 1.0
+
+
+def scale_sizes(scene, light=None):
+    """The EEVEE sizes for the parts' scale; writes only what changes."""
+    u = world_unit(scene)
+    e = scene.eevee
+    opts = getattr(e, "ray_tracing_options", None)
+    for target, key in ((light, "shadow_maximum_resolution"), (e, "fast_gi_thickness_near"),
+                        (opts, "screen_trace_thickness")):
+        if target is not None and hasattr(target, key):
+            v = EEVEE_SIZES[key] * u
+            if abs(getattr(target, key) - v) > v * 1e-4:
+                setattr(target, key, v)
+    return u
+
+
 def sync(scene):
     """Sky and lamp for the scene's engine: Cycles - sun disc on, lamp hidden; EEVEE - sun disc off
     (the camera may still see it, "Sun in picture"), lamp on and following the sky. Outside the render
@@ -153,6 +186,7 @@ def sync(scene):
         light.angle = main.sun_size
     if hasattr(light, "use_shadow_jitter") and not light.use_shadow_jitter:
         light.use_shadow_jitter = True              # soft shadow like the sun's size
+    scale_sizes(scene, light)                       # shadow and trace sizes follow the parts' scale (run 197)
     _show(ob, energy > 0)
 
 
@@ -215,7 +249,7 @@ def watch_key(scene):
     return (scene.render.engine, round(main.sun_elevation, 6), round(main.sun_rotation, 6),
             round(float(getattr(main, "altitude", 0.0)), 3), round(main.sun_size, 7),
             round(_background_strength(sky), 6), bool(scene.world and scene.world.get(camera.BELOW_TAG)),
-            bool(sky.get(camera.SUN_PICTURE)))
+            bool(sky.get(camera.SUN_PICTURE)), round(world_unit(scene), 9))
 
 
 def on_depsgraph(scene, _depsgraph=None):
