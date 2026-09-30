@@ -707,6 +707,62 @@ def visible_meshes(scene):
     return out
 
 
+# ---------------------------------------------------------------- the parts' scale (user, 2026-09-30)
+# The importer forks import at 0.001 (real size) and their panel scales the models by their import Empty.
+# The render camera then has to follow: it keeps the scale it was framed for (CAM_UNIT) and, when the
+# parts' scale changes, moves towards / away from the Empty by the same factor - the picture stays exactly
+# as it was, also a camera set up by hand. EEVEE's absolute sizes follow the same unit (engine.scale_sizes).
+CAM_UNIT = "rb_unit"                    # on the render camera: the parts' scale it was framed for
+
+
+def world_unit(scene, sample=200):
+    """Scale of the parts in the world: the median object scale of the visible meshes (1 for imports at
+    scale 1, 0.001 for the importer forks' real size)."""
+    obs = visible_meshes(scene)
+    if not obs:
+        return 1.0
+    step = max(1, len(obs) // sample)
+    s = sorted(sum(abs(x) for x in o.matrix_world.to_scale()) / 3.0 for o in obs[::step])
+    u = s[len(s) // 2]
+    return u if u > 0 else 1.0
+
+
+def _scale_pivot(scene):
+    """World position the parts are scaled about: their common top parent (the import Empty), else None."""
+    tops = set()
+    for o in visible_meshes(scene)[::50] or []:
+        while o.parent is not None:
+            o = o.parent
+        tops.add(o)
+        if len(tops) > 1:
+            return None
+    top = next(iter(tops), None)
+    return top.matrix_world.translation.copy() if top is not None and top.type != 'MESH' else None
+
+
+def follow_scale(scene, cam=None):
+    """Keep the render camera's picture when the parts' scale changed since it was framed. True if moved."""
+    cam = cam or scene.camera
+    if cam is None or cam.type != 'CAMERA' or not cam.name.startswith(CAMERA_NAME) or not render_camera_is_on(scene):
+        return False
+    u = world_unit(scene)
+    old = cam.get(CAM_UNIT)
+    cam[CAM_UNIT] = u
+    if not old or abs(u - old) <= abs(old) * 1e-6:
+        return False
+    f = u / old
+    pivot = _scale_pivot(scene)
+    if pivot is None:                   # parts without one common parent: frame them anew
+        frame_camera(scene, cam, bpy.context.evaluated_depsgraph_get())
+        return True
+    cam.location = pivot + (cam.location - pivot) * f
+    cam.data.clip_start = cam.data.clip_start * f
+    cam.data.clip_end = max(CLIP_END, cam.data.clip_end * f)
+    if cam.data.type == 'ORTHO':
+        cam.data.ortho_scale = cam.data.ortho_scale * f
+    return True
+
+
 def frame_camera(scene, cam, depsgraph):
     """Move the camera (keeping its direction) so that all visible meshes fill the picture, 5 % margin.
     Returns False without meshes."""
@@ -730,6 +786,7 @@ def frame_camera(scene, cam, depsgraph):
     # scenes at real size (NINJAGO City imported under an empty at scale 0.001 = metric like the real
     # set, 0.63 m high): the near clip stays in front of the model
     cam.data.clip_start = min(cam.data.clip_start, max(1e-4, 0.5 * (d - r)))
+    cam[CAM_UNIT] = world_unit(scene)   # framed for this scale of the parts
     return True
 
 
@@ -939,6 +996,8 @@ def render_camera_on(scene, template="", depsgraph=None, collections=None, fresh
         dg.update()
         framed = frame_camera(scene, cam, dg)
     scene["rb_render_on"] = True
+    if not framed:                          # an existing camera: scale changed while it was off?
+        follow_scale(scene, cam)
     import os
     used = bool(template) and os.path.isfile(template)
     return ("render camera on: camera Renderbricks" + (" created and framed" if made and framed else

@@ -117,21 +117,9 @@ def _show(ob, on):
 EEVEE_SIZES = {"shadow_maximum_resolution": 0.001, "fast_gi_thickness_near": 0.25, "screen_trace_thickness": 0.2}
 
 
-def world_unit(scene, sample=200):
-    """Scale of the parts in the world: the median object scale of the visible meshes (1 for imports at
-    scale 1, 0.001 for the importer forks' real size)."""
-    obs = camera.visible_meshes(scene)
-    if not obs:
-        return 1.0
-    step = max(1, len(obs) // sample)
-    s = sorted(sum(abs(x) for x in o.matrix_world.to_scale()) / 3.0 for o in obs[::step])
-    u = s[len(s) // 2]
-    return u if u > 0 else 1.0
-
-
 def scale_sizes(scene, light=None):
     """The EEVEE sizes for the parts' scale; writes only what changes."""
-    u = world_unit(scene)
+    u = camera.world_unit(scene)
     e = scene.eevee
     opts = getattr(e, "ray_tracing_options", None)
     for target, key in ((light, "shadow_maximum_resolution"), (e, "fast_gi_thickness_near"),
@@ -249,7 +237,7 @@ def watch_key(scene):
     return (scene.render.engine, round(main.sun_elevation, 6), round(main.sun_rotation, 6),
             round(float(getattr(main, "altitude", 0.0)), 3), round(main.sun_size, 7),
             round(_background_strength(sky), 6), bool(scene.world and scene.world.get(camera.BELOW_TAG)),
-            bool(sky.get(camera.SUN_PICTURE)), round(world_unit(scene), 9))
+            bool(sky.get(camera.SUN_PICTURE)), round(camera.world_unit(scene), 9))
 
 
 def on_depsgraph(scene, _depsgraph=None):
@@ -257,5 +245,6 @@ def on_depsgraph(scene, _depsgraph=None):
     if key is None or _LAST.get(scene.name) == key:
         return
     _LAST[scene.name] = key
+    camera.follow_scale(scene)                      # the parts scaled (Mecabricks panel): the camera follows
     sync(scene)
     _LAST[scene.name] = watch_key(scene)

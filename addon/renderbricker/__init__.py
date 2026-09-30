@@ -119,7 +119,8 @@ def _unlock(*args):
 
 @persistent
 def _engine_watch(scene, depsgraph=None):
-    """EEVEE's sun lamp follows direct edits of the sky and an engine switched elsewhere."""
+    """While the render camera is on: EEVEE's sun lamp follows direct edits of the sky and an engine switched
+    elsewhere; the camera follows a change of the parts' scale (Mecabricks panel Scale)."""
     try:
         core.on_depsgraph(scene, depsgraph)
     except Exception:
