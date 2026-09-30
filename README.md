@@ -20,9 +20,11 @@ Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Meca
 
 ## Installation
 
-1. Build the package: `python scripts/core/build_addon.py` → `addon/dist/renderbricker-<version>.zip`
+1. Download `renderbricker-<version>.zip` from the [latest release](https://github.com/Renderbricks/Renderbricker/releases/latest).
 2. Blender: Edit → Preferences → Add-ons → Install from Disk → choose the zip, enable "Renderbricker"
 3. Panel: 3D Viewport → Sidebar (N) → Renderbricker
+
+To build the package from the source instead: `python scripts/core/build_addon.py` → `addon/dist/renderbricker-<version>.zip`
 
 ## Documentation
 

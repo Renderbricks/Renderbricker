@@ -49,12 +49,13 @@ as the free memory allows – here twelve. The graph­ics card only matters for 
 
 More in the [Glos­sary](GLOSSARY.md).
 
-**How it works:** Mecabricks parts are mod­elled for display in real time – flat faces, hard
-corners, round shapes made of a few segments. A sub­di­vi­sion surface makes them smooth, but without
-guid­ance it rounds every­thing and a brick looks like soap. Ren­der­bricker first decides for every
-edge whether the real part is sharp or round there, fol­low­ing a rule set that was checked part by
-part against photos of the real ele­ments, and sets a crease on the sharp ones. Then it bakes the
-smoothed result into a copy of each part. The imported mesh stays untouched in the file.
+**How it works:** Mecabricks parts are very well made and hold up in renders. They are mod­elled at a
+fixed res­o­lu­tion – round shapes with a set number of seg­ments – and are well suited to be refined
+further, the way a Sub­di­vi­sion Surface mod­i­fier does. Without guid­ance, however, sub­di­vi­sion rounds
+every edge alike. Ren­der­bricker first decides for every edge whether the real part is sharp or round
+there, fol­low­ing a rule set that was checked part by part against photos of the real ele­ments, and
+sets a crease on the sharp ones. Then it bakes the smoothed result into a copy of each part. The
+imported mesh stays untouched in the file.
 
 **Every step** has the same parts: **what it is for**, the **actions** (num­bered like the yellow
 markers in the picture), a **check** that tells you it worked, and some­times a **why**.
