@@ -47,6 +47,13 @@ python scripts/core/convert_models.py [--models NAME ...] [--stale] [--force] [-
 
 It expects `01_Sources/<model>.zmbx` beside the code, writes `02_Imports/` and `03_Results/<model>_subdiv_A_mecabricks_<version>.blend` and checks every result. Blender is taken from `RENDERBRICKER_BLENDER`, a path in `_CLAUDE_/blender_path.txt` or `blender` on the PATH; `--blender PATH` overrides all.
 
+## Feedback
+
+- **Ideas and suggestions:** [Discussions → Ideas](https://github.com/Renderbricks/Renderbricker/discussions/categories/ideas) – others can comment and vote.
+- **Questions:** [Discussions → Q&A](https://github.com/Renderbricks/Renderbricker/discussions/categories/q-a)
+- **Your renders:** [Discussions → Show and tell](https://github.com/Renderbricks/Renderbricker/discussions/categories/show-and-tell)
+- **Bugs:** [Issues](https://github.com/Renderbricks/Renderbricker/issues/new/choose) – with the Renderbricker and Blender version and, if you can, the log file (option *Log file* in the panel).
+
 ## Repository layout
 
 ```

@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in Renderbricker does not work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting! Ideas and questions are welcome in [Discussions](https://github.com/Renderbricks/Renderbricker/discussions).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead? Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Import … with Mecabricks Advanced
+        2. Apply with Viewport 1 / Render 2
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: addon
+    attributes:
+      label: Renderbricker version
+      description: Shown in the header of the panel, e.g. 1.1.0
+    validations:
+      required: true
+  - type: input
+    id: blender
+    attributes:
+      label: Blender version
+      placeholder: e.g. 5.2.2 LTS
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, Linux, macOS]
+    validations:
+      required: true
+  - type: input
+    id: scene
+    attributes:
+      label: Scene
+      description: The model (a Mecabricks link if it is public) and its size – the summary of Apply names the meshes and objects.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Turn on *Log file* in the panel, repeat the step and paste `<scene>_Renderbricker.log` here – or the text of the Blender console (Window → Toggle System Console).
+      render: text

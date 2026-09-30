@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Idea or suggestion
+    url: https://github.com/Renderbricks/Renderbricker/discussions/categories/ideas
+    about: Suggest an improvement – others can comment and vote.
+  - name: Question
+    url: https://github.com/Renderbricks/Renderbricker/discussions/categories/q-a
+    about: Ask how something works.
+  - name: Show your renders
+    url: https://github.com/Renderbricks/Renderbricker/discussions/categories/show-and-tell
+    about: Share what you made with Renderbricker.
