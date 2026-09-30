@@ -222,8 +222,32 @@ class MECSUB_OT_sun_reset(bpy.types.Operator):
         return {'FINISHED'}
 
 
+PREV_SHADING = "rb_prev_shading"        # scene: the 3D views' shading before a Cycles / EEVEE button
+
+
+def view3d_spaces(context):
+    """The 3D views of the current window."""
+    screen = context.window.screen if context.window else context.screen
+    return [a.spaces.active for a in screen.areas if a.type == 'VIEW_3D'] if screen else []
+
+
+def viewport_engine(context):
+    """'CYCLES' when a 3D view renders with Cycles, 'EEVEE' when one shows EEVEE (Material Preview with the
+    scene's world and lights, the engine on EEVEE), else ''."""
+    eevee = core.is_eevee(context.scene)
+    for sp in view3d_spaces(context):
+        t = sp.shading.type
+        if t == 'RENDERED':
+            return 'EEVEE' if eevee else 'CYCLES'
+        if t == 'MATERIAL' and eevee:
+            return 'EEVEE'
+    return ''
+
+
 class MECSUB_OT_render_engine(bpy.types.Operator):
-    """Cycles or EEVEE with the Renderbricks sky (user, 2026-09-30)"""
+    """Cycles or EEVEE in the viewport, with the Renderbricks sky (user, 2026-09-30/10-01): each button switches
+    its engine on or off - pressed, the 3D views show it and F12 renders with it; pressed again, the views go
+    back to the shading they had"""
     bl_idname = "mecsub.render_engine"
     bl_label = "Render engine"
     bl_options = {'REGISTER', 'UNDO'}
@@ -232,17 +256,36 @@ class MECSUB_OT_render_engine(bpy.types.Operator):
     @classmethod
     def description(cls, context, properties):
         if properties.engine == 'EEVEE':
-            return ("Render with EEVEE, using everything it can do (ray tracing, global illumination, soft "
-                    "shadows). The sky lights without its sun disc and the lamp \"Renderbricks Sun\" stands in "
-                    "for the sun, linked to the sun sliders - EEVEE takes the sky's sun only very weakly")
-        return "Render with Cycles: the physical sky with its sun disc lights the model"
+            return ("On: EEVEE in the viewport (Material Preview with the Renderbricks sky and its sun lamp) and "
+                    "for rendering, with everything EEVEE can do. The lamp \"Renderbricks Sun\" stands in for the "
+                    "sky's sun, linked to the sun sliders. Off: the viewport as before")
+        return ("On: Cycles in the viewport (Rendered) and for rendering - the physical sky with its sun disc "
+                "lights the model. Off: the viewport as before")
 
     @classmethod
     def poll(cls, context):
         return core.render_camera_is_on(context.scene)
 
     def execute(self, context):
-        note = core.set_engine(context.scene, self.engine)
+        sc = context.scene
+        spaces = view3d_spaces(context)
+        current = viewport_engine(context)
+        if current == self.engine:                  # pressed again: off, the views as before
+            prev = sc.get(PREV_SHADING, 'SOLID')
+            for sp in spaces:
+                sp.shading.type = prev
+            convert.redraw(context)
+            return {'FINISHED'}
+        if not current and spaces:                  # the shading to go back to
+            sc[PREV_SHADING] = spaces[0].shading.type
+        note = core.set_engine(sc, self.engine)
+        for sp in spaces:
+            if self.engine == 'CYCLES':
+                sp.shading.type = 'RENDERED'
+            else:
+                sp.shading.type = 'MATERIAL'
+                sp.shading.use_scene_world = True   # the Renderbricks sky, not a studio HDRI
+                sp.shading.use_scene_lights = True  # and the sun lamp
         if note:
             self.report({'WARNING'}, "Renderbricker: " + note)
         convert.redraw(context)
@@ -404,11 +447,11 @@ def draw_render_camera(L, context, render_button=True):
     row.operator("mecsub.frame_camera", text="", icon='VIEW_CAMERA')
     if on:
         # the engine right under the camera button (user, 2026-09-30)
-        eevee = core.is_eevee(sc)                # Cycles or EEVEE with the sky
+        shown = viewport_engine(context)         # both off until one is pressed (user, 2026-10-01)
         row = col.row(align=True)
         row.operator("mecsub.render_engine", text="Cycles", icon='SHADING_RENDERED',     # the viewport's icons:
-                     depress=not eevee).engine = 'CYCLES'                          # Rendered, Material Preview
-        row.operator("mecsub.render_engine", text="EEVEE", icon='MATERIAL', depress=eevee).engine = 'EEVEE'
+                     depress=shown == 'CYCLES').engine = 'CYCLES'                   # Rendered, Material Preview
+        row.operator("mecsub.render_engine", text="EEVEE", icon='MATERIAL', depress=shown == 'EEVEE').engine = 'EEVEE'
         only = props.camera_collections(sc.mecsub)
         if only:
             col.label(text="Only: " + ", ".join(c.name for c in only), icon='HIDE_OFF')
