@@ -187,8 +187,10 @@ def eevee_best(scene):
               "use_raytracing": True, "ray_tracing_method": 'SCREEN', "use_fast_gi": True,
               "fast_gi_method": 'GLOBAL_ILLUMINATION', "fast_gi_quality": 1.0, "fast_gi_step_count": 16,
               "fast_gi_ray_count": 4, "fast_gi_resolution": '1',
-              "use_shadow_jitter_viewport": True}   # soft shadows in the viewport too: without jitter the shadow
-                                                    # map's texels show as steps on curved parts (run 201)
+              # soft shadows in the viewport too: without jitter the shadow map's texels show as steps
+              # on curved parts (run 201)
+              "use_shadow_jitter_viewport": True,
+              "taa_samples": 128, "taa_render_samples": 256}   # viewport 128, render 256 (user, 2026-10-02)
     for k, v in wanted.items():
         if hasattr(e, k):
             try:

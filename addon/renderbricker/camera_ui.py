@@ -232,15 +232,11 @@ def view3d_spaces(context):
 
 
 def viewport_engine(context):
-    """'CYCLES' when a 3D view renders with Cycles, 'EEVEE' when one shows EEVEE (Material Preview with the
-    scene's world and lights, the engine on EEVEE), else ''."""
+    """'CYCLES' or 'EEVEE' when a 3D view renders (Rendered) with that engine, else ''."""
     eevee = core.is_eevee(context.scene)
     for sp in view3d_spaces(context):
-        t = sp.shading.type
-        if t == 'RENDERED':
+        if sp.shading.type == 'RENDERED':
             return 'EEVEE' if eevee else 'CYCLES'
-        if t == 'MATERIAL' and eevee:
-            return 'EEVEE'
     return ''
 
 
@@ -256,7 +252,7 @@ class MECSUB_OT_render_engine(bpy.types.Operator):
     @classmethod
     def description(cls, context, properties):
         if properties.engine == 'EEVEE':
-            return ("On: EEVEE in the viewport (Material Preview with the Renderbricks sky and its sun lamp) and "
+            return ("On: EEVEE in the viewport (Rendered, with the Renderbricks sky and its sun lamp) and "
                     "for rendering, with everything EEVEE can do. The lamp \"Renderbricks Sun\" stands in for the "
                     "sky's sun, linked to the sun sliders. Off: the viewport as before")
         return ("On: Cycles in the viewport (Rendered) and for rendering - the physical sky with its sun disc "
@@ -279,13 +275,10 @@ class MECSUB_OT_render_engine(bpy.types.Operator):
         if not current and spaces:                  # the shading to go back to
             sc[PREV_SHADING] = spaces[0].shading.type
         note = core.set_engine(sc, self.engine)
-        for sp in spaces:
-            if self.engine == 'CYCLES':
-                sp.shading.type = 'RENDERED'
-            else:
-                sp.shading.type = 'MATERIAL'
-                sp.shading.use_scene_world = True   # the Renderbricks sky, not a studio HDRI
-                sp.shading.use_scene_lights = True  # and the sun lamp
+        for sp in spaces:                           # Rendered: the scene's settings, as F12 renders
+            sp.shading.type = 'RENDERED'            # (EEVEE too - user, 2026-10-02: not Material Preview)
+            sp.shading.use_scene_world_render = True
+            sp.shading.use_scene_lights_render = True
         if note:
             self.report({'WARNING'}, "Renderbricker: " + note)
         convert.redraw(context)

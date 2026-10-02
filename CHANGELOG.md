@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
+## [Unreleased]
+
+- **EEVEE** on renders the 3D views with EEVEE (*Rendered*, the scene's own settings – the same as F12) instead of Material Preview.
+- **EEVEE samples:** switching EEVEE on sets 128 samples for the viewport and 256 for rendering.
+
 ## [1.2.0] – 2026-10-01
 
 - **Cycles | EEVEE** right under the render camera button: two switches, both off at the start. **Cycles** on: the 3D views render with Cycles (Rendered) and F12 renders with Cycles – the physical sky with its sun disc lights the model. **EEVEE** on: the 3D views show EEVEE (Material Preview with the Renderbricks sky and its lamp) and F12 renders with EEVEE. Pressed again, the views go back to the shading they had. EEVEE takes the sky's sun only very weakly, so there the sky lights without its disc and a sun lamp "Renderbricks Sun" stands in for the sun: linked to the sun sliders (direction, over the top, "Sun turns with the camera", the mirrored sky of Bottom, direct edits of the Sky node), with the strength and colour the sun has in Cycles at that elevation and altitude – the model is as bright in EEVEE as in Cycles (before: about 60 %). EEVEE is set to everything it can do: ray tracing and global illumination at full resolution, soft shadows with the most rays and steps (in the viewport too), a sharp world probe.
