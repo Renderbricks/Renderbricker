@@ -71,8 +71,8 @@ Renderbricks one – nothing of yours is overwritten:
 - The **camera button** next to it frames the camera *Renderbricks* again, e.g. after adding parts.
 - **Cycles | EEVEE** right below: two switches, both off at the start. **Cycles** on: the 3D views
   render with Cycles (*Rendered*) and F12 renders with Cycles – the physical sky with its sun disc
-  lights the model. **EEVEE** on: the 3D views show EEVEE (*Material Preview* with the scene's world
-  and lights) and F12 renders with EEVEE. Pressed again, the views go back to the shading they had;
+  lights the model. **EEVEE** on: the 3D views render with EEVEE (*Rendered*) and F12 renders with
+  EEVEE. Pressed again, the views go back to the shading they had;
   the engine for F12 stays the last one chosen. EEVEE takes the sky's sun only very weakly, so with
   EEVEE the sky lights without its disc and the lamp *Renderbricks Sun* stands in for the sun: it
   follows the sun sliders, *Sun: turns with the camera*, *Bottom* and direct edits of the Sky node,

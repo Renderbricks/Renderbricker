@@ -207,8 +207,7 @@ set­tings of its own, without touch­ing yours.
 
 1. **Render camera: ON** creates the camera *Ren­der­bricks* framing the whole model and the world
    *Ren­der­bricks Sky*. **OFF** brings back your camera, world and set­tings exactly as they were.
-   Right below, **Cycles** and **EEVEE** switch the view­port to that engine (*Ren­dered* or *Mate­rial
-   Preview* with the sky) and F12 renders with it; pressed again, the view is as before. EEVEE gets a
+   Right below, **Cycles** and **EEVEE** switch the view­port to that engine (*Ren­dered*, with the sky) and F12 renders with it; pressed again, the view is as before. EEVEE gets a
    sun lamp that follows the sky, so it comes close to Cycles.
 2. **Front … Bottom** turn the camera around the model and frame it again.
 3. **Sun: fixed** keeps the sun in place; *turns with the camera* lights every view like Front.
