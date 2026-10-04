@@ -533,6 +533,7 @@ def weld(orig):
         for e in bm.faces[host].edges:
             if e.is_boundary and (bm.verts[vi].co - (e.verts[0].co + e.verts[1].co) / 2).length <= e.calc_length() / 2 + config.MERGE_DIST:
                 V |= set(e.verts)
+    arc_released = release_arc_corners(E, V, kind_of, isl)
     wm = bpy.data.meshes.new(f"{orig.name} RBweld")
     bm.to_mesh(wm)
     for m in orig.materials:
@@ -580,10 +581,56 @@ def weld(orig):
     rungs_out = [((e.verts[0].co + e.verts[1].co) / 2, e.calc_length()) for e in rung]
     rep = dict(welded=len(tm), seams=len(seams), creased_seams=len(seams & E), ring_edges=len(ring),
                corners=len(V), relief_tips=len(rung), t_verts=len(tv), normals_diff=round(ndiff, 3),
-               zero_normals=zero, unwelded=len(skip))
+               zero_normals=zero, unwelded=len(skip), arc_released=arc_released)
     bm.free()
     rep["_rungs"] = rungs_out
     return wm, tv, rep
+
+
+ARC_RELEASE_TURN = 0.5   # W16: below this an outline vertex lies on a straight line - nothing to release
+
+
+def release_arc_corners(E, V, kind_of, isl):
+    """W16 (run 206): coarse arcs across a flat island. "Flat stays flat" creases every inner edge of a
+    flat island; where such an inner edge (0 deg) ends on the island's outline, the outline vertex has
+    3+ creased edges and the subdivision keeps it as a corner - the crease curve along a rounding turns
+    into a polyline. Curved slopes 29119 / 29120 (user report 2026-10-04): the curved top meets the 45 deg
+    face in turns of 3.8 / 4.9 deg, below ROUND_TURN, so the face is "flat", not "flat-round".
+    The inner edges are released at an outline vertex that lies on one crease curve (exactly two other
+    creased edges), bends ARC_RELEASE_TURN..SHARP_TURN, touches a curved island and has a neighbour on
+    the curve bending alike - a coarse arc. A single designed kink (4587's hitching rail, 9.4 deg between
+    straight runs) has no such neighbour and keeps its corner (without the neighbour test it was rounded
+    off by 0.41). The face stays planar: every subdivision point of a planar island is a combination of
+    planar points. Removes the released edges from E; returns their number."""
+    def inner_flat(e):
+        return (len(e.link_faces) == 2 and e.link_faces[0][isl] == e.link_faces[1][isl]
+                and kind_of[e.link_faces[0][isl]] == "flat")
+
+    def curve(v):
+        """(turn, bend direction, the two neighbours) along the crease curve through v, or None."""
+        rest = [e for e in v.link_edges if e in E and not inner_flat(e)]
+        if len(rest) != 2:
+            return None
+        nb = [e.other_vert(v) for e in rest]
+        a, b = nb[0].co - v.co, nb[1].co - v.co
+        if a.length < 1e-9 or b.length < 1e-9:
+            return None
+        bend = a.normalized() + b.normalized()
+        return 180.0 - math.degrees(a.angle(b)), bend.normalized() if bend.length > 1e-12 else bend, nb
+
+    gentle = lambda t: ARC_RELEASE_TURN < t < config.SHARP_TURN
+    free = set()
+    for v in {v for e in E if inner_flat(e) for v in e.verts}:
+        if v in V or not any(kind_of[f[isl]] == "curved" for f in v.link_faces):
+            continue
+        c0 = curve(v)
+        if c0 is None or not gentle(c0[0]):
+            continue
+        if not any((c1 := curve(w)) is not None and gentle(c1[0]) and c1[1].dot(c0[1]) > 0.5 for w in c0[2]):
+            continue
+        free |= {e for e in v.link_edges if e in E and inner_flat(e)}
+    E -= free
+    return len(free)
 
 
 def t_gaps(wm, cp, tv, level):

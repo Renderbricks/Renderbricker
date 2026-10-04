@@ -9,6 +9,7 @@ documentation changes are not.
 
 - **EEVEE** on renders the 3D views with EEVEE (*Rendered*, the scene's own settings – the same as F12) instead of Material Preview.
 - **EEVEE samples:** switching EEVEE on sets 128 samples for the viewport and 256 for rendering.
+- **Curves on flat faces:** where a rounding meets a flat face in a coarse curve, the edge now follows the curve instead of staying a polyline with kinks – e.g. the curved slopes 29119 / 29120, whose curve met the 45° face and the flat side with corners (reported by a user). Designed kinks stay sharp.
 
 ## [1.2.0] – 2026-10-01
 
