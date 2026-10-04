@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
-## [Unreleased]
+## [1.2.2] – 2026-10-04
 
 - **EEVEE** on renders the 3D views with EEVEE (*Rendered*, the scene's own settings – the same as F12) instead of Material Preview.
 - **EEVEE samples:** switching EEVEE on sets 128 samples for the viewport and 256 for rendering.
