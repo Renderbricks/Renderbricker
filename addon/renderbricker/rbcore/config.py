@@ -25,7 +25,7 @@ METHOD = opt("--method", "weld")      # weld (rules 3.0) | rules24 (the island r
 LEVELS = int(opt("--levels", "2"))
 
 
-RULES_VERSION = "3.2"          # = RULES.md; shown in the add-on panel header
+RULES_VERSION = "3.3"          # = RULES.md; shown in the add-on panel header
 
 
 ARC_END = opt("--arc-end", "0") == "1"      # pin arc ends (run 19 test: did not remove the axle-hole crossing, off)
