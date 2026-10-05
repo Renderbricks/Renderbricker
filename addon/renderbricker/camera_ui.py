@@ -207,7 +207,7 @@ class MECSUB_OT_sun_reset(bpy.types.Operator):
 
     @classmethod
     def description(cls, context, properties):
-        v = core.SUN_STANDARD.get(properties.key, 0)
+        v = core.sun_standard(context.scene, properties.key)
         unit = {"elevation": "°", "rotation": "°", "altitude": " m"}.get(properties.key, "")
         return f"Back to the Renderbricks standard: {v:g}{unit}"
 
@@ -217,7 +217,7 @@ class MECSUB_OT_sun_reset(bpy.types.Operator):
 
     def execute(self, context):
         sc = context.scene
-        props.sun_changed(sc, core.set_sun(sc, self.key, core.SUN_STANDARD[self.key]))
+        props.sun_changed(sc, core.set_sun(sc, self.key, core.sun_standard(sc, self.key)))
         convert.redraw(context)
         return {'FINISHED'}
 

@@ -239,6 +239,16 @@ SUN_KEY = "rb_sun"
 SUN_STANDARD = {"elevation": 60.0, "rotation": 120.0, "altitude": 3000.0, "strength": 0.03}
 
 
+ACES_STRENGTH = 0.06                    # the strength standard under ACES 2.0 (maintainer, 2026-10-05; AgX 0.03)
+
+
+def sun_standard(scene, key):
+    """The standard of a sun slider; the strength depends on the view (ACES 2.0: 0.06, else 0.03)."""
+    if key == "strength" and scene is not None and scene.view_settings.view_transform == ACES_VIEW:
+        return ACES_STRENGTH
+    return SUN_STANDARD[key]
+
+
 SUN_GRID = {                            # the values the step buttons go to
     "elevation": [-15.0] + [float(d) for d in range(-10, 191, 10)] + [195.0],
     "rotation": [float(d) for d in range(0, 361, 10)],
@@ -1025,6 +1035,8 @@ def render_camera_on(scene, template="", depsgraph=None, collections=None, fresh
             if st is not None and hasattr(st, prop):
                 setattr(st, prop, START_SAMPLES)
     aces = aces_view(scene, last)
+    if aces and abs(sun_values(sky)["strength"] - SUN_STANDARD["strength"]) < 1e-6:
+        set_sun(scene, "strength", ACES_STRENGTH)   # the AgX standard becomes the ACES one; a value of the user stays
     ws_note = working_space_note()
     cam, made = render_camera(scene, setup=cam_set)
     scene.camera = cam

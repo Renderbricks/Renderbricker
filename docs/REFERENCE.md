@@ -118,7 +118,7 @@ Ren­der­bricks one – nothing of yours is over­writ­ten:
   horizon over the top (90°) to the other side (195°); *Rota­tion* (120°) its direc­tion, 0° to 360° –
   with *Sun: turns with the camera* the direc­tion for *Front*; *Alti­tude* (3,000 m) the height of the
   viewer, 0 to 100,000 m – the first half of the slider covers 0 to 10,000 m, the slider shows its
-  posi­tion and the name the metres, a typed number above 100 is taken as metres; *Strength* (0.03)
+  posi­tion and the name the metres, a typed number above 100 is taken as metres; *Strength* (0.06 under ACES 2.0, 0.03 under AgX)
   the bright­ness of the sky, 0.01 to 0.1 on the slider, any value typed. The arrows beside a slider go
   one step (10°; 1,000 m up to 10,000 m, 10,000 m above; 0.01), the round arrow sets it back to the
   stan­dard in brackets. The values are kept with the sky in the file. With
