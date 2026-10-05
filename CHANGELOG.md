@@ -7,7 +7,7 @@ documentation changes are not.
 
 ## [Unreleased]
 
-- **Textures at rounded edges:** textures that follow the parts' UV maps – surface structures such as the grainy slope texture, prints – keep their size and shape where the smoothing pulls a face into a rounding, instead of streaking along the edge (e.g. 3044, reported by a user). Already converted scenes are converted again on the next **Apply**.
+- **Textures stay where they belong:** textures that follow the parts' UV maps – surface structures such as the grainy slope texture, prints and logos – keep their size, shape and place on the part where the smoothing pulls a face into a rounding, instead of streaking along the edge (e.g. 3044); lines drawn on curved parts follow their faces, so a mould line keeps its course instead of ending in a step (e.g. 7052). Both reported by the maintainer. Already converted scenes are converted again on the next **Apply**.
 - **Render camera in ACES 2.0:** in Blender 5.x switching the render camera on sets the view ACES 2.0 with the reference gamut compression (Blender 4.5 keeps AgX), and the sun strength starts on 0.06 instead of 0.03 – ACES 2.0 renders darker (a value set by you stays). The summary notes when the file's working colour space is not ACEScg. Switching off brings back your view and look exactly – a look of your own (e.g. AgX Punchy) was lost before.
 - **Folds at tiny faces:** a fold that only showed in the finished smoothed copy is now repaired too (one part in more than 1,300).
 

@@ -32,6 +32,11 @@ EXCLUDE_PLANE = []       # W13 released around these folding faces: (centre, rea
 UV_SMOOTH = config.opt("--uv-smooth", "PRESERVE_CORNERS_JUNCTIONS_AND_CONCAVE")
 
 
+# W14b (rules 3.5, runs 212-218): texture-aware UVs (rbcore/uvs.py) - the copies are baked with linear UVs and get
+# surface-fixed UVs, linear on the curved faces of UV islands with drawn features; UV_SMOOTH stays the fallback
+UV_RULE = config.opt("--uv-rule", "1") == "1"
+
+
 UV_PROJECT = config.opt("--uv-project", "0") == "1"   # UVs from the original triangles - tested, off (run 58: distorts lettering)
 
 

@@ -1,7 +1,7 @@
 """The subdivided copies of a part: baking a level, UVs, links pointing to the copy of a level, masters."""
 import bpy
 import numpy as np
-from . import config, creases, shading, welding
+from . import config, creases, shading, welding, uvs
 
 
 WORK_NAME = "RB work"
@@ -109,9 +109,23 @@ def bake_copy(orig, work, level):
             # the default quality 3: seams opened by up to 0.018 (run 42). Quality 10 is exact
             # there (0.0); used only for the copies, the checks keep the fast default.
             mod.quality = bake_quality(orig)
+            if welding.UV_RULE:
+                mod.uv_smooth = 'NONE'                  # W14b: linear UVs, rewritten below by uvs.texture_uvs
         dg = depsgraph_of(work)
         oe = work.evaluated_get(dg)
         cp = bpy.data.meshes.new_from_object(oe, preserve_all_data_layers=True, depsgraph=dg)
+        if mod and welding.UV_RULE:
+            try:
+                uvs.texture_uvs(orig, cp, level)
+            except Exception as e:                      # never leave linear UVs: the smoothed ones of W14
+                print(f"Renderbricker: texture-aware UVs failed for {orig.name} ({type(e).__name__}: {e}) - smoothed UVs")
+                mod.uv_smooth = welding.UV_SMOOTH
+                dg = depsgraph_of(work); dg.update()
+                sm = bpy.data.meshes.new_from_object(work.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
+                for layer in sm.uv_layers:
+                    a = np.empty(len(sm.loops) * 2); layer.data.foreach_get("uv", a)
+                    cp.uv_layers[layer.name].data.foreach_set("uv", a)
+                bpy.data.meshes.remove(sm)
     finally:
         config.LEVELS = keep
     cp.name = f"{orig.name} L{level}"
