@@ -26,7 +26,10 @@ PLANE_DEBUG = False
 EXCLUDE_PLANE = []       # W13 released around these folding faces: (centre, reach), run 58
 
 
-UV_SMOOTH = config.opt("--uv-smooth", "PRESERVE_BOUNDARIES")   # Subdivision modifier uv_smooth: Keep Boundaries (run 58)
+# Subdivision modifier uv_smooth (W14): Keep Corners, Junctions, Concave since rules 3.4 (run 212) - Keep Boundaries
+# (run 58) left textures squeezed where the subdivision moves points of a face into a rounding (3044v2: streaks of
+# its grainy slope texture along the rounded edges; distorted child faces 10.6 % -> 4.3 %, prints more exact)
+UV_SMOOTH = config.opt("--uv-smooth", "PRESERVE_CORNERS_JUNCTIONS_AND_CONCAVE")
 
 
 UV_PROJECT = config.opt("--uv-project", "0") == "1"   # UVs from the original triangles - tested, off (run 58: distorts lettering)
@@ -761,17 +764,44 @@ def repair_work(orig, work, wm, tv, rep):
     return work, wm, tv, rep
 
 
+def bake_levels(orig, work, levels, tv):
+    made = {}
+    for lv in sorted(levels):
+        cp = copies.bake_copy(orig, work, lv)
+        cp["rb_method"] = "weld"
+        cp["rb_tv"] = [x for pair in tv for x in pair]      # T vertices for the check (vertex, host face)
+        made[lv] = cp
+    return made
+
+
+def baked_folds(orig, cp, level):
+    """Original faces whose children fold in a baked copy of `level` (as Check / verify_part)."""
+    keep = config.LEVELS
+    config.LEVELS = level                       # sub_offsets maps the children by LEVELS
+    try:
+        return checks.flipped_faces(None, ev=cp, me=orig)
+    finally:
+        config.LEVELS = keep
+
+
 def _bake_weld(orig, levels, method_rep=None):
     # run 59 tried baking first and checking folds on the copy: 306 of Ratatouille's 667
     # meshes need the repair anyway and were then baked twice - slower (349 -> 396 s)
     work, wm, tv, rep = weld_work(orig)
     try:
-        made = {}
-        for lv in sorted(levels):
-            cp = copies.bake_copy(orig, work, lv)
-            cp["rb_method"] = "weld"
-            cp["rb_tv"] = [x for pair in tv for x in pair]      # T vertices for the check (vertex, host face)
-            made[lv] = cp
+        made = bake_levels(orig, work, levels, tv)
+        # W10b (run 211): the repair checks the work object at the modifier's quality 3, the copies are baked at
+        # the bake quality (10 / 6) - a fold that only exists from quality 4 up passes the repair (46524: four
+        # tiny faces). The baked copy is tested for free; only if it folds is the repair run again at the bake
+        # quality and the copies baked again (1 of 1,372 parts in the library; doing every check at the bake
+        # quality cost 2.5-3.6x the repair time).
+        lv = config.RENDER_LEVEL if config.RENDER_LEVEL in made else max(made)
+        if baked_folds(orig, made[lv], lv):
+            work.modifiers["Subdivision"].quality = copies.bake_quality(orig)
+            rep["repair_bake_quality"] = repair_folds(work, wm)
+            for cp in made.values():
+                copies.discard_copy(orig, cp)
+            made = bake_levels(orig, work, levels, tv)
     finally:
         bpy.data.objects.remove(work)
         bpy.data.meshes.remove(wm)

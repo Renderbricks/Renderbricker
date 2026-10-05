@@ -48,7 +48,7 @@ def _props(struct, depth=0):
     deep, no ID data blocks, no collections."""
     if struct is None:
         return
-    for p in struct.bl_rna.properties:
+    for p in sorted(struct.bl_rna.properties, key=lambda p: p.identifier in LATE_PROPS):
         k = p.identifier
         if k in SKIP_PROPS:
             continue
@@ -60,6 +60,12 @@ def _props(struct, depth=0):
         if p.type == 'COLLECTION' or p.is_readonly:
             continue
         yield k, getattr(struct, k), False
+
+
+# Settings whose allowed values depend on another one: set last. The look's items depend on the view transform -
+# set before it, a look of the other view was refused and the view then reset the look (run 213: switching the
+# render camera on again lost "ACES 2.0 - Reference Gamut Compression", switching off a look such as AgX Punchy).
+LATE_PROPS = ("look",)
 
 
 def copy_props(src, dst, depth=0):
@@ -97,7 +103,7 @@ def snapshot_props(struct, depth=0):
 def restore_props(struct, snap):
     if struct is None:
         return
-    for k, v in snap.items():
+    for k, v in sorted(snap.items(), key=lambda kv: kv[0] in LATE_PROPS):   # snapshots of 1.2.2 kept the old order
         if isinstance(v, dict) and "__set__" in v:
             v = set(v["__set__"])
         elif isinstance(v, dict) and "__seq__" in v:
@@ -949,6 +955,43 @@ def render_camera_is_on(scene):
     return bool(scene.get("rb_render_on"))
 
 
+# Colour management of the render camera (maintainer 2026-10-05, UPDATES #12): view ACES 2.0 with the
+# reference gamut compression in Blender 5.x. The setup scene keeps its AgX view for Blender 4.5, which has no
+# ACES 2.0. The file's working colour space is not touched (the importer converts its colours into it) - the
+# summary only notes when it is not ACEScg.
+ACES_VIEW = "ACES 2.0"
+
+
+ACES_LOOK = "ACES 2.0 - Reference Gamut Compression"
+
+
+OLD_SETUP_VIEW = ("AgX", "AgX - Base Contrast")    # the setup scene's view up to 1.2.2
+
+
+def aces_view(scene, last=None):
+    """ACES 2.0 + gamut compression; with the user's last settings (`last`, JSON) only if they still hold the
+    old setup view. True if set."""
+    import json
+    if last:
+        lv = json.loads(last).get("view_settings", {})
+        if (lv.get("view_transform"), lv.get("look")) != OLD_SETUP_VIEW:
+            return False                    # a view the user chose stays
+    v = scene.view_settings
+    try:
+        v.view_transform = ACES_VIEW
+        v.look = ACES_LOOK
+    except (TypeError, ValueError):
+        return False                        # Blender 4.5: no ACES 2.0, the setup scene's view stays
+    return True
+
+
+def working_space_note():
+    """A note when the file's working colour space is not ACEScg (Blender 5.x), else ''."""
+    cs = getattr(bpy.data, "colorspace", None)
+    ws = getattr(cs, "working_space", None) if cs is not None else None
+    return f"working colour space {ws} - ACES 2.0 works best in ACEScg" if ws and ws != "ACEScg" else ""
+
+
 def render_camera_on(scene, template="", depsgraph=None, collections=None, fresh=False):
     """Keep the scene's camera, world and render settings, then make the camera "Renderbricks" and the
     world "Renderbricks Sky" active and take over the setup scene's render settings. A new camera is
@@ -981,6 +1024,8 @@ def render_camera_on(scene, template="", depsgraph=None, collections=None, fresh
             st = getattr(scene, owner, None)
             if st is not None and hasattr(st, prop):
                 setattr(st, prop, START_SAMPLES)
+    aces = aces_view(scene, last)
+    ws_note = working_space_note()
     cam, made = render_camera(scene, setup=cam_set)
     scene.camera = cam
     hidden = isolate(scene, collections)    # only these collections shown and rendered
@@ -1006,7 +1051,8 @@ def render_camera_on(scene, template="", depsgraph=None, collections=None, fresh
             + (f", only {', '.join(c.name for c in collections)}" if collections else "")
             + f", world {scene.world.name}" + (", your last Renderbricks settings" if last else
                                                ", render settings of the setup scene" if used else "")
-            + (f"; {sky_note}" if sky_note else ""))
+            + (", view ACES 2.0 with gamut compression" if aces else "")
+            + (f"; {sky_note}" if sky_note else "") + (f"; {ws_note}" if ws_note else ""))
 
 
 def render_camera_off(scene):

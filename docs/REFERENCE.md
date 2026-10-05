@@ -1,6 +1,8 @@
+<div align="justify">
+
 # Reference – all settings
 
-The panel is in the 3D Viewport sidebar (press N), tab **Renderbricker**. Its header shows the
+The panel is in the 3D View­port sidebar (press N), tab **Ren­der­bricker**. Its header shows the
 add-on version. Defaults in brackets. The
 tooltips in Blender say the same in short.
 
@@ -13,11 +15,11 @@ as *File > Import > Mecabricks (.zmbx)*. It needs the Mecabricks Lite or Advance
 
 ## Start Guide
 
-**Start Guide** at the top of the panel replaces the panel by a guide through the workflow in eight
-steps: save the scene, choose the parts, settings, Apply, Check, compare with the import, render, and
-what next. Every step explains its functions in bullet points and shows only its own controls; a
+**Start Guide** at the top of the panel replaces the panel by a guide through the work­flow in eight
+steps: save the scene, choose the parts, set­tings, Apply, Check, compare with the import, render, and
+what next. Every step explains its func­tions in bullet points and shows only its own con­trols; a
 status line says what is still open (red) or done (green, with a tick), the action of the step is
-highlighted, and **Next** is highlighted once the step is done. **Back** and the **×** in the step
+high­lighted, and **Next** is high­lighted once the step is done. **Back** and the **×** in the step
 header work any time.
 
 ## Settings
@@ -46,93 +48,96 @@ header work any time.
 
 ## Render camera
 
-**Render camera: ON / OFF** below the settings switches between your own render setup and the
-Renderbricks one – nothing of yours is overwritten:
+**Render camera: ON / OFF** below the set­tings switches between your own render setup and the
+Ren­der­bricks one – nothing of yours is over­writ­ten:
 
-- **ON** keeps the scene's camera, world and render settings, then makes the camera *Renderbricks*
-  and a world *Renderbricks Sky* (Physical Sky) of its own active and takes over the render settings
-  of the Renderbricks setup scene (Cycles, 1920 × 1080, AgX Base Contrast, Physical Sky); the samples
-  start on *Low* (128).
-  The first time, the camera is created with the direction and lens of the setup scene's camera and
+- **ON** keeps the scene's camera, world and render set­tings, then makes the camera *Ren­der­bricks*
+  and a world *Ren­der­bricks Sky* (Phys­i­cal Sky) of its own active and takes over the render set­tings
+  of the Ren­der­bricks setup scene (Cycles, 1920 × 1080, Phys­i­cal Sky); the samples start on *Low*
+  (128). In Blender 5.x the view becomes **ACES 2.0** with the look *ACES 2.0 - Ref­er­ence Gamut
+  Com­pres­sion* (Blender 4.5: AgX Base Con­trast). The file's working colour space is left as it is;
+  the summary notes when it is not **ACEScg**, in which ACES 2.0 works best – set it before import­ing,
+  or convert later with Blender's own colour man­age­ment setting, which con­verts the colours.
+  The first time, the camera is created with the direc­tion and lens of the setup scene's camera and
   moved so that all visible parts fill the picture with a small margin (clip end 1000, more for very
   large scenes). Your world stays in the file even while it is not used.
-  The picture is landscape 16:9, or portrait 9:16 when the model is taller than its widest side
-  (the resolution of the setup scene is turned; *Top* and *Bottom* are always landscape).
-  The 3D viewport switches to the camera view, the camera frame filling it (also with the view
-  buttons below), with relationship lines off and statistics on. The Properties editor shows the
-  *Output* tab (resolution, scale, file); OFF brings back the tab it had.
-- **OFF** brings back your camera, world and render settings exactly as they were, and the viewport
-  its view and overlays from before. The camera
-  *Renderbricks* and the sky world stay in the file, so ON is quick the next time; a camera you moved
+  The picture is land­scape 16:9, or por­trait 9:16 when the model is taller than its widest side
+  (the res­o­lu­tion of the setup scene is turned; *Top* and *Bottom* are always land­scape).
+  The 3D view­port switches to the camera view, the camera frame filling it (also with the view
+  buttons below), with rela­tion­ship lines off and sta­tis­tics on. The Prop­er­ties editor shows the
+  *Output* tab (res­o­lu­tion, scale, file); OFF brings back the tab it had.
+- **OFF** brings back your camera, world and render set­tings exactly as they were, and the view­port
+  its view and over­lays from before. The camera
+  *Ren­der­bricks* and the sky world stay in the file, so ON is quick the next time; a camera you moved
   stays where you put it.
-- **ON again** brings back the Renderbricks settings you had at the last OFF (samples, Transparent,
-  Resolution Scale, the view, the sun …) – they are kept in the scene, also after saving.
+- **ON again** brings back the Ren­der­bricks set­tings you had at the last OFF (samples, Trans­par­ent,
+  Res­o­lu­tion Scale, the view, the sun …) – they are kept in the scene, also after saving.
   **Shift+click** on ON starts fresh from the setup scene (samples on *Low*).
-- The **camera button** next to it frames the camera *Renderbricks* again, e.g. after adding parts.
+- The **camera button** next to it frames the camera *Ren­der­bricks* again, e.g. after adding parts.
 - **Cycles | EEVEE** right below: two switches, both off at the start. **Cycles** on: the 3D views
-  render with Cycles (*Rendered*) and F12 renders with Cycles – the physical sky with its sun disc
-  lights the model. **EEVEE** on: the 3D views render with EEVEE (*Rendered*) and F12 renders with
+  render with Cycles (*Ren­dered*) and F12 renders with Cycles – the phys­i­cal sky with its sun disc
+  lights the model. **EEVEE** on: the 3D views render with EEVEE (*Ren­dered*) and F12 renders with
   EEVEE. Pressed again, the views go back to the shading they had;
   the engine for F12 stays the last one chosen. EEVEE takes the sky's sun only very weakly, so with
-  EEVEE the sky lights without its disc and the lamp *Renderbricks Sun* stands in for the sun: it
+  EEVEE the sky lights without its disc and the lamp *Ren­der­bricks Sun* stands in for the sun: it
   follows the sun sliders, *Sun: turns with the camera*, *Bottom* and direct edits of the Sky node,
-  with the strength and colour the sun has in Cycles (measured over elevation and altitude). EEVEE is
-  set to everything it can do: ray tracing and global illumination at full resolution, soft shadows
-  with the most rays and steps, also in the viewport, a sharp world probe. In Cycles, and with the
+  with the strength and colour the sun has in Cycles (mea­sured over ele­va­tion and alti­tude). EEVEE is
+  set to every­thing it can do: ray tracing and global illu­mi­na­tion at full res­o­lu­tion, soft shadows
+  with the most rays and steps, also in the view­port, a sharp world probe. In Cycles, and with the
   render camera off, the lamp is hidden.
 - **Models at real size** (import scale 0.001, as the reworked Mecabricks importers use): EEVEE's
   shadow and ray-tracing sizes follow the scale of the parts, and when the scale is changed in the
-  Mecabricks panel the camera *Renderbricks* moves with the model – the picture stays as it was.
+  Mecabricks panel the camera *Ren­der­bricks* moves with the model – the picture stays as it was.
 - **Samples:** Low 128, Medium 256, Good 512, High 1024 set the render samples (Cycles and EEVEE)
-  while the render camera is on; the current level is highlighted, ON starts on *Low*. OFF brings
+  while the render camera is on; the current level is high­lighted, ON starts on *Low*. OFF brings
   your own samples back.
-- **Transparent: on / off** switches Film > Transparent together with Transparent Glass: the sky is
+- **Trans­par­ent: on / off** switches Film > Trans­par­ent together with Trans­par­ent Glass: the sky is
   left out of the picture (alpha) and glass shows what lies behind it; the sky still lights the model.
-- **Resolution Scale** is the render resolution in percent (Output > Format), e.g. 25 % for quick
+- **Res­o­lu­tion Scale** is the render res­o­lu­tion in percent (Output > Format), e.g. 25 % for quick
   tests. OFF brings both back as you had them.
-- **Render (F12)** below renders through the camera *Renderbricks* with the render level, into the slot of the current view: Slot 1 Front, 2 Right, 3 Back, 4 Left, 5 Top, 6 Bottom (the slots of the Render window carry the names of the views, so earlier views stay there to compare).
+- **Render (F12)** below renders through the camera *Ren­der­bricks* with the render level, into the slot of the current view: Slot 1 Front, 2 Right, 3 Back, 4 Left, 5 Top, 6 Bottom (the slots of the Render window carry the names of the views, so earlier views stay there to compare).
 - **All views** renders the six views one after the other, each into its slot; the camera then returns to the view it had. Esc in the Render window stops the running view and the chain; closing the Render window stops only the running view, the chain goes on with the next.
-- **Only some collections:** the camera icon of a collection in the *Collection* list marks it for the
-  render camera (one or several). With the camera on, only the marked collections are shown and
-  rendered, and the camera frames them; marking or unmarking while it is on updates at once. OFF
-  gives every object its visibility back – what you had hidden yourself stays hidden.
+- **Only some col­lec­tions:** the camera icon of a col­lec­tion in the *Col­lec­tion* list marks it for the
+  render camera (one or several). With the camera on, only the marked col­lec­tions are shown and
+  ren­dered, and the camera frames them; marking or unmark­ing while it is on updates at once. OFF
+  gives every object its vis­i­bil­ity back – what you had hidden your­self stays hidden.
 - **Front, Right, Back, Left, Top, Bottom** (shown in pairs while the render camera is on) turn the camera
   around the model and frame it: *Front* is the view of the render setup, *Right*, *Back* and *Left* go
   round the model in 90° steps at the same tilt, *Top* and *Bottom* look straight down and up, square
   to the model with its longer side across the picture and its front at the bottom. The
-  current view is highlighted. For *Bottom* the sky is mirrored vertically: the sun and the bright
-  sky are below the model and light its underside as they light the top from above. The physical
+  current view is highlighted. For *Bottom* the sky is mir­rored ver­ti­cally: the sun and the bright
+  sky are below the model and light its under­side as they light the top from above. The phys­i­cal
   sky cannot be turned upside down (a sun below the horizon is night), so the add-on renders it once
-  as a panorama (a few seconds, in a Blender of its own) and shows it mirrored in a world
-  *Renderbricks Sky Below*; it is made again only when the sky is changed.
+  as a panorama (a few seconds, in a Blender of its own) and shows it mir­rored in a world
+  *Ren­der­bricks Sky Below*; it is made again only when the sky is changed.
 - **Sun: fixed / Sun: turns with the camera** – fixed (the default): the sun stays where it is, and
   the views show the model from every side in the same light. Turning: the sun goes round with the
-  camera, so every view is lit like *Front*. Switching back puts the sun back to its place.
-- **Elevation, Rotation, Altitude, Strength** (shown below the sun button while the render camera is
-  on) set the sky *Renderbricks Sky*. *Elevation* (60°) is the height of the sun from 15° below the
-  horizon over the top (90°) to the other side (195°); *Rotation* (120°) its direction, 0° to 360° –
-  with *Sun: turns with the camera* the direction for *Front*; *Altitude* (3,000 m) the height of the
+  camera, so every view is lit like *Front*. Switch­ing back puts the sun back to its place.
+- **Ele­va­tion, Rota­tion, Alti­tude, Strength** (shown below the sun button while the render camera is
+  on) set the sky *Ren­der­bricks Sky*. *Ele­va­tion* (60°) is the height of the sun from 15° below the
+  horizon over the top (90°) to the other side (195°); *Rota­tion* (120°) its direc­tion, 0° to 360° –
+  with *Sun: turns with the camera* the direc­tion for *Front*; *Alti­tude* (3,000 m) the height of the
   viewer, 0 to 100,000 m – the first half of the slider covers 0 to 10,000 m, the slider shows its
-  position and the name the metres, a typed number above 100 is taken as metres; *Strength* (0.03)
-  the brightness of the sky, 0.01 to 0.1 on the slider, any value typed. The arrows beside a slider go
+  posi­tion and the name the metres, a typed number above 100 is taken as metres; *Strength* (0.03)
+  the bright­ness of the sky, 0.01 to 0.1 on the slider, any value typed. The arrows beside a slider go
   one step (10°; 1,000 m up to 10,000 m, 10,000 m above; 0.01), the round arrow sets it back to the
-  standard in brackets. The values are kept with the sky in the file. With
-  *Bottom* the mirrored sky is made again a moment after the last change.
+  stan­dard in brackets. The values are kept with the sky in the file. With
+  *Bottom* the mir­rored sky is made again a moment after the last change.
 - **Sun in picture: off / on** (off) – off: the sun disc is not seen where the camera looks at the sky,
-  but it lights the model exactly as before – highlights, the sharpness of the shadows and
-  reflections stay. The sky has a second Sky Texture without the disc for the camera rays (Light
+  but it lights the model exactly as before – high­lights, the sharp­ness of the shadows and
+  reflec­tions stay. The sky has a second Sky Texture without the disc for the camera rays (Light
   Path > *Is Camera Ray*, node *Sun in picture*); the sliders set both. On: the disc is seen. EEVEE
   never shows the disc in the background.
-- **Dragging a slider** (a Blender feature): **Shift** for fine control, **Ctrl** for coarse steps;
+- **Drag­ging a slider** (a Blender feature): **Shift** for fine control, **Ctrl** for coarse steps;
   a double-click types an exact value.
 
-Apply and Convert headless never change the camera, world or render settings.
+Apply and Convert head­less never change the camera, world or render settings.
 
 ## Rendering
 
 **F12** and **Ctrl+F12** render with the render level: the links are switched to the render copies
-before the render starts and back to the viewport level afterwards. The same is in the *Render*
-menu as *Render Image / Render Animation (Renderbricker levels)*. Renders started from the command
+before the render starts and back to the view­port level afterwards. The same is in the *Render*
+menu as *Render Image / Render Ani­ma­tion (Ren­der­bricker levels)*. Renders started from the command
 line (`blender -b … -f`) switch the level as well.
 
 ## Files
@@ -147,18 +152,20 @@ line (`blender -b … -f`) switch the level as well.
 
 ## Converting again
 
-- **Apply on a converted scene** converts only the parts that are not up to date: new parts, parts
-  converted with another variant or levels, or with an older version of the rules. When everything is
-  up to date it says so and changes nothing (links switched off with *Subdivision: OFF* are switched
-  back on). **Shift+click** on Apply converts all parts again; the result is the same (same copies, no
-  duplicates, the cache file is rewritten and the scene saved). To change only the smoothness, change
-  the viewport or render level: that switches or computes copies without running the rules.
-- **Convert headless on a converted scene** opens the saved scene in the background, goes back from
-  the copies to the imported meshes and converts them again. It writes a new file
+- **Apply on a con­verted scene** con­verts only the parts that are not up to date: new parts, parts
+  con­verted with another variant or levels, or with an older version of the rules. When every­thing is
+  up to date it says so and changes nothing (links switched off with *Sub­di­vi­sion: OFF* are switched
+  back on). **Shift+click** on Apply con­verts all parts again; the result is the same (same copies, no
+  dupli­cates, the cache file is rewrit­ten and the scene saved). To change only the smooth­ness, change
+  the view­port or render level: that switches or com­putes copies without running the rules.
+- **Convert head­less on a con­verted scene** opens the saved scene in the back­ground, goes back from
+  the copies to the imported meshes and con­verts them again. It writes a new file
   `<scene>_subdiv_<version>.blend` with its own cache file; the open scene and its cache stay
-  unchanged, and earlier results are never overwritten (a number is added).
+  unchanged, and earlier results are never over­writ­ten (a number is added).
 
 ## About
 
-The sub-panel **About** shows the copyright, the trademark notes and links to
-[www.renderbricks.com](https://www.renderbricks.com), Facebook, YouTube and this repository.
+The sub-panel **About** shows the copy­right, the trade­mark notes and links to
+[www.renderbricks.com](https://www.renderbricks.com), Face­book, YouTube and this repository.
+
+</div>

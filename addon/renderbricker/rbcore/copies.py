@@ -126,6 +126,14 @@ def bake_copy(orig, work, level):
     return cp
 
 
+def discard_copy(orig, cp):
+    """Remove a copy baked in this run again (baked anew after a late fold repair, W10b)."""
+    idx = _COPY_INDEX[0]
+    if idx is not None and cp in idx.get(orig.name, []):
+        idx[orig.name].remove(cp)
+    bpy.data.meshes.remove(cp)
+
+
 # Data of the welded work mesh that the finished copies do not need (run 61: 11 % of an L2
 # copy of Ratatouille): creases (already in the geometry), island and face numbers of the
 # rules, the selection flags of the import (a copy is never edited).
