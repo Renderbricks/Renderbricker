@@ -131,7 +131,8 @@ HANDLERS = ((bpy.app.handlers.depsgraph_update_post, _engine_watch),
             (bpy.app.handlers.render_pre, render._render_pre), (bpy.app.handlers.render_post, render._render_post),
             (bpy.app.handlers.render_cancel, render._render_post), (bpy.app.handlers.load_post, _unlock),
             (bpy.app.handlers.render_cancel, render._views_cancelled),
-            (bpy.app.handlers.depsgraph_update_post, edit._watch), (bpy.app.handlers.load_post, edit._forget))
+            (bpy.app.handlers.depsgraph_update_post, edit._watch), (bpy.app.handlers.load_post, edit._forget),
+            (bpy.app.handlers.save_post, edit._cache_on_save))
 
 
 def register():

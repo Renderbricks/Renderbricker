@@ -169,6 +169,7 @@ class MECSUB_OT_cache_switch(bpy.types.Operator):
     bl_description = ("Cache on: write the copies into <scene>_rbcache.blend and link them. Cache off: take the "
                       "copies from the cache into the scene file")
     target: bpy.props.BoolProperty()
+    save_after: bpy.props.BoolProperty(default=False, options={'SKIP_SAVE'})    # automatic update after a save (#18)
     _timer = None
 
     def invoke(self, context, event):
@@ -268,6 +269,14 @@ class MECSUB_OT_cache_switch(bpy.types.Operator):
         s.running = False
         s.summary = text if self.target else text + f" ({time.time() - t0:.0f} s)"
         context.workspace.status_text_set(None)
+        if self.save_after:                    # the automatic update after a save: save the linked state too
+            from . import edit
+            try:
+                if err is None and bpy.data.filepath:
+                    s.summary = "Edited parts written into the cache, scene saved - " + s.summary
+                    bpy.ops.wm.save_mainfile()
+            finally:
+                edit._CACHING[0] = False
         self.report({'ERROR'} if err else {'INFO'}, "Renderbricker: " + s.summary)
         convert.redraw(context)
         return {'FINISHED'}

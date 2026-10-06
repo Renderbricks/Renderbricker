@@ -9,8 +9,11 @@ belong on the import. The workflow:
 2. Leaving Edit Mode - by Tab or any other way - converts that import again and switches the same links back ON
    (_watch notices the mode change, _reconvert runs on a timer). An import that was not changed only gets its links
    back on its existing copies.
-3. With the cache file, the new copies stay in the scene; the panel says under Apply how many edited parts are not
-   in the cache, and "Update cache" writes them - the other copies are carried over unchanged (cache.write_cache_steps).
+3. With the cache file, the new copies stay in the scene until the scene is saved: then they are written into the
+   cache by themselves (_cache_on_save; the other copies are carried over unchanged, cache.write_cache_steps) and the
+   scene is saved once more. Until then the panel names them under Apply ("Update cache" does it at once).
+An import edited with Subdivision OFF (or through the Mode menu) is converted again too when Edit Mode is left - its
+links stay OFF.
 
 Entering Edit Mode from the header's Mode menu cannot be intercepted (an add-on cannot step in front of Blender's own
 operator); on a copy in the scene file it succeeds, and _watch then switches to the import as well. On a copy from the
@@ -60,13 +63,13 @@ def finish_one(context, name):
     names = EDITING.pop(name, [])
     if me is None:
         return ""
+    # the links switched by Tab; none when the import was edited with Subdivision OFF - they stay OFF
     obs = [bpy.data.objects[n] for n in names if n in bpy.data.objects and bpy.data.objects[n].data == me]
-    if not obs:
-        return ""
     s = context.scene.mecsub
     if core.up_to_date(me, s.view_level, s.render_level):     # not changed: back on its copies
-        core.point_links(obs, me, "view")
-        return f"{me.name}: not changed"
+        if obs:
+            core.point_links(obs, me, "view")
+        return f"{me.name}: not changed" if obs else ""
     t = time.time()
     _settings(context)
     rep = core.process(me, obs)
@@ -194,6 +197,39 @@ def _watch(scene, depsgraph=None):
     elif mode == 'EDIT_MESH' and on_copy(ob):
         _PENDING[0] = True
         bpy.app.timers.register(_run_swap, first_interval=0.05)
+    elif mode == 'EDIT_MESH' and ob is not None and ob.type == 'MESH' and ob.data is not None             and ob.data.library is None and (ob.data.get("rb_view") or ob.data.get("rb_render"))             and ob.data.name not in EDITING:
+        EDITING[ob.data.name] = []             # a converted import edited with Subdivision OFF: convert it after
+
+
+_CACHING = [False]
+
+
+def _run_cache_update():
+    """Write the edited parts into the cache and save again (after a save, UPDATES #18: automatic, the user
+    would forget the button)."""
+    if _CACHING[0] or not uncached():
+        return None
+    _CACHING[0] = True
+    try:
+        with bpy.context.temp_override(**_context_override()):
+            bpy.ops.mecsub.cache_switch('EXEC_DEFAULT', target=True, save_after=True)
+    except Exception:
+        _CACHING[0] = False
+        import traceback
+        traceback.print_exc()
+    return None
+
+
+@bpy.app.handlers.persistent
+def _cache_on_save(*_args):
+    """After a save: edited parts whose copies are still in the scene file go into the cache file, then the scene
+    is saved once more. Not for a cache of another scene (Save As elsewhere: Move / Copy cache decide that)."""
+    if bpy.app.background or _CACHING[0]:
+        return
+    st = core.cache_state()
+    if st is None or not st[3] or st[1] != st[2] or not uncached():
+        return
+    bpy.app.timers.register(_run_cache_update, first_interval=0.2)
 
 
 @bpy.app.handlers.persistent

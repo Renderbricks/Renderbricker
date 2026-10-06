@@ -7,7 +7,7 @@ documentation changes are not.
 
 ## [Unreleased]
 
-- **Editing a converted part:** select it and press **Tab** – its links switch to the imported mesh and Edit Mode starts on it; leaving Edit Mode converts it again and switches it back on (only this part). Before, Edit Mode was refused on parts from the cache file ("error changing modes"). With the cache file, the panel then names the edited parts under Apply and offers **Update cache**, which writes only them – the other copies are carried over. Reported on Discord.
+- **Editing a converted part:** select it and press **Tab** – its links switch to the imported mesh and Edit Mode starts on it; leaving Edit Mode converts it again and switches it back on (only this part). Before, Edit Mode was refused on parts from the cache file ("error changing modes"). With the cache file, saving the scene writes the edited parts into the cache by themselves (only them – the other copies are carried over); until then the panel names them under Apply (**Update cache** does it at once). A part edited with *Subdivision OFF* is converted again too when you leave Edit Mode. Reported on Discord.
 - **Apply notices edited parts:** a part whose imported mesh was edited since its conversion is converted again – before, Apply kept the old copy.
 - **Saving the first time continues:** on a scene not saved yet, Apply, Cache and Convert headless open *Save As* and continue by themselves once the scene is saved – no second click.
 - **Zooming in close:** Apply and the render camera set the 3D views' *Clip Start* to 0.1 cm, so real-size parts are no longer cut when zooming in (the render camera gives the old value back when switched off).
