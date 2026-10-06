@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
-## [Unreleased]
+## [1.2.6] – 2026-10-06
 
 - **Editing a converted part:** select it and press **Tab** – its links switch to the imported mesh and Edit Mode starts on it; leaving Edit Mode converts it again and switches it back on (only this part). Before, Edit Mode was refused on parts from the cache file ("error changing modes"). With the cache file, saving the scene writes the edited parts into the cache by themselves (only them – the other copies are carried over); until then the panel names them under Apply (**Update cache** does it at once). A part edited with *Subdivision OFF* is converted again too when you leave Edit Mode. Reported on Discord.
 - **Apply notices edited parts:** a part whose imported mesh was edited since its conversion is converted again – before, Apply kept the old copy.
@@ -13,7 +13,7 @@ documentation changes are not.
 - **Zooming in close:** Apply and the render camera set the 3D views' *Clip Start* to 0.1 cm, so real-size parts are no longer cut when zooming in (the render camera gives the old value back when switched off).
 - **Textures stay where they belong:** textures that follow the parts' UV maps – mould lines, the grainy slope texture, prints and logos – lie on the smoothed part where they lie on the import. The smoothing used to slide the faces along the part, and the texture slid with them: the mould line of the curved bar 7052 ended lower and with a changed corner, the grain of slope 3044 streaked along the rounded edge. Now the points slide back along the smooth surface to their import place; the shape stays the same. Also gone: a dent in EEVEE where two drawn lines meet (7052 at level 3). Both reported by the maintainer. Already converted scenes are converted again on the next **Apply**.
 - **Remove clears the whole file** with the scope *All*: the parts in every scene go back to the import, and copies of parts deleted in the meantime no longer stay in the file and no longer keep the cache file linked. The summary names how many copies were deleted and, with *Selected* or *Collections*, how many stay outside the scope.
-- **Render camera in ACES 2.0:** in Blender 5.x switching the render camera on sets the view ACES 2.0 with the reference gamut compression (Blender 4.5 keeps AgX), and the sun strength starts on 0.06 instead of 0.03 – ACES 2.0 renders darker (a value set by you stays). The summary notes when the file's working colour space is not ACEScg. Switching off brings back your view and look exactly – a look of your own (e.g. AgX Punchy) was lost before.
+- **Render camera in ACES 2.0:** in Blender 5.0 and newer switching the render camera on sets the view ACES 2.0 with the reference gamut compression (Blender 4.5 keeps AgX), and the sun strength starts on 0.06 instead of 0.03 – ACES 2.0 renders darker (a value set by you stays). The summary notes when the file's working colour space is not ACEScg. Switching off brings back your view and look exactly – a look of your own (e.g. AgX Punchy) was lost before.
 - **Folds at tiny faces:** a fold that only showed in the finished smoothed copy is now repaired too (one part in more than 1,300).
 
 ## [1.2.2] – 2026-10-04

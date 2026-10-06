@@ -64,7 +64,7 @@ Steps: [0 Install](#step-0-install-renderbricker) · [1 Import](#step-1-import-f
 [2 Set­tings](#step-2-the-settings-at-a-glance) · [3 Apply](#step-3-apply) ·
 [4 Compare](#step-4-compare-with-the-import) · [5 Check](#step-5-check) · [6 Render](#step-6-render-with-f12) ·
 [7 Render camera](#step-7-the-render-camera) · [8 Save As](#step-8-save-as-and-the-cache-file) ·
-[9 Large scenes](#step-9-large-scenes) · [10 Remove](#step-10-remove) ·
+[9 Large scenes](#step-9-large-scenes) · [10 Edit a part](#step-10-edit-a-part) · [11 Remove](#step-11-remove) ·
 [Going further](#going-further) · [Summary](#summary)
 
 ---
@@ -208,12 +208,15 @@ set­tings of its own, without touch­ing yours.
 1. **Render camera: ON** creates the camera *Ren­der­bricks* framing the whole model and the world
    *Ren­der­bricks Sky*. **OFF** brings back your camera, world and set­tings exactly as they were.
    Right below, **Cycles** and **EEVEE** switch the view­port to that engine (*Ren­dered*, with the sky) and F12 renders with it; pressed again, the view is as before. EEVEE gets a
-   sun lamp that follows the sky, so it comes close to Cycles.
+   sun lamp that follows the sky, so it comes close to Cycles. In Blender 5.0 and newer the camera
+   also switches the view to **ACES 2.0** with gamut com­pres­sion (Blender 4.5 keeps AgX); **OFF**
+   brings back your own view and look.
 2. **Front … Bottom** turn the camera around the model and frame it again.
 3. **Sun: fixed** keeps the sun in place; *turns with the camera* lights every view like Front.
    Below it, four sliders set the sky: **Ele­va­tion** (−15° to 195°, over the top to the other side),
    **Rota­tion** (0° to 360°), **Alti­tude** (0 to 10,000 m on the first half of the slider, up to
-   100,000 m on the second) and **Strength** (0.01 to 0.1). The arrows beside a slider go one step
+   100,000 m on the second) and **Strength** (0.01 to 0.1; it starts at 0.06 under ACES 2.0, 0.03 under
+   AgX – ACES 2.0 renders darker). The arrows beside a slider go one step
    (10°, 1,000 m, 0.01), the round arrow sets it back to the standard. **Sun in picture:** *off* (the start) hides the sun disc
    from the camera – it still gives the high­lights and sharp shadows.
 4. **Trans­par­ent** leaves the sky out of the picture, glass included.
@@ -227,8 +230,8 @@ set­tings of its own, without touch­ing yours.
 > **Tip – a Blender feature for every slider:** hold **Shift** while drag­ging for fine control,
 > **Ctrl** for coarse steps. A double-click lets you type an exact value.
 
-**Check:** the Front view at *Low* (1920 × 1080, 133 seconds on an RTX 5090 includ­ing the switch to
-level 2). *All views* at 50 % gives the six slots below in about two and a half minutes.
+**Check:** the Front view at *Low* (1920 × 1080, 10 seconds on an RTX 5090 includ­ing the switch to
+level 2). *All views* at 50 % gives the six slots below in about half a minute.
 
 ![All views: the six slots of the Render window](images/tutorial/T08b_all_views.webp)
 
@@ -304,7 +307,35 @@ like after Apply, with its own cache file.
 
 ---
 
-## Step 10: Remove
+## Step 10: Edit a part
+
+**What it is for:** chang­ing the geom­e­try of a con­verted part. The smoothed copy is rebuilt on every
+Apply, so edits belong on the imported mesh – Ren­der­bricker switches to it for you.
+
+1. Select the part – here the life ring on the boat – and press **Tab**. All its links switch to the
+   imported mesh (*Sub­di­vi­sion OFF* for them) and Blender enters **Edit Mode** (1) on it: the
+   header names the imported mesh *30340.002* (2), not its copy, and the wire­frame (3) shows its
+   orig­i­nal faces.
+
+![Tab on a converted part: Edit Mode on the imported mesh (1–3)](images/tutorial/T12_edit.webp)
+
+2. Edit as usual.
+3. Press **Tab** again. The part is con­verted again from your edit and switched back on (1) – only
+   this part, in a second or less.
+
+![Back in Object Mode: converted again (1), not in the cache yet (2), the summary (3)](images/tutorial/T12b_converted.webp)
+
+**Check:** the summary reads *Edited: 30340.002: con­verted again* (3). With the cache file the new
+copy is still in the scene file – the panel says so under Apply (2). **Save** the scene: the edited
+parts go into the cache by them­selves (the other copies are carried over, nothing is con­verted
+again), and the note disappears. **Update cache** does it at once.
+
+**Why only Tab:** an add-on can take over a key, but not Blender's own *Mode* menu in the header.
+From that menu, parts from the cache file refuse Edit Mode (*error chang­ing modes*) – use Tab.
+
+---
+
+## Step 11: Remove
 
 **What it is for:** going back to the plain import – nothing Ren­der­bricker did stays in the scene.
 
@@ -312,8 +343,9 @@ like after Apply, with its own cache file.
 
 ![After Remove: the plain import again (1, 2)](images/tutorial/T11_removed.webp)
 
-**Check:** the summary reads *Removed from 3297 objects* (2), and the button reads
-**Sub­di­vi­sion: -**. The cache file stays on the disk until you delete it.
+**Check:** the summary (2) names the objects and the copies removed – with *All*, Remove covers the
+whole file, every scene included – and the button reads **Sub­di­vi­sion: -**. The cache file stays on
+the disk until you delete it.
 
 ---
 
@@ -360,6 +392,7 @@ prob­lems, into `<scene>_Renderbricker.log` next to the scene.
 - **F12** renders at the render level; the **render camera** gives quick pic­tures without touch­ing
   your setup.
 - The copies live in the **cache file** next to the scene – after *Save As*, move or copy it.
+- **Tab** on a con­verted part edits its import; leaving Edit Mode con­verts it again, saving puts it into the cache.
 - **Convert head­less** handles large scenes in the back­ground; **Remove** goes back to the import.
 
 Next: all set­tings in the [Ref­er­ence](REFERENCE.md); the rules and where each comes from in

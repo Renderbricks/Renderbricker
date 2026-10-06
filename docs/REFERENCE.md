@@ -166,20 +166,20 @@ line (`blender -b … -f`) switch the level as well.
 
 ## Editing a part
 
-A converted part shows its subdivided copy; edits belong on the imported mesh (the copy is rebuilt on every Apply,
+A con­verted part shows its sub­di­vided copy; edits belong on the imported mesh (the copy is rebuilt on every Apply,
 and with the cache file Blender does not even allow Edit Mode on it).
 
-1. Select the part and press **Tab**: all its links switch to the imported mesh (*Subdivision OFF* for them) and
+1. Select the part and press **Tab**: all its links switch to the imported mesh (*Sub­di­vi­sion OFF* for them) and
    Edit Mode starts on it.
 2. Edit as usual.
-3. Leave Edit Mode (**Tab**, or any other way): the part is converted again from the edited mesh and its links switch
+3. Leave Edit Mode (**Tab**, or any other way): the part is con­verted again from the edited mesh and its links switch
    back on. If nothing was changed, it only switches back.
 4. With the cache file the new copy stays in the scene file until you save: saving writes the edited parts into the
-   cache by themselves (the other copies are carried over unchanged) and saves the scene once more. Until then the
+   cache by them­selves (the other copies are carried over unchanged) and saves the scene once more. Until then the
    panel names them under Apply; **Update cache** does it at once.
 
-An imported mesh edited with *Subdivision OFF* is converted again as well when you leave Edit Mode – its links stay
-off. Apply also notices an edited import and converts it again.
+An imported mesh edited with *Sub­di­vi­sion OFF* is con­verted again as well when you leave Edit Mode – its links stay
+off. Apply also notices an edited import and con­verts it again.
 
 Only the **Tab** key can be taken over by the add-on – the *Mode* menu in the header calls Blender's own operator.
 From that menu, Edit Mode works on parts whose copies are in the scene file (the add-on then switches to the import as
