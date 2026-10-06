@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Renderbricker – Cycles vs EEVEE</title>
+<meta name="description" content="The same view rendered with Cycles and with EEVEE by Renderbricker 1.2.6 – drag the bar to compare.">
+<style>
+  :root { --bg: #16181c; --fg: #e8e8e8; --muted: #9aa0a8; --label: rgba(30, 30, 30, .92); --bar: #fff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  p { margin: 0 0 16px; color: var(--muted); }
+  a { color: #8ab4ff; }
+  .compare { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px;
+    user-select: none; touch-action: none; cursor: ew-resize; background: #000; }
+  .compare img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block;
+    pointer-events: none; }
+  .compare .eevee-img { clip-path: inset(0 0 0 var(--x, 50%)); }
+  .bar { position: absolute; top: 0; bottom: 0; left: var(--x, 50%); width: 3px; margin-left: -1.5px;
+    background: var(--bar); box-shadow: 0 0 6px rgba(0,0,0,.5); pointer-events: none; }
+  .knob { position: absolute; top: 50%; left: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px;
+    border-radius: 50%; background: var(--bar); box-shadow: 0 2px 8px rgba(0,0,0,.5);
+    display: grid; place-items: center; color: #222; font-weight: 700; font-size: 18px; }
+  /* the two labels: one box size, the same padding, the same gap to the bar (formally identical) */
+  .label { position: absolute; top: 14px; width: 6.4em; padding: 4px 0; text-align: center;
+    background: var(--label); color: #fff; font-weight: 700; font-size: clamp(14px, 2.2vw, 22px);
+    border-radius: 8px; pointer-events: none; }
+  .label.lbl-left { right: calc(100% - var(--x, 50%) + 14px); }
+  .label.lbl-right { left: calc(var(--x, 50%) + 14px); }
+  input[type=range] { width: 100%; margin: 12px 0 0; }
+  footer { margin-top: 24px; font-size: .9rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cycles vs EEVEE</h1>
+  <p>The same view of the Italian Riviera (Mecabricks), converted with Renderbricker 1.2.6 and rendered with the
+     render camera, 128 samples each. Drag the bar – or use the slider or the arrow keys.</p>
+  <div class="compare" id="cmp" tabindex="0" aria-label="Comparison: drag to move the bar">
+    <img src="cycles.webp" alt="Rendered with Cycles" width="1920" height="1080">
+    <img class="eevee-img" src="eevee.webp" alt="Rendered with EEVEE" width="1920" height="1080">
+    <div class="bar"><div class="knob" aria-hidden="true">⇆</div></div>
+    <div class="label lbl-left">Cycles</div>
+    <div class="label lbl-right">EEVEE</div>
+  </div>
+  <input type="range" id="pos" min="0" max="100" value="50" step="0.1" aria-label="Position of the bar">
+  <p style="margin-top:16px">EEVEE comes close in light and shadow; glass looks milky where Cycles shows the room
+     behind it, and transparent water lets shadows through. EEVEE is the quick preview – for the final picture use
+     Cycles. <a href="https://github.com/Renderbricks/Renderbricker/blob/main/docs/TUTORIAL.md#step-7-the-render-camera">Tutorial, step 7</a>
+     · <a href="https://github.com/Renderbricks/Renderbricker">Renderbricker on GitHub</a></p>
+  <footer>© 2026 Renderbricks®. LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this site.</footer>
+</main>
+<script>
+  const cmp = document.getElementById("cmp"), pos = document.getElementById("pos");
+  function set(p) { p = Math.max(0, Math.min(100, p)); cmp.style.setProperty("--x", p + "%"); pos.value = p; }
+  function fromEvent(e) { const r = cmp.getBoundingClientRect(); set((e.clientX - r.left) / r.width * 100); }
+  let drag = false;
+  cmp.addEventListener("pointerdown", e => { drag = true; cmp.setPointerCapture(e.pointerId); fromEvent(e); });
+  cmp.addEventListener("pointermove", e => { if (drag) fromEvent(e); });
+  cmp.addEventListener("pointerup", () => { drag = false; });
+  cmp.addEventListener("keydown", e => {
+    if (e.key === "ArrowLeft") set(parseFloat(pos.value) - 2);
+    if (e.key === "ArrowRight") set(parseFloat(pos.value) + 2);
+  });
+  pos.addEventListener("input", () => set(parseFloat(pos.value)));
+  set(50);
+</script>
+</body>
+</html>

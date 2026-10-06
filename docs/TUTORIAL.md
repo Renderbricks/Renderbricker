@@ -237,10 +237,16 @@ level 2). *All views* at 50 % gives the six slots below in about half a minute.
 
 **Cycles or EEVEE:** the same view with both engines, each at *Low* (128 samples). EEVEE comes close in
 light and shadow – its sun lamp follows the sky – but glass looks milky where Cycles shows the room
-behind it, and insides are lighter (see [Known issues](KNOWN_ISSUES.md#eevee-glass-and-insides)). EEVEE
-is the quick preview; for the final picture, and always with glass in front, use Cycles.
+behind it, insides are lighter, and trans­par­ent water lets shadows through – the boat casts none on it
+in EEVEE (see [Known issues](KNOWN_ISSUES.md#eevee-glass-and-insides)). EEVEE is the quick preview; for
+the final picture, and always with glass or water in front, use Cycles.
 
-![Cycles (left) and EEVEE (right), the same view at 128 samples](images/tutorial/T08d_cycles_eevee.webp)
+[![Cycles left, EEVEE right of the moving bar – the same view at 128 samples](images/tutorial/T08e_compare_anim.webp)](https://renderbricks.github.io/Renderbricker/compare/)
+
+**[Compare inter­ac­tively →](https://renderbricks.github.io/Renderbricker/compare/)** – drag the bar
+across the picture yourself. The detail below is the square and the boat at twice the size:
+
+![Detail: Cycles (left) and EEVEE (right), the square and the boat at 2x](images/tutorial/T08f_detail_cycles_eevee.webp)
 
 ### The quality in detail
 
