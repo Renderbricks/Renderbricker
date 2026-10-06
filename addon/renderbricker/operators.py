@@ -43,29 +43,59 @@ class MECSUB_OT_remove(bpy.types.Operator):
 
     def execute(self, context):
         common.object_mode(context)
-        obs = common.targets(context)
+        # scope All means the whole file (UPDATES #15, run 220): objects of every scene, and the copies of parts whose
+        # objects were deleted - before, they stayed with a fake user and kept the cache file linked
+        whole = context.scene.mecsub.scope == 'ALL'
+        if whole:
+            obs = [o for o in bpy.data.objects if o.type == 'MESH' and o.data is not None and o.library is None
+                   and not core.is_master(o) and o.name != core.WORK_NAME]
+        else:
+            obs = common.targets(context)
         groups = common.by_mesh(obs)
         for me, gobs in groups.items():
             for o in gobs:
                 core.unlink_instance(o)
                 o.pop("rb_off", None)
                 o.data = me
-        for me in groups:
+        originals = set(groups)
+        if whole:
+            for m in bpy.data.meshes:
+                if m.library is not None:
+                    continue
+                if m.get("rb_original"):
+                    o = bpy.data.meshes.get((m["rb_original"], None))
+                    if o is not None:
+                        originals.add(o)
+                elif any(k.startswith("rb_") for k in m.keys()):
+                    originals.add(m)
+        removed = 0
+        for me in originals:
             copies = core.all_copies(me)
-            if any(o.data in copies for o in bpy.data.objects if o.type == 'MESH'):
+            if not whole and any(o.data in copies for o in bpy.data.objects if o.type == 'MESH'):
                 continue            # still used by objects outside the scope
             core.drop_cache_links(me)      # object materials back to the mesh, cache hold released
             for c in copies:
                 bpy.data.meshes.remove(c)
+                removed += 1
             core.remove_master(me)
             for a in ("crease_edge", "crease_vert"):
                 if me.attributes.get(a):
                     me.attributes.remove(me.attributes[a])
-            for k in ("rb_view", "rb_render"):
+            for k in [k for k in me.keys() if k.startswith("rb_")]:
                 me.pop(k, None)
             me.use_fake_user = False
+        if whole:                          # copies whose original is gone, and the work scene
+            for m in [m for m in bpy.data.meshes if m.library is None and m.get("rb_original") and m.users <= int(m.use_fake_user)]:
+                bpy.data.meshes.remove(m)
+                removed += 1
+            ws = bpy.data.scenes.get(core.WORK_SCENE)
+            if ws is not None and ws != context.scene:
+                bpy.data.scenes.remove(ws)
         core.cleanup_libraries()
-        context.scene.mecsub.summary = f"Removed from {len(obs)} objects"
+        left = sum(1 for m in bpy.data.meshes if m.get("rb_original"))
+        context.scene.mecsub.summary = (f"Removed from {len(obs)} objects" + (" in the whole file" if whole else "")
+                                        + f", {removed} copies deleted"
+                                        + (f"; {left} copies stay (used outside the scope)" if left else ""))
         context.scene.mecsub.problems.clear()
         props.refresh_state(context)
         return {'FINISHED'}

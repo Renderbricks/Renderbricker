@@ -1,7 +1,7 @@
 """The subdivided copies of a part: baking a level, UVs, links pointing to the copy of a level, masters."""
 import bpy
 import numpy as np
-from . import config, creases, shading, welding, uvs
+from . import config, creases, shading, welding, reparam
 
 
 WORK_NAME = "RB work"
@@ -109,23 +109,23 @@ def bake_copy(orig, work, level):
             # the default quality 3: seams opened by up to 0.018 (run 42). Quality 10 is exact
             # there (0.0); used only for the copies, the checks keep the fast default.
             mod.quality = bake_quality(orig)
-            if welding.UV_RULE:
-                mod.uv_smooth = 'NONE'                  # W14b: linear UVs, rewritten below by uvs.texture_uvs
+            if welding.REPARAM:
+                mod.uv_smooth = 'NONE'                  # W14c: linear UVs, the points slide back below
+                reparam.mark(work)
         dg = depsgraph_of(work)
         oe = work.evaluated_get(dg)
         cp = bpy.data.meshes.new_from_object(oe, preserve_all_data_layers=True, depsgraph=dg)
-        if mod and welding.UV_RULE:
+        if mod and welding.REPARAM:
             try:
-                uvs.texture_uvs(orig, cp, level)
-            except Exception as e:                      # never leave linear UVs: the smoothed ones of W14
-                print(f"Renderbricker: texture-aware UVs failed for {orig.name} ({type(e).__name__}: {e}) - smoothed UVs")
+                par = reparam.param_positions(cp)
+                if par is not None:
+                    reparam.slide(cp, *par, orig=orig, level=level)
+            except Exception as e:                      # never leave linear UVs on unslid points: W14's smoothed UVs
+                print(f"Renderbricker: reparametrisation failed for {orig.name} ({type(e).__name__}: {e}) - smoothed UVs")
+                bpy.data.meshes.remove(cp)
                 mod.uv_smooth = welding.UV_SMOOTH
                 dg = depsgraph_of(work); dg.update()
-                sm = bpy.data.meshes.new_from_object(work.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
-                for layer in sm.uv_layers:
-                    a = np.empty(len(sm.loops) * 2); layer.data.foreach_get("uv", a)
-                    cp.uv_layers[layer.name].data.foreach_set("uv", a)
-                bpy.data.meshes.remove(sm)
+                cp = bpy.data.meshes.new_from_object(work.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
     finally:
         config.LEVELS = keep
     cp.name = f"{orig.name} L{level}"
@@ -151,7 +151,7 @@ def discard_copy(orig, cp):
 # Data of the welded work mesh that the finished copies do not need (run 61: 11 % of an L2
 # copy of Ratatouille): creases (already in the geometry), island and face numbers of the
 # rules, the selection flags of the import (a copy is never edited).
-COPY_DROP = ("crease_edge", "crease_vert", "rb_island", "rb_fi")
+COPY_DROP = ("crease_edge", "crease_vert", "rb_island", "rb_fi", "rb_param", "rb_rim")
 
 
 COPY_DROP_PREFIX = (".select_", ".uv_select_", ".vs.", ".es.", ".pn.")
