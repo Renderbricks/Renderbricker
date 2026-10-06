@@ -5,9 +5,9 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
-## [1.2.7] – unreleased
+## [1.2.7] – 2026-10-06
 
-- **EEVEE closer to Cycles:** with the EEVEE button, rays may now hit back faces (Backface Hit, Blender 5.3) and screen tracing runs at full quality – arches, doorways and insides are no longer lit bluish-bright but dark as in Cycles. The sun lamp's shadow is no longer filtered, so its edges sit closer to Cycles' shadows. EEVEE renders take about 10 % longer. Settings that do not exist in older Blender versions are skipped.
+- **EEVEE closer to Cycles:** with the EEVEE button, rays may now hit back faces (Backface Hit, Blender 5.2 and newer) and screen tracing runs at full quality – arches, doorways and insides are no longer lit bluish-bright but dark as in Cycles. The sun lamp's shadow is no longer filtered, so its edges sit closer to Cycles' shadows. EEVEE renders take about 10 % longer. Settings that do not exist in older Blender versions are skipped.
 
 ## [1.2.6] – 2026-10-06
 

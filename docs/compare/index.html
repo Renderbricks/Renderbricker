@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Renderbricker – Cycles vs EEVEE</title>
-<meta name="description" content="The same view rendered with Cycles and with EEVEE (Blender 5.3, 256 samples) by Renderbricker 1.2.6 – drag the bar to compare.">
+<meta name="description" content="The same view rendered with Cycles and with EEVEE (Blender 5.3, 256 samples) by Renderbricker 1.2.7 – drag the bar to compare.">
 <style>
   :root { --bg: #16181c; --fg: #e8e8e8; --muted: #9aa0a8; --label: rgba(30, 30, 30, .92); --bar: #fff; }
   * { box-sizing: border-box; }
@@ -38,17 +38,17 @@
 <main>
   <h1>Cycles vs EEVEE</h1>
   <p>The same view of the Italian Riviera (Mecabricks), imported with the current Mecabricks add-on, converted with
-     Renderbricker 1.2.6 and rendered with the render camera in Blender 5.3, 256 samples each. Drag the bar – or use the slider or the arrow keys.</p>
+     Renderbricker 1.2.7 and rendered with the render camera in Blender 5.3, 256 samples each. Drag the bar – or use the slider or the arrow keys.</p>
   <div class="compare" id="cmp" tabindex="0" aria-label="Comparison: drag to move the bar">
-    <img src="cycles.webp" alt="Rendered with Cycles" width="1920" height="1080">
-    <img class="eevee-img" src="eevee.webp" alt="Rendered with EEVEE" width="1920" height="1080">
+    <img src="cycles.webp?v=127" alt="Rendered with Cycles" width="1920" height="1080">
+    <img class="eevee-img" src="eevee.webp?v=127" alt="Rendered with EEVEE" width="1920" height="1080">
     <div class="bar"><div class="knob" aria-hidden="true">⇆</div></div>
     <div class="label lbl-left">Cycles</div>
     <div class="label lbl-right">EEVEE</div>
   </div>
   <input type="range" id="pos" min="0" max="100" value="50" step="0.1" aria-label="Position of the bar">
   <p style="margin-top:16px">EEVEE comes close in light and shadow; glass looks milky where Cycles shows the room
-     behind it, and transparent parts such as the water look grey, where Cycles lets light through them. EEVEE is the quick preview – for the final picture use
+     behind it, small insides are a little lighter, and transparent parts such as the water look grey, where Cycles lets light through them. EEVEE is the quick preview – for the final picture use
      Cycles. <a href="https://github.com/Renderbricks/Renderbricker/blob/main/docs/TUTORIAL.md#step-7-the-render-camera">Tutorial, step 7</a>
      · <a href="https://github.com/Renderbricks/Renderbricker">Renderbricker on GitHub</a></p>
   <footer>© 2026 Renderbricks®. LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this site.</footer>

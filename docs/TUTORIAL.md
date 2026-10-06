@@ -235,10 +235,11 @@ level 2). *All views* at 50 % gives the six slots below in about half a minute.
 
 ![All views: the six slots of the Render window](images/tutorial/T08b_all_views.webp)
 
-**Cycles or EEVEE:** the same view with both engines, imported with the current Mecabricks add-on and
-ren­dered in Blender 5.3 at 256 samples each. EEVEE comes close in light and shadow – its sun lamp follows
-the sky, the shadows lie in the same place – but glass looks milky where Cycles shows the room behind it,
-insides are lighter, and trans­par­ent parts such as the water around the boat look grey where Cycles lets
+**Cycles or EEVEE:** the same view with both engines, imported with the current Mecabricks add-on,
+con­verted with Ren­der­bricker 1.2.7 and ren­dered in Blender 5.3 at 256 samples each. EEVEE comes close in
+light and shadow – its sun lamp follows the sky, the shadows lie in the same place, arches and door­ways are
+dark as in Cycles – but glass looks milky where Cycles shows the room behind it, small insides are a little
+lighter, and trans­par­ent parts such as the water around the boat look grey where Cycles lets
 light through them (see [Known issues](KNOWN_ISSUES.md#eevee-glass-and-insides)). EEVEE is the quick
 preview; for the final picture, and always with glass or water in front, use Cycles.
 
