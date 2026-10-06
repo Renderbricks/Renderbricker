@@ -27,6 +27,6 @@ default.
 
 EEVEE refracts only what is already in the picture. Behind a window pane the room is hidden by the pane itself, so EEVEE shows the sky there and the glass looks milky, where Cycles shows the dark room behind it. For the same reason EEVEE lights the insides of arches and rooms brighter than Cycles. Real trans­parency, thicker panes or a reflec­tion probe did not change this in tests; for pic­tures with glass in front, use Cycles.
 
-Trans­par­ent parts let EEVEE's shadows through: the boat on the water of the Italian Riviera casts no shadow on the trans­par­ent blue plates in EEVEE, while Cycles lights the water phys­i­cally and shows it. With water or glass in front, render the final picture with Cycles.
+Trans­par­ent parts look grey in EEVEE: the trans­par­ent water plates around the boat of the Italian Riviera glow turquoise in Cycles, where light passes through them, and look grey in EEVEE, which shows the darker plates beneath without that light – the water looks dull, as if in shadow. The shadows them­selves lie in the same place in both engines. With water or glass in front, render the final picture with Cycles.
 
 </div>

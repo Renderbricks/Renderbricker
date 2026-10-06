@@ -235,13 +235,14 @@ level 2). *All views* at 50 % gives the six slots below in about half a minute.
 
 ![All views: the six slots of the Render window](images/tutorial/T08b_all_views.webp)
 
-**Cycles or EEVEE:** the same view with both engines, each at *Low* (128 samples). EEVEE comes close in
-light and shadow – its sun lamp follows the sky – but glass looks milky where Cycles shows the room
-behind it, insides are lighter, and trans­par­ent water lets shadows through – the boat casts none on it
-in EEVEE (see [Known issues](KNOWN_ISSUES.md#eevee-glass-and-insides)). EEVEE is the quick preview; for
-the final picture, and always with glass or water in front, use Cycles.
+**Cycles or EEVEE:** the same view with both engines, imported with the current Mecabricks add-on and
+ren­dered in Blender 5.3 at 256 samples each. EEVEE comes close in light and shadow – its sun lamp follows
+the sky, the shadows lie in the same place – but glass looks milky where Cycles shows the room behind it,
+insides are lighter, and trans­par­ent parts such as the water around the boat look grey where Cycles lets
+light through them (see [Known issues](KNOWN_ISSUES.md#eevee-glass-and-insides)). EEVEE is the quick
+preview; for the final picture, and always with glass or water in front, use Cycles.
 
-[![Cycles left, EEVEE right of the moving bar – the same view at 128 samples](images/tutorial/T08e_compare_anim.webp)](https://renderbricks.github.io/Renderbricker/compare/)
+[![Cycles left, EEVEE right of the moving bar – the same view at 256 samples](images/tutorial/T08e_compare_anim.webp)](https://renderbricks.github.io/Renderbricker/compare/)
 
 **[Compare inter­ac­tively →](https://renderbricks.github.io/Renderbricker/compare/)** – drag the bar
 across the picture yourself. The detail below is the square and the boat at twice the size:
