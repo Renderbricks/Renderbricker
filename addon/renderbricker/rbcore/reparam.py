@@ -49,7 +49,10 @@ PROJECT_ITER = 2      # fixed-point steps of the normal-field projection (0: nea
 JUMP = 1.5            # a slide may be at most this times the distance to the parametric point
 FOLD_STEPS = 4        # halvings of the slide of a vertex whose quad would turn (then it stays)
 FOLD_COS = 0.2        # a slid quad turned more than 78 deg against the surface under it counts as folding
+PHONG = float(config.opt("--reparam-phong", "0"))   # Phong lift of slid points - off: spikes at sharp edges (run 224)
+CURVE_DEG = float(config.opt("--reparam-curve", "8"))   # no slide onto a facet whose vertex normals spread more (run 224)
 FREE_NORMALS = False  # see slide: compact fan-space normals by default
+SHELL = "rb_shell"    # point attribute: the connected shell of each vertex (a stud on a plate is its own shell)
 EDGE = "rb_rim"       # point attribute: 1 on the import's boundary vertices (open rims, seams between shells)
 
 
@@ -72,6 +75,17 @@ def mark(work):
     lone = ~np.isin(a_ * n + b_, b_ * n + a_)
     rim = np.zeros(n, np.float32); rim[a_[lone]] = 1.0; rim[b_[lone]] = 1.0
     me.attributes.new(EDGE, 'FLOAT', 'POINT').data.foreach_set("value", rim)
+    # connected shells (run 224: a point of a stud's fillet slid onto the plate surface 0.01 mm below - another shell)
+    ev = _arr(me.edges, "vertices", len(me.edges), 2, np.int64)
+    lab = np.arange(n)
+    while len(ev):
+        m = np.minimum(lab[ev[:, 0]], lab[ev[:, 1]])
+        new = lab.copy(); np.minimum.at(new, ev[:, 0], m); np.minimum.at(new, ev[:, 1], m)
+        new = new[new]
+        if np.array_equal(new, lab):
+            break
+        lab = new
+    me.attributes.new(SHELL, 'FLOAT', 'POINT').data.foreach_set("value", lab.astype(np.float32))
 
 
 def param_positions(cp):
@@ -183,6 +197,11 @@ def slide(cp, Pl, lv, orig=None, level=None):
     if a is not None:
         fixed = _arr(a.data, "value", n, 1, np.float32) > 0.999
         cp.attributes.remove(cp.attributes[EDGE])
+    a = cp.attributes.get(SHELL)
+    shell = None
+    if a is not None:
+        shell = np.round(_arr(a.data, "value", n, 1, np.float32)).astype(np.int64)
+        cp.attributes.remove(cp.attributes[SHELL])
     # the slide is the part of the way to the parametric point along the surface (vertex normal; the face-normal
     # average counted the inward pull at edges as a slide and queried 6.8x as many points, run 222)
     d = Pl - Ps
@@ -223,6 +242,13 @@ def slide(cp, Pl, lv, orig=None, level=None):
         loc = np.where(got[:, None], np.array([r[0] if r[2] is not None else (0.0, 0.0, 0.0) for r in res], np.float64).reshape(-1, 3), loc)
         hit = np.where(got, np.array([r[2] if r[2] is not None else 0 for r in res], np.int64), hit)
     ok = found & ((fn[tf[hit]] * vn[todo]).sum(1) >= np.cos(np.radians(SHARP_DEG)))   # same side of a sharp edge
+    # no slide onto a strongly curved facet (run 224, stud rims at level 1): the flat facet lies below the rounding and
+    # the slid point dents the shading - such a point stays exact on the surface and gets surface-fixed UVs
+    Nt = vn[tri[hit]]
+    spread = np.minimum(np.minimum((Nt[:, 0] * Nt[:, 1]).sum(1), (Nt[:, 1] * Nt[:, 2]).sum(1)), (Nt[:, 0] * Nt[:, 2]).sum(1))
+    ok &= spread >= np.cos(np.radians(CURVE_DEG))
+    if shell is not None:                                          # only on its own shell (run 224)
+        ok &= shell[tri[hit, 0]] == shell[todo]
     # no jumps (catalog 1.2.5, 15462: 6.3 mm): the nearest point may lie across a thin wall or in a hole - a vertex
     # only goes about as far as its parametric point is away
     ok &= np.linalg.norm(loc - Ps[todo], axis=1) <= JUMP * np.linalg.norm(Pl[todo] - Ps[todo], axis=1) + 1e-9
@@ -289,6 +315,13 @@ def slide(cp, Pl, lv, orig=None, level=None):
     todo, hit, pulled = todo[~stay], hit[~stay], pulled[~stay]
     loc = new[todo]
     W = _bary(loc, Ps[tri[hit, 0]], Ps[tri[hit, 1]], Ps[tri[hit, 2]])
+    if PHONG and len(todo):
+        # on the curved surface, not the flat facet (run 224): a point slid onto a facet of a coarse copy lies below the
+        # rounding (dents in the shading, studs at level 1) - Phong tessellation lifts it along the vertex normals
+        A, Nn = Ps[tri[hit]], vn[tri[hit]]                         # (k, 3, 3)
+        proj = loc[:, None, :] - (((loc[:, None, :] - A) * Nn).sum(2))[:, :, None] * Nn
+        new[todo] = (1 - PHONG) * loc + PHONG * (W[:, :, None] * proj).sum(1)
+        loc = new[todo]
     # every vertex that should have slid visibly but did not get all the way: surface-fixed UVs at its position
     need = (np.linalg.norm(dt, axis=1) > MIN_SLIDE * size)
     full = np.zeros(n, bool); full[todo[~pulled]] = True

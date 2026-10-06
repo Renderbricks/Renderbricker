@@ -151,7 +151,7 @@ def discard_copy(orig, cp):
 # Data of the welded work mesh that the finished copies do not need (run 61: 11 % of an L2
 # copy of Ratatouille): creases (already in the geometry), island and face numbers of the
 # rules, the selection flags of the import (a copy is never edited).
-COPY_DROP = ("crease_edge", "crease_vert", "rb_island", "rb_fi", "rb_param", "rb_rim")
+COPY_DROP = ("crease_edge", "crease_vert", "rb_island", "rb_fi", "rb_param", "rb_rim", "rb_shell")
 
 
 COPY_DROP_PREFIX = (".select_", ".uv_select_", ".vs.", ".es.", ".pn.")
