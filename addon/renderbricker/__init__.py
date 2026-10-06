@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Renderbricker",
     "author": "Renderbricks® – Prof. Michael Klein",
-    "version": (1, 2, 6),
+    "version": (1, 2, 7),
     "blender": (4, 5, 0),
     "location": "3D Viewport > Sidebar > Renderbricker",
     "description": "Creases and subdivision for imported Mecabricks parts: each mesh is processed once, "

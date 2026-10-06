@@ -5,6 +5,10 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
+## [1.2.7] – unreleased
+
+- **EEVEE closer to Cycles:** with the EEVEE button, rays may now hit back faces (Backface Hit, Blender 5.3) and screen tracing runs at full quality – arches, doorways and insides are no longer lit bluish-bright but dark as in Cycles. The sun lamp's shadow is no longer filtered, so its edges sit closer to Cycles' shadows. EEVEE renders take about 10 % longer. Settings that do not exist in older Blender versions are skipped.
+
 ## [1.2.6] – 2026-10-06
 
 - **Editing a converted part:** select it and press **Tab** – its links switch to the imported mesh and Edit Mode starts on it; leaving Edit Mode converts it again and switches it back on (only this part). Before, Edit Mode was refused on parts from the cache file ("error changing modes"). With the cache file, saving the scene writes the edited parts into the cache by themselves (only them – the other copies are carried over); until then the panel names them under Apply (**Update cache** does it at once). A part edited with *Subdivision OFF* is converted again too when you leave Edit Mode. Reported on Discord.

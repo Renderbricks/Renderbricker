@@ -174,6 +174,8 @@ def sync(scene):
         light.angle = main.sun_size
     if hasattr(light, "use_shadow_jitter") and not light.use_shadow_jitter:
         light.use_shadow_jitter = True              # soft shadow like the sun's size
+    if getattr(light, "shadow_filter_radius", 0.0) != 0.0:
+        light.shadow_filter_radius = 0.0            # unfiltered: closest to Cycles' shadow edges (run 235)
     scale_sizes(scene, light)                       # shadow and trace sizes follow the parts' scale (run 197)
     _show(ob, energy > 0)
 
@@ -199,7 +201,10 @@ def eevee_best(scene):
                 pass
     opts = getattr(e, "ray_tracing_options", None)
     if opts is not None:
-        for k, v in {"resolution_scale": '1', "use_denoise": True, "trace_max_roughness": 1.0}.items():
+        # Backface Hit (Blender 5.3, off in setup files older than the option) and full trace quality: arches
+        # and insides darken like in Cycles (run 236: 2.30 -> 2.15 % from Cycles, insides 5.01 -> 4.27 %)
+        for k, v in {"resolution_scale": '1', "use_denoise": True, "trace_max_roughness": 1.0,
+                     "use_backface_hit": True, "backface_radiance_scale": 0.25, "screen_trace_quality": 1.0}.items():
             if hasattr(opts, k):
                 try:
                     setattr(opts, k, v)
