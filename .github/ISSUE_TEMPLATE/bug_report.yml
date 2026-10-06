@@ -44,6 +44,42 @@ body:
       options: [Windows, Linux, macOS]
     validations:
       required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it show?
+      multiple: true
+      options:
+        - Viewport – Solid
+        - Viewport – Material Preview / EEVEE
+        - Viewport – Cycles
+        - F12 render
+        - Edit Mode
+        - Apply / Remove / Check
+        - Render camera
+        - Somewhere else (describe above)
+    validations:
+      required: true
+  - type: dropdown
+    id: cache
+    attributes:
+      label: Cache file
+      description: The option *Cache the result next to the scene* in the panel.
+      options: ["On", "Off", "Don't know"]
+    validations:
+      required: true
+  - type: input
+    id: levels
+    attributes:
+      label: Levels
+      description: Viewport and Render level in the panel.
+      placeholder: e.g. Viewport 1 / Render 2
+  - type: input
+    id: parts
+    attributes:
+      label: Part number(s)
+      description: The Mecabricks part number of the affected part(s) – the start of the mesh name, e.g. 3044 or 7052.
+      placeholder: e.g. 24307, 7052
   - type: input
     id: scene
     attributes:
@@ -55,3 +91,7 @@ body:
       label: Log
       description: Turn on *Log file* in the panel, repeat the step and paste `<scene>_Renderbricker.log` here – or the text of the Blender console (Window → Toggle System Console).
       render: text
+  - type: markdown
+    attributes:
+      value: |
+        **Files help most:** a zipped `.blend` with only the affected part, or the `.zmbx` export from Mecabricks, can be dragged into one of the text fields above. Only share models you are allowed to share.
