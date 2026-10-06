@@ -73,6 +73,48 @@ def scope_state(context):
     return ok, "All parts of the scene" if ok else "The scene has no parts"
 
 
+_AFTER_SAVE = []          # the one pending "continue after the first save" handler (UPDATES #21)
+
+
+def continue_after_save(context, idname, **kwargs):
+    """Run the operator `idname` again once the scene has been saved for the first time - Apply, Write cache and
+    Convert headless open Save As on an unsaved scene and continue by themselves afterwards (maintainer
+    2026-10-06). One shot: removed after the next save; a save more than ten minutes later (the dialog was
+    cancelled and the scene saved some other time) does not start it."""
+    import time
+    for h in _AFTER_SAVE:
+        if h in bpy.app.handlers.save_post:
+            bpy.app.handlers.save_post.remove(h)
+    _AFTER_SAVE.clear()
+    win, area, region, t0 = context.window, context.area, context.region, time.time()
+
+    def handler(*_args):
+        if handler in bpy.app.handlers.save_post:
+            bpy.app.handlers.save_post.remove(handler)
+        _AFTER_SAVE.clear()
+        if time.time() - t0 > 600:
+            return
+
+        def run():
+            op = getattr(getattr(bpy.ops, idname.split(".")[0]), idname.split(".")[1])
+            try:
+                with bpy.context.temp_override(window=win, area=area, region=region):
+                    op('INVOKE_DEFAULT', **kwargs)
+            except Exception:                      # the window or area went away: any 3D view
+                from . import edit
+                try:
+                    with bpy.context.temp_override(**edit._context_override()):
+                        op('INVOKE_DEFAULT', **kwargs)
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
+            return None
+        bpy.app.timers.register(run, first_interval=0.2)
+
+    _AFTER_SAVE.append(handler)
+    bpy.app.handlers.save_post.append(handler)
+
+
 def save_as_name(context):
     """File name offered when the scene is saved the first time: the name of the imported model - the
     top collection with the most mesh objects, as a Mecabricks import brings one (user, 2026-09-29)."""

@@ -89,14 +89,45 @@ class MECSUB_OT_render_camera(bpy.types.Operator):
         if core.render_camera_is_on(sc):
             text = core.render_camera_off(sc)
             viewport_camera(context, False)
+            viewport_clip(context, False)
         else:
             text = core.render_camera_on(sc, props.setup_blend(), context.evaluated_depsgraph_get(),
                                          props.camera_collections(sc.mecsub), fresh=self.fresh)
             viewport_camera(context, True)
+            viewport_clip(context, True)
         context.scene.mecsub.summary = text
         self.report({'INFO'}, "Renderbricker: " + text)
         convert.redraw(context)
         return {'FINISHED'}
+
+
+CLIP_START = 0.001        # 0.1 cm: real-size parts (a stud is 1.6 mm) are not cut when zooming in (UPDATES #19)
+CLIP_KEY = "rb_clip_prev"
+
+
+def viewport_clip(context, on, keep=True):
+    """3D views of all screens: Clip Start down to 0.1 cm (on), the values from before back (off). keep=False
+    (Apply) sets it without remembering - Apply leaves 0.1 cm."""
+    import json
+    sc = context.scene
+    if on:
+        prev = []
+        for scr in bpy.data.screens:
+            for i, a in enumerate(scr.areas):
+                if a.type == 'VIEW_3D':
+                    sp = a.spaces.active
+                    if sp.clip_start > CLIP_START:
+                        prev.append([scr.name, i, sp.clip_start])
+                        sp.clip_start = CLIP_START
+        if keep and prev and CLIP_KEY not in sc:
+            sc[CLIP_KEY] = json.dumps(prev)
+    else:
+        prev = json.loads(sc.get(CLIP_KEY, "[]"))
+        for name, i, v in prev:
+            scr = bpy.data.screens.get(name)
+            if scr and i < len(scr.areas) and scr.areas[i].type == 'VIEW_3D':
+                scr.areas[i].spaces.active.clip_start = v
+        sc.pop(CLIP_KEY, None)
 
 
 class MECSUB_OT_frame_camera(bpy.types.Operator):

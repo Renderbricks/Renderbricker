@@ -39,10 +39,11 @@ header work any time.
 
 | Button | What it does |
 |---|---|
-| **Apply** | Sets the creases of each part mesh once and bakes the subdivision into a copy of it (`<mesh> L<level>`) that all its links use. The original mesh stays in the file, unchanged. Parts whose copies already match the settings (levels, variant) and the current rules are skipped – after adding parts to a scene, Apply converts only the new ones. **Shift+click** converts all parts again. When nothing has changed since the last Apply, the button reads *Apply: up to date*; pressing it anyway says so at the mouse. With the cache on, the copies are written into the cache file and the scene is saved. Esc cancels; the parts converted so far keep their copies. |
+| **Apply** | Sets the creases of each part mesh once and bakes the subdivision into a copy of it (`<mesh> L<level>`) that all its links use. The original mesh stays in the file, unchanged. Parts whose copies already match the settings (levels, variant), the current rules and their import (an import edited since is converted again) are skipped – after adding or editing parts, Apply converts only those. **Shift+click** converts all parts again. When nothing has changed since the last Apply, the button reads *Apply: up to date*; pressing it anyway says so at the mouse. With the cache on, the copies are written into the cache file and the scene is saved. Esc cancels; the parts converted so far keep their copies. |
 | **Check** | Looks for folded faces and seam gaps in the render copies and lists the objects with problems; the arrow button next to an entry selects and frames that object. |
 | **Subdivision: ON / OFF** | Switches every link between the subdivided copy and the original mesh (viewport and render). The button shows the state: *ON* (pressed), *OFF*, or *partly on* when objects differ. |
-| **Remove** | Points the links back to the original meshes and removes the copies – the scene is the plain import again. |
+| **Update cache** | Shown under Apply when parts were edited and converted again while the scene uses a cache file: their new copies are still in the scene file. Writes them into the cache – the other copies are carried over unchanged, nothing is converted again. |
+| **Remove** | Points the links back to the original meshes and removes the copies – the scene is the plain import again. With the scope *All* it covers the whole file: every scene, and copies of parts deleted in the meantime. |
 | **Convert headless** | Saves the scene, writes a start script next to it (`.bat` on Windows, `.command` on macOS, `.sh` on Linux) and runs it in a terminal. Blender converts the whole scene in the background on several cores and saves the result as `<scene>_subdiv_<version>.blend` – the open scene is not changed. If no terminal is found (Linux), the panel names the script to start by hand. |
 | **Move cache here / Copy cache here** | Shown when the scene was saved under another name or in another folder and still links the cache of the old scene file. *Move* renames the cache to belong to this scene (the old scene file then shows its original meshes); *Copy* gives this scene a cache of its own. |
 
@@ -162,6 +163,23 @@ line (`blender -b … -f`) switch the level as well.
   the copies to the imported meshes and con­verts them again. It writes a new file
   `<scene>_subdiv_<version>.blend` with its own cache file; the open scene and its cache stay
   unchanged, and earlier results are never over­writ­ten (a number is added).
+
+## Editing a part
+
+A converted part shows its subdivided copy; edits belong on the imported mesh (the copy is rebuilt on every Apply,
+and with the cache file Blender does not even allow Edit Mode on it).
+
+1. Select the part and press **Tab**: all its links switch to the imported mesh (*Subdivision OFF* for them) and
+   Edit Mode starts on it.
+2. Edit as usual.
+3. Leave Edit Mode (**Tab**, or any other way): the part is converted again from the edited mesh and its links switch
+   back on. If nothing was changed, it only switches back.
+4. With the cache file the new copy stays in the scene file; under Apply the panel names the edited parts and offers
+   **Update cache**.
+
+Only the **Tab** key can be taken over by the add-on – the *Mode* menu in the header calls Blender's own operator.
+From that menu, Edit Mode works on parts whose copies are in the scene file (the add-on then switches to the import as
+well), not on parts from the cache file: use Tab there.
 
 ## About
 

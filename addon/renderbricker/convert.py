@@ -346,8 +346,9 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
             jobs = core.resolve_jobs("auto", len(todo), [me for me, _obs in todo], low_memory=s.low_memory.lower())
             if jobs > 1:
                 if not bpy.data.filepath:
-                    self.report({'WARNING'}, "Save the scene first: Apply with several Blender processes opens it "
-                                             "from disk (or switch off 'Use several Blender processes')")
+                    self.report({'INFO'}, "Save the scene first: Apply with several Blender processes opens it "
+                                          "from disk - Apply continues after saving")
+                    widgets.continue_after_save(context, "mecsub.apply")
                     bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT', filepath=widgets.save_as_name(context))
                     return {'CANCELLED'}
                 return self._start_workers(context, jobs)
@@ -498,6 +499,9 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
             s.summary += self.cache_part
         if not self.cancelled:
             context.scene[widgets.APPLIED_KEY] = widgets.apply_key(context)
+            if self.done and not bpy.app.background:
+                from . import camera_ui
+                camera_ui.viewport_clip(context, True, keep=False)     # 0.1 cm for real-size parts (#19)
         self.report({'WARNING'} if self.cancelled else {'INFO'}, "Renderbricker: " + s.summary)
 
 

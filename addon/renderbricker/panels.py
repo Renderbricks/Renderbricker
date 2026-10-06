@@ -1,7 +1,7 @@
 """The sidebar panel Renderbricker and its sub-panel About (logo, links, legal text)."""
 import bpy
 from . import rbcore as core
-from . import camera_ui, common, guide, logfile, props, widgets
+from . import camera_ui, common, edit, guide, logfile, props, widgets
 
 
 _icons = {}                     # the Renderbricks logo (bpy.utils.previews), loaded in register()
@@ -53,6 +53,13 @@ class MECSUB_PT_panel(bpy.types.Panel):
         body.prop(s, "variant", text="")
         widgets.draw_levels(body, s, context)
         widgets.apply_button(body, context)
+        left = edit.uncached(context)            # parts edited and converted again, still in the scene file (#18)
+        if left:
+            box = body.box()
+            col = box.column(align=True)
+            n = len(left)
+            col.label(text=f"{n} edited part{'s' if n != 1 else ''} not in the cache", icon='INFO')
+            col.operator("mecsub.cache_switch", text="Update cache", icon='FILE_REFRESH').target = True
         body.prop(s, "use_cores")
         widgets.draw_low_memory(body, s)
         body.prop(s, "use_cache")

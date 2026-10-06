@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Renderbricker",
     "author": "Renderbricks® – Prof. Michael Klein",
-    "version": (1, 2, 5),
+    "version": (1, 2, 6),
     "blender": (4, 5, 0),
     "location": "3D Viewport > Sidebar > Renderbricker",
     "description": "Creases and subdivision for imported Mecabricks parts: each mesh is processed once, "
@@ -21,9 +21,9 @@ from . import rbcore as core
 if "props" in locals():
     import importlib
     core.reload_all()
-    for _m in (common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels):
+    for _m in (common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels, edit):
         importlib.reload(_m)
-from . import common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels
+from . import common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels, edit
 
 # the package reads and writes like one module: renderbricker.NAME finds NAME in the module that holds it,
 # renderbricker.NAME = value sets it there (the tests replace open_file and start_script)
@@ -46,7 +46,7 @@ def _owners(modules):
     return out
 
 
-OWNER = _owners((common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels))
+OWNER = _owners((common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels, edit))
 
 
 class _Package(_types.ModuleType):
@@ -73,7 +73,7 @@ classes = (props.MECSUB_Problem, props.MECSUB_CollectionItem, props.MECSUB_Setti
            operators.MECSUB_OT_cache_switch, render.MECSUB_OT_render, panels.MECSUB_PT_about,
            guide.MECSUB_OT_guide_start, guide.MECSUB_OT_guide_nav, guide.MECSUB_OT_guide_exit, props.MECSUB_OT_level_confirm,
            camera_ui.MECSUB_OT_frame_camera, camera_ui.MECSUB_OT_render_camera, camera_ui.MECSUB_OT_camera_view, camera_ui.MECSUB_OT_samples,
-           render.MECSUB_OT_render_views, camera_ui.MECSUB_OT_sun_follow,
+           render.MECSUB_OT_render_views, camera_ui.MECSUB_OT_sun_follow, edit.MECSUB_OT_edit_mode, edit.MECSUB_OT_edit_finish,
            camera_ui.MECSUB_OT_transparent, camera_ui.MECSUB_OT_sun_step, camera_ui.MECSUB_OT_sun_reset,
            camera_ui.MECSUB_OT_import_mecabricks, camera_ui.MECSUB_OT_sun_picture,
            camera_ui.MECSUB_OT_render_engine)
@@ -130,7 +130,8 @@ def _engine_watch(scene, depsgraph=None):
 HANDLERS = ((bpy.app.handlers.depsgraph_update_post, _engine_watch),
             (bpy.app.handlers.render_pre, render._render_pre), (bpy.app.handlers.render_post, render._render_post),
             (bpy.app.handlers.render_cancel, render._render_post), (bpy.app.handlers.load_post, _unlock),
-            (bpy.app.handlers.render_cancel, render._views_cancelled))
+            (bpy.app.handlers.render_cancel, render._views_cancelled),
+            (bpy.app.handlers.depsgraph_update_post, edit._watch), (bpy.app.handlers.load_post, edit._forget))
 
 
 def register():
@@ -162,6 +163,7 @@ def register():
         kmi.properties.animation = True
         kmi.properties.use_viewport = True
         render._keymaps.append((km, kmi))
+    edit.register_keymap()                   # Tab on a converted part edits its import (UPDATES #18)
 
 
 def unregister():
@@ -175,6 +177,7 @@ def unregister():
         except (ReferenceError, RuntimeError):
             pass
     render._keymaps.clear()
+    edit.unregister_keymap()
     if bpy.app.timers.is_registered(render._views_tick):
         bpy.app.timers.unregister(render._views_tick)
     render._VIEWS.clear()

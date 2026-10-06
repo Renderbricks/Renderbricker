@@ -176,11 +176,19 @@ class MECSUB_OT_cache_switch(bpy.types.Operator):
         n = len([m for m in bpy.data.meshes if m.get("rb_original") and m.library is None])
         if self.target:
             if not bpy.data.filepath:
-                self.report({'WARNING'}, "Save the scene first: the cache file lies next to it")
+                self.report({'INFO'}, "Save the scene first: the cache file lies next to it - continues after saving")
+                widgets.continue_after_save(context, "mecsub.cache_switch", target=True)
                 bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT', filepath=widgets.save_as_name(context))
                 return {'CANCELLED'}
-            msg = (f"Write the {n} subdivided copies into {os.path.basename(core.cache_path_for(bpy.data.filepath))} "
-                   f"and link them? The scene file gets about as small as the import")
+            from . import edit
+            left = edit.uncached(context) if core.cache_state() is not None else []
+            if left:                            # "Update cache" after editing parts (UPDATES #18)
+                msg = (f"Write the {len(left)} edited part{'s' if len(left) != 1 else ''} into "
+                       f"{os.path.basename(core.cache_path_for(bpy.data.filepath))}? The other copies are carried "
+                       f"over unchanged, nothing is converted again")
+            else:
+                msg = (f"Write the {n} subdivided copies into {os.path.basename(core.cache_path_for(bpy.data.filepath))} "
+                       f"and link them? The scene file gets about as small as the import")
         else:
             st = core.cache_state()
             if st is None:                     # no cache linked: only the setting
@@ -391,7 +399,8 @@ class MECSUB_OT_headless(bpy.types.Operator):
 
     def invoke(self, context, event):
         if not bpy.data.filepath:
-            self.report({'WARNING'}, "Save the scene first, then press Convert headless again")
+            self.report({'INFO'}, "Save the scene first - Convert headless continues after saving")
+            widgets.continue_after_save(context, "mecsub.headless")
             return bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT', filepath=widgets.save_as_name(context))
         return context.window_manager.invoke_confirm(
             self, event, title="Convert headless",

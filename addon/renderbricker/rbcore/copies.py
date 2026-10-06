@@ -13,6 +13,22 @@ def original_of(me):
     return bpy.data.meshes.get((name, None), me) if name else me     # the local one (run 65)
 
 
+def source_hash(me):
+    """Fingerprint of an import's geometry (UPDATES #18): positions, corners and UVs. Stored on every copy as
+    rb_src when it is baked; Apply converts a mesh again when its import no longer matches - an edit in Edit Mode
+    (or with Subdivision OFF) was kept as the old copy before."""
+    import hashlib
+    h = hashlib.blake2b(digest_size=12)
+    co = np.empty(len(me.vertices) * 3, np.float32); me.vertices.foreach_get("co", co)
+    lv = np.empty(len(me.loops), np.int32); me.loops.foreach_get("vertex_index", lv)
+    lt = np.empty(len(me.polygons), np.int32); me.polygons.foreach_get("loop_total", lt)
+    h.update(np.round(co, 5).tobytes()); h.update(lv.tobytes()); h.update(lt.tobytes())
+    for u in me.uv_layers:
+        uv = np.empty(len(me.loops) * 2, np.float32); u.data.foreach_get("uv", uv)
+        h.update(np.round(uv, 5).tobytes())
+    return h.hexdigest()
+
+
 def copy_of(orig, which="view"):
     """The subdivided copy used in the viewport or the render (None: the original itself)."""
     name = orig.get(f"rb_{which}", "")
@@ -131,6 +147,7 @@ def bake_copy(orig, work, level):
     cp.name = f"{orig.name} L{level}"
     cp["rb_original"], cp["rb_level"], cp["rb_variant"] = orig.name, level, config.SHADING
     cp["rb_rules"] = config.RULES_VERSION          # Apply skips meshes whose copies are up to date (user, 2026-09-28)
+    cp["rb_src"] = source_hash(orig)                # ... and whose import was not edited since (UPDATES #18)
     if _COPY_INDEX[0] is not None:
         _COPY_INDEX[0].setdefault(orig.name, []).append(cp)
     cp.use_fake_user = True      # a copy no link uses right now (L1, the render copy) is saved too (run 40)
@@ -270,14 +287,16 @@ def missing_levels(orig, view, render):
 
 def up_to_date(orig, view, render):
     """The copies of this mesh for the viewport and render level exist and come from the current rules,
-    variant and method - Apply can skip the mesh (user, 2026-09-28). Copies made before 1.0.0 carry no
-    rules version and are converted again."""
+    variant and method and the import was not edited since (rb_src) - Apply can skip the mesh (user, 2026-09-28).
+    Copies made before 1.0.0 carry no rules version, before 1.2.6 no source fingerprint: converted again."""
     have = copies_by_level(orig)
     need = {lv for lv in (view, render) if lv}
     if not need or any(lv not in have for lv in need):
         return False
+    src = source_hash(orig)
     return all(have[lv].get("rb_rules") == config.RULES_VERSION and have[lv].get("rb_variant") == config.SHADING
-               and (have[lv].get("rb_method") == "weld") == (config.METHOD == "weld") for lv in need)
+               and (have[lv].get("rb_method") == "weld") == (config.METHOD == "weld")
+               and have[lv].get("rb_src") == src for lv in need)
 
 
 def bake_levels(orig, levels):
