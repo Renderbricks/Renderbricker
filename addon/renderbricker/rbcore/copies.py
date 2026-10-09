@@ -258,11 +258,16 @@ def real_users(m):
 
 
 def point_links(obs, orig, which="view"):
-    """Let the objects use the viewport (or render) copy of their original."""
+    """Let the objects use the viewport (or render) copy of their original. They are marked as converted (rb_on): at
+    viewport level 0 they show the original like an object of the same mesh outside the scope, and only the marked
+    ones go to the render copy for F12 (UPDATES #24)."""
     target = copy_of(orig, which) or orig
+    converted = target is not orig or copy_of(orig, "render") is not None
     for ob in obs:
         if ob.data != target:
             ob.data = target
+        if converted and not ob.get("rb_on"):
+            ob["rb_on"] = 1
 
 
 def drop_copies(orig, keep=()):

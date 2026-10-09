@@ -423,13 +423,23 @@ class SegmentWorkers:
             files += sorted(glob.glob(glob.escape(os.path.splitext(self.part(i, "blend"))[0]) + "_b*.blend"))
         levels = welding.bake_levels_wanted()
         fresh, rest = set(), []
+        on_copies = {}                      # objects on a copy, by original - also those outside the scope
+        for ob in bpy.data.objects:
+            if ob.type == 'MESH' and ob.data is not None and ob.data.get("rb_original"):
+                on_copies.setdefault(ob.data["rb_original"], []).append(ob)
         for k, (me, obs) in enumerate(self.users.items()):
             if k % 200 == 0:
                 yield (0.05 * k / max(1, len(self.users)), "taking over the copies of the workers")
             if me.name in reps:
                 orig = welding.prepare(me, obs)
-                for ob in obs:              # off the old copies; the cache links the new ones
+                # outside the scope on an old copy (UPDATES #24): they get the new view copy as welding.finish gives
+                # it, instead of losing their mesh when the old copies are removed below
+                inside = set(obs)
+                held = [o for o in on_copies.get(orig.name, []) if o not in inside]
+                for ob in obs + held:       # off the old copies; the cache links the new ones
                     ob.data = orig
+                for ob in held:
+                    ob["rb_show_view"] = 1
                 old = copies.all_copies(orig)
                 refs = [c.override_library.reference for c in old
                         if c.override_library is not None and c.override_library.reference is not None]
@@ -441,6 +451,7 @@ class SegmentWorkers:
                 for ob in obs:
                     ob.pop("rb_off", None)
                     ob["rb_show_view"] = 1          # write_cache puts them on the view copy
+                    ob["rb_on"] = 1                 # converted in scope - F12 takes it to the render copy
                 fresh |= {(orig.name, lv) for lv in levels}
                 if on_mesh:
                     on_mesh(me, obs, reps[me.name])
@@ -645,13 +656,23 @@ class LedgerWorkers:
             files += sorted(glob.glob(glob.escape(os.path.splitext(self.part(i, "blend"))[0]) + "_b*.blend"))
         levels = welding.bake_levels_wanted()
         fresh, rest = set(), []
+        on_copies = {}                      # objects on a copy, by original - also those outside the scope
+        for ob in bpy.data.objects:
+            if ob.type == 'MESH' and ob.data is not None and ob.data.get("rb_original"):
+                on_copies.setdefault(ob.data["rb_original"], []).append(ob)
         for k, (me, obs) in enumerate(self.users.items()):
             if k % 200 == 0:
                 yield (0.05 * k / max(1, len(self.users)), "taking over the copies of the workers")
             if me.name in reps:
                 orig = welding.prepare(me, obs)
-                for ob in obs:              # off the old copies; the cache links the new ones
+                # outside the scope on an old copy (UPDATES #24): they get the new view copy as welding.finish gives
+                # it, instead of losing their mesh when the old copies are removed below
+                inside = set(obs)
+                held = [o for o in on_copies.get(orig.name, []) if o not in inside]
+                for ob in obs + held:       # off the old copies; the cache links the new ones
                     ob.data = orig
+                for ob in held:
+                    ob["rb_show_view"] = 1
                 old = copies.all_copies(orig)
                 refs = [c.override_library.reference for c in old
                         if c.override_library is not None and c.override_library.reference is not None]
@@ -663,6 +684,7 @@ class LedgerWorkers:
                 for ob in obs:
                     ob.pop("rb_off", None)
                     ob["rb_show_view"] = 1          # write_cache puts them on the view copy
+                    ob["rb_on"] = 1                 # converted in scope - F12 takes it to the render copy
                 fresh |= {(orig.name, lv) for lv in levels}
                 if on_mesh:
                     on_mesh(me, obs, reps[me.name])

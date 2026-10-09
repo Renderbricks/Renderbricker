@@ -3,6 +3,18 @@ import bpy
 from . import cache as cache_mod, camera, config, copies, memory, workers
 
 
+def _copies_outside(users):
+    """Whether copies are held outside the scope (--objects): copies of meshes not converted now, or objects outside
+    showing a copy. Then the previous conversion is not removed first (workers.clean_for_workers) - they keep theirs."""
+    if "--objects" not in config.args:
+        return False
+    inside = {o for obs in users.values() for o in obs}
+    if any(m.get("rb_original") and copies.original_of(m) not in users for m in bpy.data.meshes):
+        return True
+    return any(o.type == 'MESH' and o.data is not None and o.data.get("rb_original") and o not in inside
+               for o in bpy.data.objects)
+
+
 def main():
     if "--merge-cache" in config.args:     # helper Blender of write_cache (run 62)
         cache_mod._merge_cache(config.args[config.args.index("--merge-cache") + 1])
@@ -11,6 +23,11 @@ def main():
     for ob in bpy.data.objects:
         if ob.type == 'MESH' and ob.data.polygons and not copies.is_master(ob):
             users.setdefault(copies.original_of(ob.data), []).append(ob)
+    if "--objects" in config.args:         # scope Selected / Collection of the panel (UPDATES #24): only these objects
+        import json
+        keep = set(json.load(open(config.opt("--objects", ""), encoding="utf-8")))
+        users = {me: [o for o in obs if o.name in keep] for me, obs in users.items()}
+        users = {me: obs for me, obs in users.items() if obs}
     # progress for a console (headless run from the add-on, run 57): mesh i / n, weighted by
     # faces, time left
     weight = {me: len(me.polygons) + 50 for me in users}
@@ -81,7 +98,7 @@ def main():
         except OSError:
             pass
     workers.say(f"MESHES {len(users)}")      # for the progress line of the batch scripts
-    clean = workers.clean_for_workers(users) if config.TARGET else False
+    clean = workers.clean_for_workers(users) if config.TARGET and not _copies_outside(users) else False
     if clean:
         workers.say("CLEAN the previous conversion was removed from the working copy - it is made again")
     jobs = memory.resolve_jobs(config.opt("--jobs", "1"), len(users), list(users)) if bpy.data.filepath else 1

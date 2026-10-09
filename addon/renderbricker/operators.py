@@ -56,6 +56,7 @@ class MECSUB_OT_remove(bpy.types.Operator):
             for o in gobs:
                 core.unlink_instance(o)
                 o.pop("rb_off", None)
+                o.pop("rb_on", None)
                 o.data = me
         originals = set(groups)
         if whole:
@@ -403,7 +404,7 @@ class MECSUB_OT_headless(bpy.types.Operator):
     bl_idname = "mecsub.headless"
     bl_label = "Convert headless"
     bl_description = ("Save the scene, write a start script next to it (.bat on Windows, .command on macOS, .sh on "
-                      "Linux) and run it in a terminal: Blender converts the whole scene in the background with several "
+                      "Linux) and run it in a terminal: Blender converts the meshes in scope in the background with several "
                       "Blender processes and saves the result as <scene>_subdiv_<add-on version>.blend. The open scene is not changed")
 
     def invoke(self, context, event):
@@ -418,9 +419,11 @@ class MECSUB_OT_headless(bpy.types.Operator):
     def execute(self, context):
         import os
         common.object_mode(context)
+        if not common.targets(context):
+            self.report({'WARNING'}, props.scope_empty_text(context))
+            return {'CANCELLED'}
         if bpy.data.is_dirty:
             bpy.ops.wm.save_mainfile()
-        s = context.scene.mecsub
         blend = bpy.data.filepath
         folder, stem = os.path.dirname(blend), os.path.splitext(os.path.basename(blend))[0]
         tag = common.VERSION.replace(".", "-")
@@ -429,20 +432,37 @@ class MECSUB_OT_headless(bpy.types.Operator):
             k += 1
             name = f"{stem}_subdiv_{tag}_{k}"
         out = os.path.join(folder, name + ".blend")
-        args = ["-b", "--factory-startup", blend, "--python", os.path.join(os.path.dirname(__file__), "rbcore", "run.py"),
-                "--", out, "--view-level", str(s.view_level), "--render-level", str(s.render_level),
-                "--shading", "mecabricks" if s.variant == 'A' else "geometric", "--jobs", "auto",
-                "--low-memory", s.low_memory.lower()]
-        if s.use_cache:
-            args += ["--cache", core.cache_path_for(out)]
-        if s.use_log:
-            args += ["--log", logfile.log_path()]
+        s = context.scene.mecsub
+        args = headless_args(context, out)
         script = write_headless_script(os.path.join(folder, name), stem, blend, out, args)
         how = start_script(script)
         s.summary = (f"Headless conversion started in a terminal: {os.path.basename(script)}, result: {os.path.basename(out)}"
                      if how else f"Start script written, run it in a terminal: {script}")
         self.report({'INFO'}, "Renderbricker: " + s.summary)
         return {'FINISHED'}
+
+
+def headless_args(context, out):
+    """Blender's arguments for the headless conversion of the saved scene into `out`. With the scope Selected or
+    Collection the objects in scope go to <out>_objects.json (--objects): only they are converted, everything else
+    stays as it is (UPDATES #24, maintainer 2026-10-10)."""
+    import os, json
+    s = context.scene.mecsub
+    args = ["-b", "--factory-startup", bpy.data.filepath, "--python",
+            os.path.join(os.path.dirname(__file__), "rbcore", "run.py"),
+            "--", out, "--view-level", str(s.view_level), "--render-level", str(s.render_level),
+            "--shading", "mecabricks" if s.variant == 'A' else "geometric", "--jobs", "auto",
+            "--low-memory", s.low_memory.lower()]
+    if s.scope != 'ALL':
+        listing = os.path.splitext(out)[0] + "_objects.json"
+        with open(listing, "w", encoding="utf-8") as fh:
+            json.dump(sorted(o.name for o in common.targets(context)), fh, ensure_ascii=False)
+        args += ["--objects", listing]
+    if s.use_cache:
+        args += ["--cache", core.cache_path_for(out)]
+    if s.use_log:
+        args += ["--log", logfile.log_path()]
+    return args
 
 
 # lines of the conversion worth showing in the terminal (the rest is Blender's own output)

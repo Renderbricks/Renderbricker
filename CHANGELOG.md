@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
+## [1.2.8] – unreleased
+
+- **Only the scope is converted, also headless:** **Convert headless** now converts only the parts in scope – with *Selected* or *Collection* nothing outside is touched. Before, it converted every part of the file whatever the scope said. The list of parts is saved next to the start script (`<result>_objects.json`).
+- **Rendering keeps parts outside the scope as they are:** a part outside the scope that uses the same mesh as a converted part (a copy made with Alt+D, for example) now renders as it shows in the viewport. Before, F12 rendered it subdivided. For scenes converted with an earlier version, F12 keeps the old behaviour at viewport level 0 until the next **Apply**.
+- An object outside the scope that already shows a subdivided copy of a mesh converted again inside the scope gets the new copy, also with several Blender processes and the cache file.
+
 ## [1.2.7] – 2026-10-06
 
 - **EEVEE closer to Cycles:** with the EEVEE button, rays may now hit back faces (Backface Hit, Blender 5.2 and newer) and screen tracing runs at full quality – arches, doorways and insides are no longer lit bluish-bright but dark as in Cycles. The sun lamp's shadow is no longer filtered, so its edges sit closer to Cycles' shadows. EEVEE renders take about 10 % longer. Settings that do not exist in older Blender versions are skipped.

@@ -24,13 +24,18 @@ def _main_thread():
 
 
 def _swap_to_render(scene):
+    """The converted objects to the render copy: those on the view copy, and those on the original that Apply marked
+    (rb_on, viewport level 0) - an object of the same mesh outside the scope stays on the original (UPDATES #24).
+    Meshes converted before 1.2.8 have no mark at all: all their objects on the original go, as before."""
     _swapped.clear()
-    for ob in scene.objects:
-        if ob.type != 'MESH' or ob.get("rb_off"):
-            continue
+    obs = [ob for ob in scene.objects if ob.type == 'MESH' and not ob.get("rb_off")]
+    marked = {core.original_of(ob.data) for ob in obs if ob.get("rb_on")}
+    for ob in obs:
         orig = core.original_of(ob.data)
         rc = core.copy_of(orig, "render")
-        if rc is not None and ob.data != rc and ob.data in (orig, core.copy_of(orig, "view")):
+        if rc is None or ob.data == rc:
+            continue
+        if ob.data == core.copy_of(orig, "view") or (ob.data == orig and (ob.get("rb_on") or orig not in marked)):
             _swapped.append((ob, ob.data))
             ob.data = rc
 
