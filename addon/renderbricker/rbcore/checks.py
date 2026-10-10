@@ -2,7 +2,7 @@
 import numpy as np
 from mathutils import Vector
 from mathutils.geometry import intersect_line_line_2d
-from . import config, copies
+from . import config, workscene
 
 
 def self_intersecting(cos):
@@ -55,7 +55,7 @@ def flipped_faces(ob, ev=None, me=None):
     skip = broken_faces(me)
     own = ev is None
     if own:
-        dg = copies.depsgraph_of(ob)
+        dg = workscene.depsgraph_of(ob)
         oe = ob.evaluated_get(dg)
         ev = oe.to_mesh()
     starts = sub_offsets(me)

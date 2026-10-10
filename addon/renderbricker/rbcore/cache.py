@@ -1,6 +1,6 @@
 """The cache file next to the scene: write, link (library overrides), move, copy, embed, remove."""
 import bpy, json, os, queue, shutil, subprocess, tempfile, threading, time, types
-from . import config, copies
+from . import config, copies, workscene
 
 
 # ---------------------------------------------------------------- cache file (run 62)
@@ -465,8 +465,8 @@ def embed_cache_steps():
     if not cached:
         uncache()
         return 0
-    work = copies.work_object(cached[0])
-    dg = copies.depsgraph_of(work)
+    work = workscene.work_object(cached[0])
+    dg = workscene.depsgraph_of(work)
     new = {}
     try:
         for i, cm in enumerate(cached):
@@ -485,7 +485,7 @@ def embed_cache_steps():
             new[cm] = (cp, cm.name)
     finally:
         bpy.data.objects.remove(work)
-        copies.drop_work_scene()
+        workscene.drop_work_scene()
     yield (0.95, "taking the copies into the scene")
     for ob in bpy.data.objects:
         if ob.type == 'MESH' and ob.data in new:

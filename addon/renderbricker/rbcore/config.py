@@ -115,3 +115,21 @@ BAKE_QUALITY_LARGE = 6
 
 
 QUALITY_FACE_LIMIT = 50000
+
+
+# ---------------------------------------------------------------- UVs of the copies
+# Subdivision modifier uv_smooth (W14): Keep Corners, Junctions, Concave since rules 3.4 (run 212) - Keep Boundaries
+# (run 58) left textures squeezed where the subdivision moves points of a face into a rounding (3044v2: streaks of
+# its grainy slope texture along the rounded edges; distorted child faces 10.6 % -> 4.3 %, prints more exact)
+UV_SMOOTH = opt("--uv-smooth", "PRESERVE_CORNERS_JUNCTIONS_AND_CONCAVE")
+
+
+# W14c (rules 3.6, runs 212-221): the copies keep linear UVs and their points slide back along the smooth surface to
+# their import place (rbcore/reparam.py), so every texture lies where it lies on the import; UV_SMOOTH stays the fallback
+REPARAM = opt("--reparam", "1") == "1"
+
+
+UV_PROJECT = opt("--uv-project", "0") == "1"   # UVs from the original triangles - tested, off (run 58: distorts lettering)
+
+
+UV_CHUNK = 2_000_000     # corners per step of the UV projection

@@ -2,7 +2,7 @@
 import bpy, math
 import numpy as np
 from mathutils import Vector
-from . import copies
+from . import copies, workscene
 
 
 # ---------------------------------------------------------------- render camera (user, 2026-09-28)
@@ -713,7 +713,7 @@ def visible_meshes(scene):
     vl = scene.view_layers[0] if scene.view_layers else None
     out = []
     for o in scene.objects:
-        if o.type == 'MESH' and o.name != copies.WORK_NAME:
+        if o.type == 'MESH' and o.name != workscene.WORK_NAME:
             try:
                 vis = o.visible_get(view_layer=vl) if vl else not o.hide_get()
             except (RuntimeError, TypeError):

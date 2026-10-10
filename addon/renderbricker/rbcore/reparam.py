@@ -105,7 +105,7 @@ def param_positions(cp):
 _ISLANDS = {}         # (mesh name, layer, faces) -> UV island per face of the import, shared by the levels
 
 
-def islands(me, layer):
+def uv_islands(me, layer):
     """UV island per face of `me` (faces joined across an edge whose corners carry the same UVs on both sides) -
     vectorised: matching corner edges by sorting, labels by repeated minimum propagation."""
     key = (me.name, layer, len(me.polygons))
@@ -159,7 +159,7 @@ def fixed_uvs(orig, cp, level, verts, P):
     for layer in [u.name for u in orig.uv_layers]:
         if layer not in cp.uv_layers:
             continue
-        isl = islands(orig, layer)
+        isl = uv_islands(orig, layer)
         uv0 = _arr(orig.uv_layers[layer].data, "uv", len(orig.loops), 2)
         uvc = _arr(cp.uv_layers[layer].data, "uv", len(cp.loops), 2)
         k = isl[cf]

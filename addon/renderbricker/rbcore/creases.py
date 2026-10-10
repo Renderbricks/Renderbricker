@@ -3,7 +3,7 @@ import bmesh, math
 from mathutils import Vector
 from mathutils.geometry import intersect_line_line_2d
 from collections import Counter, defaultdict
-from . import checks, config, copies, welding
+from . import checks, config, workscene
 
 
 def islands(bm):
@@ -531,7 +531,7 @@ def add_subsurf(ob):
     # subdivision also moves vertices within a plane; smoothed UVs move along, so prints keep
     # their shape. Linear UVs ('NONE') or UVs projected from the original distorted the
     # lettering of 86209. The wavy print lines of 86209 came from the spreading bevel (W13).
-    mod.uv_smooth = welding.UV_SMOOTH
+    mod.uv_smooth = config.UV_SMOOTH
     return mod
 
 
@@ -628,7 +628,7 @@ def resolve_fans(me, ob):
                     config.PARTIAL[e.index] = w
         unify_seams(bm, E, V)
         write_creases(me, E, V); me.update()
-        dg = copies.depsgraph_of(ob); oe = ob.evaluated_get(dg); ev = oe.to_mesh()
+        dg = workscene.depsgraph_of(ob); oe = ob.evaluated_get(dg); ev = oe.to_mesh()
         bad = checks.flipped_faces(ob, ev)
         for i, fan in enumerate(fans):
             table[i][w] = (any(f.index in bad for f in fan[0].link_faces), fan_corner_depth(me, ev, fan, starts))

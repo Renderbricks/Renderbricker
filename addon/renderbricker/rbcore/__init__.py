@@ -1,12 +1,14 @@
 """Renderbricker core: the crease rules and the conversion of Mecabricks imports, split by task.
 
     config    command line options and shared settings (levels, shading, method)
-    creases   the crease rules (islands, corners, logos, T fans, seams)       - docs/RULES.md
+    workscene the temporary work object in a scene of its own
+    reparam   textures at their import place: the points of a copy slide back (W14c)
     checks    checks of a result (broken import faces, folded sub-faces)
-    copies    the subdivided copies of a part and the links that use them
+    creases   the crease rules (islands, corners, logos, T fans, seams)       - docs/RULES.md
     shading   geometric shading (variant B)
+    copies    the subdivided copies of a part and the links that use them
+    welding   the conversion of one part: weld, creases, repair, bake (process), further levels
     memory    memory estimates and the number of Blender processes
-    welding   the conversion of one part: weld, creases, repair, bake (process)
     cache     the cache file next to the scene
     renderfile  the render scene: a second file, complete without the add-on and the cache
     workers   several Blender processes (shares, segments, merge)
@@ -14,15 +16,18 @@
     engine    Cycles or EEVEE with the Renderbricks sky (EEVEE: sun lamp linked to the sky)
     headless  the run without a window (run.py)
 
+The modules of the conversion import only modules listed above them (config - workscene, reparam - checks -
+creases - shading - copies - welding): no import circle there, each can be read on its own.
+
 The package reads and writes like one module: rbcore.NAME finds NAME in the module that holds it, and
 rbcore.NAME = value sets it there (the add-on sets the levels and the shading before a run).
 Without a window: blender -b scene.blend --python rbcore/run.py -- result.blend [options]
 """
 import importlib, sys, types as _types
 
-from . import config, creases, checks, copies, shading, memory, welding, cache, workers, camera, engine, renderfile, headless, reparam
+from . import config, workscene, reparam, checks, creases, shading, copies, welding, memory, cache, workers, camera, engine, renderfile, headless
 
-MODULES = (config, creases, checks, copies, shading, memory, welding, cache, workers, camera, engine, renderfile, headless, reparam,)
+MODULES = (config, workscene, reparam, checks, creases, shading, copies, welding, memory, cache, workers, camera, engine, renderfile, headless,)
 
 def _owners(modules):
     """name -> module that defines it: everything a module binds itself (functions and classes defined

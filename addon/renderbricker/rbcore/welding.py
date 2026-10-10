@@ -4,7 +4,7 @@ import bpy, bmesh, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
-from . import checks, config, copies, creases, shading
+from . import checks, config, copies, creases, shading, workscene
 
 
 # ================================================================ rules 3.0: weld (runs 48-50)
@@ -24,23 +24,6 @@ PLANE_DEBUG = False
 
 
 EXCLUDE_PLANE = []       # W13 released around these folding faces: (centre, reach), run 58
-
-
-# Subdivision modifier uv_smooth (W14): Keep Corners, Junctions, Concave since rules 3.4 (run 212) - Keep Boundaries
-# (run 58) left textures squeezed where the subdivision moves points of a face into a rounding (3044v2: streaks of
-# its grainy slope texture along the rounded edges; distorted child faces 10.6 % -> 4.3 %, prints more exact)
-UV_SMOOTH = config.opt("--uv-smooth", "PRESERVE_CORNERS_JUNCTIONS_AND_CONCAVE")
-
-
-# W14c (rules 3.6, runs 212-221): the copies keep linear UVs and their points slide back along the smooth surface to
-# their import place (rbcore/reparam.py), so every texture lies where it lies on the import; UV_SMOOTH stays the fallback
-REPARAM = config.opt("--reparam", "1") == "1"
-
-
-UV_PROJECT = config.opt("--uv-project", "0") == "1"   # UVs from the original triangles - tested, off (run 58: distorts lettering)
-
-
-UV_CHUNK = 2_000_000     # corners per step of the UV projection
 
 
 INNER_SHARP = float(config.opt("--inner-sharp", "85"))   # inner island edge creased from this dihedral (W12, run 57)
@@ -768,7 +751,7 @@ def bulge_check(work, wm, rungs):
     if not rungs:
         return []
     bvh = BVHTree.FromPolygons([v.co.copy() for v in wm.vertices], [tuple(p.vertices) for p in wm.polygons])
-    dg = copies.depsgraph_of(work)
+    dg = workscene.depsgraph_of(work)
     ev = work.evaluated_get(dg).to_mesh()
     co = np.empty(len(ev.vertices) * 3); ev.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
     bad = []
@@ -813,8 +796,8 @@ def weld_work(orig, repair=True):
     report); the caller removes object and mesh."""
     EXCLUDE_RUNG.clear(); EXCLUDE_PLANE.clear()
     wm, tv, rep = weld(orig)
-    work = bpy.data.objects.new(copies.WORK_NAME, wm)
-    copies.link_work(work)
+    work = bpy.data.objects.new(workscene.WORK_NAME, wm)
+    workscene.link_work(work)
     creases.add_subsurf(work)
     bad = bulge_check(work, wm, rep.pop("_rungs", []))
     if bad:
@@ -822,8 +805,8 @@ def weld_work(orig, repair=True):
         bpy.data.objects.remove(work); bpy.data.meshes.remove(wm)
         wm, tv, rep = weld(orig)
         rep.pop("_rungs", None)
-        work = bpy.data.objects.new(copies.WORK_NAME, wm)
-        copies.link_work(work)
+        work = bpy.data.objects.new(workscene.WORK_NAME, wm)
+        workscene.link_work(work)
         creases.add_subsurf(work)
     rep["tips_bulged"] = len(bad)
     rep["repair_passes"] = 0
@@ -853,15 +836,16 @@ def repair_work(orig, work, wm, tv, rep):
         rep2.pop("_rungs", None)
         rep2["tips_bulged"] = rep["tips_bulged"]
         rep = rep2
-        work = bpy.data.objects.new(copies.WORK_NAME, wm)
-        copies.link_work(work)
+        work = bpy.data.objects.new(workscene.WORK_NAME, wm)
+        workscene.link_work(work)
         creases.add_subsurf(work)
         rep["repair_passes"] = repair_folds(work, wm)
         rep["plane_released"] = len(left)
     return work, wm, tv, rep
 
 
-def bake_levels(orig, work, levels, tv):
+def _bake_work(orig, work, levels, tv):
+    """The copies of the given levels from the finished work object, marked as made by the weld."""
     made = {}
     for lv in sorted(levels):
         cp = copies.bake_copy(orig, work, lv)
@@ -886,7 +870,7 @@ def _bake_weld(orig, levels, method_rep=None):
     # meshes need the repair anyway and were then baked twice - slower (349 -> 396 s)
     work, wm, tv, rep = weld_work(orig)
     try:
-        made = bake_levels(orig, work, levels, tv)
+        made = _bake_work(orig, work, levels, tv)
         # W10b (run 211): the repair checks the work object at the modifier's quality 3, the copies are baked at
         # the bake quality (10 / 6) - a fold that only exists from quality 4 up passes the repair (46524: four
         # tiny faces). The baked copy is tested for free; only if it folds is the repair run again at the bake
@@ -898,12 +882,65 @@ def _bake_weld(orig, levels, method_rep=None):
             rep["repair_bake_quality"] = repair_folds(work, wm)
             for cp in made.values():
                 copies.discard_copy(orig, cp)
-            made = bake_levels(orig, work, levels, tv)
+            made = _bake_work(orig, work, levels, tv)
     finally:
         bpy.data.objects.remove(work)
         bpy.data.meshes.remove(wm)
-        copies.drop_work_scene()
+        workscene.drop_work_scene()
     return made, rep
+
+
+def bake_levels(orig, levels):
+    """Bake further copies of an already processed mesh - the creases are on the original,
+    so no rules run: only the subdivision (variant of the existing copies)."""
+    have = copies.copies_by_level(orig)
+    variant = next((m.get("rb_variant") for m in have.values() if m.get("rb_variant")), config.SHADING)
+    if config.METHOD == "weld" and (not have or any(m.get("rb_method") == "weld" for m in have.values())):
+        keep, config.SHADING = config.SHADING, variant       # weld copies: the creases live only in the welded copy
+        try:
+            made, _ = _bake_weld(orig, levels)
+        finally:
+            config.SHADING = keep
+        for lv, cp in made.items():
+            cp.name = f"{orig.name} L{lv}"
+        return made
+    keep, config.SHADING = config.SHADING, variant
+    work = workscene.work_object(orig)
+    made = {}
+    try:
+        creases.add_subsurf(work)
+        if variant == "geometric":
+            E = {i for i, d in enumerate(orig.attributes["crease_edge"].data) if d.value > 0}
+            shading.geometric_shading(work, orig, E)
+        for lv in levels:
+            made[lv] = copies.bake_copy(orig, work, lv)
+            made[lv].name = f"{orig.name} L{lv}"
+    finally:
+        bpy.data.objects.remove(work)
+        workscene.drop_work_scene()
+        config.SHADING = keep
+    return made
+
+
+def set_levels(orig, view, render, obs=None):
+    """Viewport / render level of a processed mesh: bake what is missing, point the links
+    (all objects of this mesh unless `obs` is given; switched-off ones stay off), drop
+    copies of other levels that nothing uses. Returns the number of copies baked."""
+    missing = copies.missing_levels(orig, view, render)
+    if missing:
+        bake_levels(orig, missing)
+    have = copies.copies_by_level(orig)
+    orig["rb_view"] = have[view].name if view else ""
+    orig["rb_render"] = have[render].name if render else ""
+    if obs is None:
+        obs = [o for o in bpy.data.objects if o.type == 'MESH' and copies.original_of(o.data) == orig]
+    copies.point_links([o for o in obs if not o.get("rb_off")], orig, "view")
+    keep = {have[lv] for lv in (set(config.PRE_LEVELS) | {view, render}) if lv in have}
+    copies.drop_copies(orig, keep)
+    return len(missing)
+
+
+# ---- up to add-on 1.3: masters, instances and per-object modifiers (removed on Apply)
 
 
 def process(me, obs):
@@ -971,7 +1008,7 @@ def process_24(me, obs):
     for ob in obs:             # up to add-on 1.3: instances / per-object modifiers
         copies.unlink_instance(ob)
     copies.remove_master(orig)
-    work = copies.work_object(orig)
+    work = workscene.work_object(orig)
     try:
         mod = creases.add_subsurf(work)
         mod.use_custom_normals = False
@@ -988,7 +1025,7 @@ def process_24(me, obs):
         made = {lv: copies.bake_copy(orig, work, lv) for lv in sorted(levels)}
     finally:
         bpy.data.objects.remove(work)
-        copies.drop_work_scene()
+        workscene.drop_work_scene()
     # older copies: every link still on one of them (also outside `obs`) moves to the new
     # viewport copy - links share the mesh - then they are removed
     view = made.get(config.VIEW_LEVEL, orig)

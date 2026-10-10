@@ -1,10 +1,7 @@
 """The subdivided copies of a part: baking a level, UVs, links pointing to the copy of a level, masters."""
 import bpy
 import numpy as np
-from . import config, creases, shading, welding, reparam
-
-
-WORK_NAME = "RB work"
+from . import config, creases, reparam, workscene
 
 
 def original_of(me):
@@ -72,44 +69,6 @@ def all_copies(orig):
     return [m for m in bpy.data.meshes if m.library is None and m.get("rb_original") == orig.name]
 
 
-WORK_SCENE = "RB work scene"
-
-
-def work_scene():
-    """A scene of its own for the temporary work object (run 52): evaluating it in the user's
-    scene re-evaluated the whole dependency graph each time - 96 ms per evaluation with the
-    4,966 objects of NINJAGO_City, 1 ms in a scene of its own."""
-    sc = bpy.data.scenes.get(WORK_SCENE)
-    if sc is None:
-        sc = bpy.data.scenes.new(WORK_SCENE)
-    return sc
-
-
-def drop_work_scene():
-    sc = bpy.data.scenes.get(WORK_SCENE)
-    if sc is not None and not sc.collection.all_objects:
-        bpy.data.scenes.remove(sc)
-
-
-def link_work(ob):
-    work_scene().collection.objects.link(ob)
-    return ob
-
-
-def depsgraph_of(ob):
-    """Evaluated dependency graph of the scene the object lives in."""
-    sc = ob.users_scene[0] if ob.users_scene else bpy.context.scene
-    if sc == bpy.context.scene:
-        return bpy.context.evaluated_depsgraph_get()
-    with bpy.context.temp_override(scene=sc, view_layer=sc.view_layers[0]):
-        return bpy.context.evaluated_depsgraph_get()
-
-
-def work_object(me):
-    """Temporary object in a scene of its own: the only thing that ever carries a modifier."""
-    return link_work(bpy.data.objects.new(WORK_NAME, me))
-
-
 def bake_copy(orig, work, level):
     """Evaluate `work` (the original with the finished creases) at `level` and store the
     result as a mesh of its own - positions and custom normals identical to the modifier
@@ -125,13 +84,13 @@ def bake_copy(orig, work, level):
             # the default quality 3: seams opened by up to 0.018 (run 42). Quality 10 is exact
             # there (0.0); used only for the copies, the checks keep the fast default.
             mod.quality = bake_quality(orig)
-            if welding.REPARAM:
+            if config.REPARAM:
                 mod.uv_smooth = 'NONE'                  # W14c: linear UVs, the points slide back below
                 reparam.mark(work)
-        dg = depsgraph_of(work)
+        dg = workscene.depsgraph_of(work)
         oe = work.evaluated_get(dg)
         cp = bpy.data.meshes.new_from_object(oe, preserve_all_data_layers=True, depsgraph=dg)
-        if mod and welding.REPARAM:
+        if mod and config.REPARAM:
             try:
                 par = reparam.param_positions(cp)
                 if par is not None:
@@ -139,8 +98,8 @@ def bake_copy(orig, work, level):
             except Exception as e:                      # never leave linear UVs on unslid points: W14's smoothed UVs
                 print(f"Renderbricker: reparametrisation failed for {orig.name} ({type(e).__name__}: {e}) - smoothed UVs")
                 bpy.data.meshes.remove(cp)
-                mod.uv_smooth = welding.UV_SMOOTH
-                dg = depsgraph_of(work); dg.update()
+                mod.uv_smooth = config.UV_SMOOTH
+                dg = workscene.depsgraph_of(work); dg.update()
                 cp = bpy.data.meshes.new_from_object(work.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
     finally:
         config.LEVELS = keep
@@ -151,7 +110,7 @@ def bake_copy(orig, work, level):
     if _COPY_INDEX[0] is not None:
         _COPY_INDEX[0].setdefault(orig.name, []).append(cp)
     cp.use_fake_user = True      # a copy no link uses right now (L1, the render copy) is saved too (run 40)
-    if welding.UV_PROJECT:
+    if config.UV_PROJECT:
         project_uvs(orig, cp, level)
     strip_copy(cp)
     return cp
@@ -216,8 +175,8 @@ def project_uvs(orig, cp, level):
     best = np.full(n, np.inf); btri = np.full(n, -1, np.int64); bw = np.zeros((n, 3))
     kmax = int(tcount.max()) if nt else 0
     for k in range(kmax):
-        for c0 in range(0, n, welding.UV_CHUNK):          # chunks: a 4.5 M-face copy has 18 M corners
-            idx = np.nonzero(tcount[owner[c0:c0 + welding.UV_CHUNK]] > k)[0] + c0
+        for c0 in range(0, n, config.UV_CHUNK):          # chunks: a 4.5 M-face copy has 18 M corners
+            idx = np.nonzero(tcount[owner[c0:c0 + config.UV_CHUNK]] > k)[0] + c0
             if not len(idx):
                 continue
             t = tstart[owner[idx]] + k
@@ -322,58 +281,6 @@ def up_to_date(orig, view, render):
                and have[lv].get("rb_src") == src for lv in need)
 
 
-def bake_levels(orig, levels):
-    """Bake further copies of an already processed mesh - the creases are on the original,
-    so no rules run: only the subdivision (variant of the existing copies)."""
-    pass
-    have = copies_by_level(orig)
-    variant = next((m.get("rb_variant") for m in have.values() if m.get("rb_variant")), config.SHADING)
-    if config.METHOD == "weld" and (not have or any(m.get("rb_method") == "weld" for m in have.values())):
-        keep, config.SHADING = config.SHADING, variant       # weld copies: the creases live only in the welded copy
-        try:
-            made, _ = welding._bake_weld(orig, levels)
-        finally:
-            config.SHADING = keep
-        for lv, cp in made.items():
-            cp.name = f"{orig.name} L{lv}"
-        return made
-    keep, config.SHADING = config.SHADING, variant
-    work = work_object(orig)
-    made = {}
-    try:
-        creases.add_subsurf(work)
-        if variant == "geometric":
-            E = {i for i, d in enumerate(orig.attributes["crease_edge"].data) if d.value > 0}
-            shading.geometric_shading(work, orig, E)
-        for lv in levels:
-            made[lv] = bake_copy(orig, work, lv)
-            made[lv].name = f"{orig.name} L{lv}"
-    finally:
-        bpy.data.objects.remove(work)
-        drop_work_scene()
-        config.SHADING = keep
-    return made
-
-
-def set_levels(orig, view, render, obs=None):
-    """Viewport / render level of a processed mesh: bake what is missing, point the links
-    (all objects of this mesh unless `obs` is given; switched-off ones stay off), drop
-    copies of other levels that nothing uses. Returns the number of copies baked."""
-    missing = missing_levels(orig, view, render)
-    if missing:
-        bake_levels(orig, missing)
-    have = copies_by_level(orig)
-    orig["rb_view"] = have[view].name if view else ""
-    orig["rb_render"] = have[render].name if render else ""
-    if obs is None:
-        obs = [o for o in bpy.data.objects if o.type == 'MESH' and original_of(o.data) == orig]
-    point_links([o for o in obs if not o.get("rb_off")], orig, "view")
-    keep = {have[lv] for lv in (set(config.PRE_LEVELS) | {view, render}) if lv in have}
-    drop_copies(orig, keep)
-    return len(missing)
-
-
-# ---- up to add-on 1.3: masters, instances and per-object modifiers (removed on Apply)
 MASTER_COLL = "Renderbricks Masters"
 
 
