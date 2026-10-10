@@ -26,6 +26,9 @@ EEVEE_IDS = ('BLENDER_EEVEE', 'BLENDER_EEVEE_NEXT')
 _TABLE = []
 
 
+_EEVEE = []
+
+
 def engine_ids():
     return {e.identifier for e in bpy.types.RenderSettings.bl_rna.properties['engine'].enum_items}
 
@@ -180,42 +183,50 @@ def sync(scene):
     _show(ob, energy > 0)
 
 
+def eevee_table():
+    """The EEVEE settings of the EEVEE button: eevee_settings.json beside this file (UPDATES #38). The values are
+    data, not code, so the importers read the same table - before, they only saw the setup scene, which keeps
+    Blender's plain EEVEE values (ray tracing off). Without the file the add-on is not installed whole."""
+    if not _EEVEE:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eevee_settings.json")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                _EEVEE.append(json.load(fh))
+        except (OSError, ValueError) as e:
+            raise RuntimeError(f"Renderbricker: {os.path.basename(path)} cannot be read ({e}) - install the add-on again")
+    return _EEVEE[0]
+
+
+def _set_known(target, values):
+    """Set the values this Blender has on `target`; a setting of a newer version is left out."""
+    for k, v in values.items():
+        if hasattr(target, k):
+            try:
+                setattr(target, k, v)
+            except (TypeError, ValueError, AttributeError):
+                pass
+
+
 def eevee_best(scene):
     """Everything EEVEE can do (user: "EEVEE shall use everything the renderer can do"): ray tracing at
     full resolution with denoising, Fast GI global illumination at full quality, shadows with the most
-    rays and steps, a sharp world probe. Only settings of this Blender that exist are set."""
+    rays and steps, a sharp world probe. The values are those of eevee_table():
+      eevee                 shadows 4 rays / 16 steps; soft shadows in the viewport too - without jitter the shadow
+                            map's texels show as steps on curved parts (run 201); samples viewport 128, render 256
+                            (user, 2026-10-02)
+      ray_tracing_options   Backface Hit (Blender 5.2+, off in setup files older than the option) and full trace
+                            quality: arches and insides darken like in Cycles (run 236: 2.30 -> 2.15 % from Cycles,
+                            insides 5.01 -> 4.27 %)
+      world                 the probe of the sky world"""
+    table = eevee_table()
     e = scene.eevee
-    wanted = {"use_shadows": True, "shadow_ray_count": 4, "shadow_step_count": 16, "shadow_resolution_scale": 1.0,
-              "use_raytracing": True, "ray_tracing_method": 'SCREEN', "use_fast_gi": True,
-              "fast_gi_method": 'GLOBAL_ILLUMINATION', "fast_gi_quality": 1.0, "fast_gi_step_count": 16,
-              "fast_gi_ray_count": 4, "fast_gi_resolution": '1',
-              # soft shadows in the viewport too: without jitter the shadow map's texels show as steps
-              # on curved parts (run 201)
-              "use_shadow_jitter_viewport": True,
-              "taa_samples": 128, "taa_render_samples": 256}   # viewport 128, render 256 (user, 2026-10-02)
-    for k, v in wanted.items():
-        if hasattr(e, k):
-            try:
-                setattr(e, k, v)
-            except (TypeError, ValueError):
-                pass
+    _set_known(e, table.get("eevee", {}))
     opts = getattr(e, "ray_tracing_options", None)
     if opts is not None:
-        # Backface Hit (Blender 5.2+, off in setup files older than the option) and full trace quality: arches
-        # and insides darken like in Cycles (run 236: 2.30 -> 2.15 % from Cycles, insides 5.01 -> 4.27 %)
-        for k, v in {"resolution_scale": '1', "use_denoise": True, "trace_max_roughness": 1.0,
-                     "use_backface_hit": True, "backface_radiance_scale": 0.25, "screen_trace_quality": 1.0}.items():
-            if hasattr(opts, k):
-                try:
-                    setattr(opts, k, v)
-                except (TypeError, ValueError):
-                    pass
+        _set_known(opts, table.get("ray_tracing_options", {}))
     sky = camera.sky_world()
-    if sky is not None and hasattr(sky, "probe_resolution"):
-        try:
-            sky.probe_resolution = '2048'
-        except (TypeError, ValueError):
-            pass
+    if sky is not None:
+        _set_known(sky, table.get("world", {}))
 
 
 def set_engine(scene, name):

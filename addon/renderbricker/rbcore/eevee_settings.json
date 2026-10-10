@@ -1,0 +1,31 @@
+{
+ "about": "The EEVEE settings Renderbricker's EEVEE button sets (rbcore/engine.py, eevee_best): everything EEVEE can do. One table, read by the add-on itself and by the importers' build, so both set the same (UPDATES #38). Only the settings a Blender version has are set. The setup scene (setup/renderbricks_setup.blend) keeps Blender's plain EEVEE values; this table is what overrides them.",
+ "eevee": {
+  "use_shadows": true,
+  "shadow_ray_count": 4,
+  "shadow_step_count": 16,
+  "shadow_resolution_scale": 1.0,
+  "use_raytracing": true,
+  "ray_tracing_method": "SCREEN",
+  "use_fast_gi": true,
+  "fast_gi_method": "GLOBAL_ILLUMINATION",
+  "fast_gi_quality": 1.0,
+  "fast_gi_step_count": 16,
+  "fast_gi_ray_count": 4,
+  "fast_gi_resolution": "1",
+  "use_shadow_jitter_viewport": true,
+  "taa_samples": 128,
+  "taa_render_samples": 256
+ },
+ "ray_tracing_options": {
+  "resolution_scale": "1",
+  "use_denoise": true,
+  "trace_max_roughness": 1.0,
+  "use_backface_hit": true,
+  "backface_radiance_scale": 0.25,
+  "screen_trace_quality": 1.0
+ },
+ "world": {
+  "probe_resolution": "2048"
+ }
+}
