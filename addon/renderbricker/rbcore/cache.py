@@ -1,5 +1,5 @@
 """The cache file next to the scene: write, link (library overrides), move, copy, embed, remove."""
-import bpy
+import bpy, json, os, queue, shutil, subprocess, tempfile, threading, time, types
 from . import config, copies
 
 
@@ -26,7 +26,6 @@ CACHE_WRITTEN = [None]    # copies the parallel run already put into the cache (
 def cache_path_for(blend, tag=None):
     """<scene>_rbcache.blend next to the scene (run 62; the version belongs in the scene name,
     a cache belongs to exactly one scene file)."""
-    import os
     return os.path.splitext(blend)[0] + "_rbcache.blend"
 
 
@@ -40,7 +39,6 @@ def cache_library():
 
 def cache_state():
     """(library, its file, the file it should be next to the scene, file exists) or None."""
-    import os
     lib = cache_library()
     if lib is None:
         return None
@@ -61,7 +59,6 @@ def relink_cache(lib, path):
 def move_cache():
     """The cache file next to the scene under the scene's name, the link updated (run 63: after
     Save As under another name or in another folder). Returns (old path, new path)."""
-    import os, shutil
     st = cache_state()
     if st is None:
         raise RuntimeError("no cache file linked")
@@ -81,7 +78,6 @@ def move_cache():
 def relink_cache_on_load():
     """After loading: the linked cache file is gone, but <scene>_rbcache.blend lies next to the
     scene (both moved or renamed in the Explorer) - link that one. Returns True if relinked."""
-    import os
     st = cache_state()
     if st is None or st[3] or not bpy.data.filepath:
         return False
@@ -116,7 +112,6 @@ def object_materials(ob, orig, on=True):
 def run_steps(gen, wait=0.2):
     """Run a step generator to its end (headless, scripts); it yields (fraction, text[, waiting])
     and returns its result. waiting: nothing to do but wait for a helper process."""
-    import time
     try:
         while True:
             st = next(gen)
@@ -141,16 +136,51 @@ def write_cache_steps(path, files=(), fresh=()):
     The objects keep the materials on their mesh: the override of each copy carries the
     original's materials (with object-level materials Cycles stopped sharing a mesh between
     objects - Dungeon ran out of GPU memory, run 64/65). One pass over meshes and objects; copies
-    of an earlier cache that stay are carried over by a helper Blender (run 62)."""
-    import os, json, subprocess, tempfile, time
-    T = [time.time()]
+    of an earlier cache that stay are carried over by a helper Blender (run 62).
 
-    def mark(what):
-        if CACHE_DEBUG:
-            print(f"CACHETIME {what} {time.time() - T[0]:.1f} s", flush=True)
-        T[0] = time.time()
-
+    The phases, each a function below, hand their results on in one namespace `c`:
+    _index (read the scene) -> _objects_to_originals -> _sort_copies (new, to drop, to carry over)
+    -> _write_file_steps (the file, next to its place) -> _remove_copies -> _link_steps (the file
+    at its place, linked) -> _override_steps (overrides, materials, objects back on their copies)."""
+    c = types.SimpleNamespace(path=path, files=files, tmp=path + ".writing", T=[time.time()])
     yield (0.0, "preparing the cache file")
+    _index(c)
+    _objects_to_originals(c)
+    _mark(c, "objects to originals")
+    _sort_copies(c, fresh)
+    yield (0.05, "writing the cache file")
+    yield from _write_file_steps(c)
+    _mark(c, "write")
+    yield (0.76, "writing the cache file")
+    _remove_copies(c)
+    _mark(c, "remove")
+    if not c.names:
+        return 0
+    os.replace(c.tmp, path)
+    refs_new = yield from _link_steps(c)
+    _mark(c, "link")
+    yield from _override_steps(c, refs_new)
+    _mark(c, "overrides")
+    return len(c.names)
+
+
+def _mark(c, what):
+    """Time of a phase of write_cache_steps for the console (CACHE_DEBUG)."""
+    if CACHE_DEBUG:
+        print(f"CACHETIME {what} {time.time() - c.T[0]:.1f} s", flush=True)
+    c.T[0] = time.time()
+
+
+def _level_of(name):
+    """The level in the name of a copy ('3001 L2' -> 2), None without one."""
+    tail = name.rsplit(" L", 1)[-1] if name else ""
+    return int(tail) if tail.isdigit() else None
+
+
+def _index(c):
+    """Phase 1 of write_cache_steps: reads the scene, changes nothing. Adds copies_of {original name: its
+    copies}, origs (the processed originals), users {original name: its objects}, shown {object name: the
+    level it shows now} and want {original name: {'view' / 'render': level}}."""
     # indexes: copies and objects per original (local data-blocks; linked ones are references)
     copies_of, local = {}, {}
     for m in bpy.data.meshes:
@@ -170,26 +200,36 @@ def write_cache_steps(path, files=(), fresh=()):
     shown = {ob.name: (int(ob.data["rb_level"]) if ob.data.get("rb_original") else
                        (-1 if ob.get("rb_show_view") else 0))
              for obs in users.values() for ob in obs}
-    def level_of(name):
-        tail = name.rsplit(" L", 1)[-1] if name else ""
-        return int(tail) if tail.isdigit() else None
-
     want = {}
     for orig in origs:
         want[orig.name] = {}
         for w in ("view", "render"):
             cp = copies.copy_of(orig, w)
-            lv = int(cp["rb_level"]) if cp is not None else level_of(orig.get(f"rb_{w}", ""))
+            lv = int(cp["rb_level"]) if cp is not None else _level_of(orig.get(f"rb_{w}", ""))
             if lv:
                 want[orig.name][w] = lv
-    fresh = set(fresh)
+    c.copies_of, c.origs, c.users, c.shown, c.want = copies_of, origs, users, shown, want
+
+
+def _objects_to_originals(c):
+    """Phase 2: every object back on its original with the materials on the mesh, the holds of an earlier
+    cache released - from here to _override_steps the scene shows the originals."""
+    origs, users = c.origs, c.users
     for orig in origs:
         for ob in users[orig.name]:
             object_materials(ob, orig, False)    # materials on the mesh (also 1.9.0/1.9.1 scenes)
             ob.data = orig
         for k in [k for k in orig.keys() if k.startswith(CACHE_KEEP)]:
             del orig[k]
-    mark("objects to originals")
+
+
+def _sort_copies(c, fresh):
+    """Phase 3: which copies go where. Adds new (baked here, to write), drop (local, of a level nobody wants),
+    old (overrides and links of an earlier cache), carry {earlier cache file: names of the copies to take
+    over} and names (every copy the new cache file holds). The new copies get their cache name and empty
+    material slots."""
+    copies_of, want = c.copies_of, c.want
+    fresh = set(fresh)
     # new copies (local, baked here) to write; copies of an earlier cache (overrides or linked)
     # to carry over from their file
     new, drop, old = [], [], []
@@ -216,8 +256,14 @@ def write_cache_steps(path, files=(), fresh=()):
             cp.materials[i] = None           # the overrides get the materials in this file
     names = ({cp.name for cp in new} | {n for ns in carry.values() for n in ns}
              | {f"{o} L{lv}" for o, lv in fresh})
-    tmp = path + ".writing"
-    yield (0.05, "writing the cache file")
+    c.new, c.drop, c.old, c.carry, c.names = new, drop, old, carry, names
+
+
+def _write_file_steps(c):
+    """Phase 4 (generator): the cache file at c.tmp. New copies alone are written from this Blender in one
+    call; with parts of workers (c.files) or copies to carry over, a helper Blender joins them in the
+    background (headless --merge-cache) while this one yields the progress."""
+    new, carry, files, tmp = c.new, c.carry, c.files, c.tmp
     # the compressed write is one call without progress (Dungeon 39 s, the text is on screen).
     # Tried in run 69: uncompressed to the temp folder + the helper compressing in the
     # background - progress all the way, but 82 s instead of 65 s: the direct call stays.
@@ -243,7 +289,6 @@ def write_cache_steps(path, files=(), fresh=()):
                                  config.ENTRY, "--", "--merge-cache", job],
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        import threading, queue
         q, tail = queue.Queue(), []
         threading.Thread(target=lambda: [q.put(x) for x in proc.stdout], daemon=True).start()
         loaded = 0
@@ -263,18 +308,24 @@ def write_cache_steps(path, files=(), fresh=()):
                 os.remove(f)
         if not os.path.exists(tmp):
             raise RuntimeError("cache merge failed: " + "".join(tail)[-500:])
-    mark("write")
-    yield (0.76, "writing the cache file")
+
+
+def _remove_copies(c):
+    """Phase 5: the copies leave this file - they are in the cache file now, or nobody wants them - and with
+    them the references and libraries of an earlier cache."""
+    new, drop, old = c.new, c.drop, c.old
     refs = [cp.override_library.reference for cp in old if cp.override_library is not None
             and cp.override_library.reference is not None]
     gone = list({*drop, *new, *old, *refs})
     if gone:
         bpy.data.batch_remove(gone)
     cleanup_libraries()
-    mark("remove")
-    if not names:
-        return 0
-    os.replace(tmp, path)
+
+
+def _link_steps(c):
+    """Phase 6 (generator): the copies of the cache file at c.path linked into this file. Returns the linked
+    meshes."""
+    path, names = c.path, c.names
     # one call without progress: in portions every call reads the file again (Dungeon: all at
     # once 36 s, 12 portions 63 s, run 70) - instead an estimate from the size and the speed of
     # the last link on this computer
@@ -286,9 +337,15 @@ def write_cache_steps(path, files=(), fresh=()):
         dst.meshes = [n for n in src.meshes if n in names]
     if size > 50e6:
         LINK_RATE[0] = size / max(0.5, time.time() - t_link)
-    mark("link")
+    return [r for r in dst.meshes if r is not None]
+
+
+def _override_steps(c, refs_new):
+    """Phase 7 (generator): a library override per linked copy; every original gets the materials on its
+    copies, the hold on them (CACHE_KEEP) and their names (rb_view / rb_render), and its objects show
+    again what they showed before (c.shown)."""
+    origs, users, shown, want = c.origs, c.users, c.shown, c.want
     by_orig = {}
-    refs_new = [r for r in dst.meshes if r is not None]
     for i, ref in enumerate(refs_new):
         ov = ref.override_create(remap_local_usages=False)     # one by one with remap: 192 s (run 65)
         if ov is None:          # 5.3: a linked mesh without a user counts as indirect - a user first (run 71)
@@ -316,8 +373,6 @@ def write_cache_steps(path, files=(), fresh=()):
         for ob in users[orig.name]:
             lv = shown[ob.name]              # -1: new copies from the workers - the view copy
             ob.data = (have.get(lv) or view or orig) if lv else orig
-    mark("overrides")
-    return len(names)
 
 
 def override_materials():
@@ -341,7 +396,6 @@ def override_materials():
 def _merge_cache(job):
     """Helper Blender of write_cache: new copies + the copies carried over from earlier cache
     files -> one cache file (in an empty file appending is fast)."""
-    import json
     j = json.load(open(job, encoding="utf-8"))
     ids = []
     for f in ([j["new"]] if isinstance(j["new"], str) and j["new"] else j["new"] or []):
@@ -404,7 +458,6 @@ def embed_cache_steps():
     5,538: 14 s; make_local one by one took 310 s, and copy() of an override is an override
     again). Objects and materials as before, references and library removed. Returns the
     number of copies."""
-    import time
     cached = [m for m in bpy.data.meshes if m.get("rb_original") and (m.override_library is not None or m.library is not None)
               and not getattr(m, "is_missing", False)]
     refs = {m.override_library.reference for m in cached if m.override_library is not None} - {None}
