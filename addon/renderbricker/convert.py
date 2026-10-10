@@ -277,7 +277,8 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         common.object_mode(context)
         s = context.scene.mecsub
         if not common.by_mesh(common.targets(context)):
-            self.report({'WARNING'}, props.scope_empty_text(context))
+            s.summary = props.scope_empty_text(context)     # in the panel too: the list starts empty (UPDATES #33)
+            self.report({'WARNING'}, s.summary)
             return False
         self.items, fresh = self.collect(context)
         for me, obs in fresh:                  # up to date: only new or switched-off links join the copy

@@ -21,9 +21,11 @@ from . import rbcore as core
 if "props" in locals():
     import importlib
     core.reload_all()
-    for _m in (common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels, edit):
+    for _m in (collection_list, common, importer, props, render, camera_ui, logfile, widgets, convert, operators,
+               guide, panels, edit):
         importlib.reload(_m)
-from . import common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels, edit
+from . import (collection_list, common, importer, props, render, camera_ui, logfile, widgets, convert, operators,
+               guide, panels, edit)
 
 # the package reads and writes like one module: renderbricker.NAME finds NAME in the module that holds it,
 # renderbricker.NAME = value sets it there (the tests replace open_file and start_script)
@@ -46,7 +48,8 @@ def _owners(modules):
     return out
 
 
-OWNER = _owners((common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels, edit))
+OWNER = _owners((collection_list, common, props, render, camera_ui, logfile, widgets, convert, operators, guide,
+                  panels, edit, importer))
 
 
 class _Package(_types.ModuleType):
@@ -68,7 +71,8 @@ _sys.modules[__name__].__class__ = _Package
 
 
 classes = (props.MECSUB_Problem, props.MECSUB_CollectionItem, props.MECSUB_Settings, props.MECSUB_UL_collections,
-           props.MECSUB_OT_collection_add, props.MECSUB_OT_collection_remove, logfile.MECSUB_OT_open_log, convert.MECSUB_OT_apply, convert.MECSUB_OT_check, convert.MECSUB_OT_levels, operators.MECSUB_OT_toggle,
+           props.MECSUB_OT_collection_add, props.MECSUB_OT_collection_remove, props.MECSUB_OT_collection_clear,
+           props.MECSUB_MT_collection_add, props.MECSUB_MT_collection_remove, logfile.MECSUB_OT_open_log, convert.MECSUB_OT_apply, convert.MECSUB_OT_check, convert.MECSUB_OT_levels, operators.MECSUB_OT_toggle,
            operators.MECSUB_OT_remove, operators.MECSUB_OT_select, operators.MECSUB_OT_headless, panels.MECSUB_PT_panel, operators.MECSUB_OT_move_cache, operators.MECSUB_OT_copy_cache,
            operators.MECSUB_OT_cache_switch, operators.MECSUB_OT_render_scene, render.MECSUB_OT_render, panels.MECSUB_PT_about,
            guide.MECSUB_OT_guide_start, guide.MECSUB_OT_guide_nav, guide.MECSUB_OT_guide_exit, props.MECSUB_OT_level_confirm,
@@ -89,6 +93,12 @@ def _unlock(*args):
             sc.mecsub.running = False
         if getattr(sc, "mecsub", None) and sc.mecsub.collection is not None and not len(sc.mecsub.collections):
             sc.mecsub.collections.add().collection = sc.mecsub.collection
+    try:
+        for sc in props.scope_from_before():        # saved with the scope All (up to 1.2.7, UPDATES #33)
+            sc.mecsub.summary = ("The scope All is gone: select a part of the model and press + to put its collection "
+                                 "into the list - converted parts stay as they are")
+    except Exception:
+        pass
     try:
         relinked = core.relink_cache_on_load()      # scene and cache moved or renamed together
     except Exception:

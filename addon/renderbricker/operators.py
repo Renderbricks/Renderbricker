@@ -38,14 +38,32 @@ class MECSUB_OT_toggle(bpy.types.Operator):
 class MECSUB_OT_remove(bpy.types.Operator):
     bl_idname = "mecsub.remove"
     bl_label = "Remove"
-    bl_description = "Links back to the original meshes; copies and crease attributes removed (plain import)"
     bl_options = {'REGISTER', 'UNDO'}
+    # Remove All (UPDATES #33; up to 1.2.7 the scope All): the whole file, after a question - it reaches every
+    # model in it
+    whole: bpy.props.BoolProperty(default=False, options={'SKIP_SAVE'})
+
+    @classmethod
+    def description(cls, context, properties):
+        if properties.whole:
+            return ("Every converted part of the file back to its import - all models, in every scene; copies of "
+                    "parts deleted meanwhile go too and the cache file is released")
+        return ("The parts in scope back to their import: links on the original meshes, copies and crease "
+                "attributes removed")
+
+    def invoke(self, context, event):
+        if self.whole:
+            return context.window_manager.invoke_confirm(
+                self, event, title="Remove All",
+                message="Take every converted part of this file back to its import - all models, in every scene?",
+                confirm_text="Remove All", icon='WARNING')
+        return self.execute(context)
 
     def execute(self, context):
         common.object_mode(context)
-        # scope All means the whole file (UPDATES #15, run 220): objects of every scene, and the copies of parts whose
-        # objects were deleted - before, they stayed with a fake user and kept the cache file linked
-        whole = context.scene.mecsub.scope == 'ALL'
+        # the whole file (UPDATES #15, run 220): objects of every scene, and the copies of parts whose objects were
+        # deleted - before, they stayed with a fake user and kept the cache file linked
+        whole = self.whole
         if whole:
             obs = [o for o in bpy.data.objects if o.type == 'MESH' and o.data is not None and o.library is None
                    and not core.is_master(o) and o.name != core.WORK_NAME]
@@ -544,9 +562,9 @@ class MECSUB_OT_headless(bpy.types.Operator):
 
 
 def headless_args(context, out):
-    """Blender's arguments for the headless conversion of the saved scene into `out`. With the scope Selected or
-    Collection the objects in scope go to <out>_objects.json (--objects): only they are converted, everything else
-    stays as it is (UPDATES #24, maintainer 2026-10-10)."""
+    """Blender's arguments for the headless conversion of the saved scene into `out`. The objects in scope go to
+    <out>_objects.json (--objects): only they are converted, everything else stays as it is (UPDATES #24,
+    maintainer 2026-10-10; always, since the scope All is gone - #33)."""
     import os, json
     s = context.scene.mecsub
     args = ["-b", "--factory-startup", bpy.data.filepath, "--python",
@@ -554,11 +572,10 @@ def headless_args(context, out):
             "--", out, "--view-level", str(s.view_level), "--render-level", str(s.render_level),
             "--shading", "mecabricks" if s.variant == 'A' else "geometric", "--jobs", "auto",
             "--low-memory", s.low_memory.lower()]
-    if s.scope != 'ALL':
-        listing = os.path.splitext(out)[0] + "_objects.json"
-        with open(listing, "w", encoding="utf-8") as fh:
-            json.dump(sorted(o.name for o in common.targets(context)), fh, ensure_ascii=False)
-        args += ["--objects", listing]
+    listing = os.path.splitext(out)[0] + "_objects.json"
+    with open(listing, "w", encoding="utf-8") as fh:
+        json.dump(sorted(o.name for o in common.targets(context)), fh, ensure_ascii=False)
+    args += ["--objects", listing]
     if s.use_cache:
         args += ["--cache", core.cache_path_for(out)]
     if s.use_log:

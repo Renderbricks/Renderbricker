@@ -1,6 +1,6 @@
 """The log file next to the scene and saving after the cache was written."""
 import bpy
-from . import common, props
+from . import common, importer, props
 
 
 LOG_SUFFIX = "_Renderbricker.log"       # capital R (user, 2026-09-28; before: _renderbricker.log)
@@ -69,11 +69,12 @@ def write_log(context, label):
     if not s.use_log or not path or not s.summary:
         return
     import datetime
-    scope = {"ALL": "all parts", "SELECTED": "selected parts",
-             "COLLECTION": "collections " + (", ".join(c.name for c in props.scope_collections(s)) or "-")}[s.scope]
+    scope = ("selected parts" if s.scope == 'SELECTED' else
+             "collections " + (", ".join(c.name for c in props.scope_collections(s)) or "-"))
     lines = [f"=== {datetime.datetime.now():%Y-%m-%d %H:%M:%S}  {label}  "
              f"(Renderbricker {common.VERSION}, Blender {bpy.app.version_string})",
              f"scene: {bpy.data.filepath}",
+             importer.importer_log(),
              f"settings: {scope}, variant {s.variant}, viewport {s.view_level}, render {s.render_level}, "
              f"several Blender processes {'on' if s.use_cores else 'off'} (Low Memory {s.low_memory.lower()}), cache file {'on' if s.use_cache else 'off'}"]
     lines += [f"  - {part}" for part in s.summary.split(", ")]

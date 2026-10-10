@@ -63,14 +63,11 @@ def scope_state(context):
     if s.scope == 'SELECTED':
         ok = any(o.type == 'MESH' for o in context.selected_objects)
         return ok, "Parts selected" if ok else "Select the parts to convert"
-    if s.scope == 'COLLECTION':
-        cols = props.scope_collections(s)
-        if not cols:
-            return False, "Add a collection"
-        ok = any(o.type == 'MESH' for c in cols for o in c.all_objects)
-        return ok, (f"Parts in {', '.join(c.name for c in cols)}" if ok else "The collections have no parts")
-    ok = any(o.type == 'MESH' for o in context.scene.objects)
-    return ok, "All parts of the scene" if ok else "The scene has no parts"
+    cols = props.scope_collections(s)
+    if not cols:
+        return False, "Add a collection"
+    ok = any(o.type == 'MESH' for c in cols for o in c.all_objects)
+    return ok, (f"Parts in {', '.join(c.name for c in cols)}" if ok else "The collections have no parts")
 
 
 _AFTER_SAVE = []          # the one pending "continue after the first save" handler (UPDATES #21)
@@ -143,10 +140,10 @@ def apply_key(context):
     Apply, there is nothing to do (cheap enough for drawing; new parts change the numbers)."""
     s = context.scene.mecsub
     scope = s.scope
-    if scope == 'COLLECTION':
-        scope += ":" + ",".join(sorted(c.collection.name for c in s.collections if c.collection))
-    elif scope == 'SELECTED':
+    if scope == 'SELECTED':
         scope += f":{len(context.selected_objects)}:{getattr(context.active_object, 'name', '')}"
+    else:
+        scope += ":" + ",".join(sorted(c.collection.name for c in s.collections if c.collection))
     objs = context.scene.objects
     n = len(objs) - (1 if objs.get(core.CAMERA_NAME) else 0)     # the render camera is not a part
     return f"{s.variant}|{s.view_level}|{s.render_level}|{scope}|{core.RULES_VERSION}|{len(bpy.data.meshes)}|{n}"

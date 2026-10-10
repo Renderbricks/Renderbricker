@@ -95,10 +95,12 @@ GUIDE = (
         "needs a file first.",
         "Save it under the name you want to keep - Save As offers the name of the imported model.")),
     ("Choose the parts", _g_parts, (
-        "All: every part of the scene.",
+        "Collection: the parts in the collections of the list and their child collections. A model imported with "
+        "the button above is in the list already.",
+        "Select a part of a model and press + to add its collection; with nothing selected, + offers the "
+        "collections that hold parts. - takes one out, the trash empties the list.",
         "Selected: only the objects selected in the viewport or the Outliner.",
-        "Collection: the parts in the collections of the list and their child collections - the list "
-        "starts empty, + adds the collection active in the Outliner. Handy for converting a large scene piece by piece.",
+        "There is no \"all\": other models in the scene are never converted by accident.",
         "The camera icon of a collection marks it for the render camera: with the camera on, only the "
         "marked collections are shown and rendered.",
         "Parts outside the choice stay as imported.")),

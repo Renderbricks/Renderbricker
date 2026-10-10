@@ -39,7 +39,7 @@ To build the package from the source instead: `python scripts/core/build_addon.p
 
 ## Usage
 
-- **Apply** converts all mesh objects (or the selection). Choose viewport and render level first; with "Cache file next to the scene" the scene is saved automatically once the cache is written.
+- **Apply** converts the parts in the collections of the list (or the selection): select a part of the model and press **+** to list its collection – a model imported with *Import from Mecabricks* is listed already. Choose viewport and render level first; with "Cache file next to the scene" the scene is saved automatically once the cache is written.
 - **Subdivision: ON / OFF** switches every link between the subdivided copy and the original.
 - **F12 / Ctrl+F12** render with the render level.
 - **Convert headless** runs the conversion without the window (faster for large scenes).
