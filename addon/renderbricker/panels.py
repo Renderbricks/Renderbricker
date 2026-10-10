@@ -146,7 +146,6 @@ def justified(layout, text, context):
     wid = lambda t: blf.dimensions(0, t)[0]
     region = context.region.width if context.region else 300
     avail = region - 53 * pref.system.ui_scale            # the width of the buttons above (measured)
-    space = wid(" ")
     fills = sorted(((wid(c), c) for c in (chr(0x2005), chr(0x2009), chr(0x200a)) if wid(c) > 0), reverse=True)   # 4/6, thin, hair space
     words = text.split(" ")
     lines, cur = [], []

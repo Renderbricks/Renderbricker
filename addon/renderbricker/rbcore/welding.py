@@ -1,6 +1,6 @@
 """The conversion of one part: weld the islands in a work copy, set the creases (W rules), repair
 folds, bake the copies (process)."""
-import bpy, bmesh, math
+import bpy, bmesh, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
@@ -134,10 +134,42 @@ orig_name = [""]
 
 
 def weld(orig):
+    """The welded work mesh of an imported mesh, with every crease the rules ask for (rules 3.x, docs/RULES.md W).
+
+    The import is only read. Returns (work mesh "<name> RBweld", T vertices [(vertex, host face)], report).
+    The stages hand their results on in `w` (a namespace; each stage says what it reads and what it adds):
+      1 _islands          classify the islands (flat, curved, logo ...) and number them on the faces
+      2 _outline_corners  what must survive the weld: edges inside an island, sharp outline corners, thin wedges
+      3 _weld_seams       weld vertices along real seams only - no face and no corner may be lost
+      4 _seam_creases     seams hard from SEAM_SHARP (thin wedges: WEDGE_SEAM), logo edges
+      5 _hole_rings       the walls of a polygonised hole stay smooth; convex rings and hexagons stay hard (W5b)
+      6 _island_creases   flat stays flat, degenerate faces, steep inner edges (W12), plane beside a bevel (W13)
+      7 _relief_tips      the tips of low relief steps are released
+      8 _pinned_corners   corners on the crease chains: brick and organic thresholds, designed corners (W15)
+      9 _t_vertices       T vertices and open points that stay apart are pinned
+        release_arc_corners   coarse arcs across a flat island (W16)
+     10 _work_mesh        the mesh with crease_edge, crease_vert, sharp_edge and normals; the report"""
     orig_name[0] = orig.name
+    w = types.SimpleNamespace(orig=orig)
+    _islands(w)
+    _outline_corners(w)
+    _weld_seams(w)
+    _seam_creases(w)
+    _hole_rings(w)
+    _island_creases(w)
+    _relief_tips(w)
+    _pinned_corners(w)
+    _t_vertices(w)
+    arc_released = release_arc_corners(w.E, w.V, w.kind_of, w.isl)
+    return _work_mesh(w, arc_released)
+
+
+def _islands(w):
+    """Stage 1. Adds bm (the import as a BMesh), isl (face layer rb_island: the island number), kind_of
+    {island: kind}, flat_share (share of the area in islands that are not curved)."""
+    orig = w.orig
     bm = bmesh.new(); bm.from_mesh(orig)
     bm.faces.ensure_lookup_table()
-    pass
     creases.GEOM_CACHE = None
     isl = bm.faces.layers.int.new("rb_island")     # before classify: a new layer reallocates the faces
     kinds = creases.classify(bm)
@@ -151,6 +183,13 @@ def weld(orig):
     area_all = sum(f.calc_area() for f in bm.faces) or 1.0
     flat_share = sum(f.calc_area() for f in bm.faces if kind_of[f[isl]] != "curved") / area_all
     LAST_FLAT_SHARE[0] = flat_share
+    w.bm, w.isl, w.kind_of, w.flat_share = bm, isl, kind_of, flat_share
+
+
+def _outline_corners(w):
+    """Stage 2, before the weld changes the outlines. Reads bm, isl. Adds interior (the edges inside an island,
+    by position), sharp_pos {position: turn} of the sharp outline corners, wedge_isl (thin wedge islands)."""
+    bm, isl = w.bm, w.isl
     interior = {frozenset((P(e.verts[0].co), P(e.verts[1].co))) for e in bm.edges if len(e.link_faces) == 2}
     # sharp corners of the island outlines (the rules' is_sharp) - they stay corners after
     # welding (run 50: 54200, a corner where three islands meet almost tangentially lost all
@@ -179,6 +218,13 @@ def weld(orig):
     # smooth - on hair 13768 a 29 deg seam of such a wedge made a third crease and so a corner;
     # a general 30 deg seam threshold moved Technic parts by up to 0.32 (run 56)
     wedge_isl = {f[isl] for v in wedge_tips if (creases.turn(v) or 0) >= WEDGE_SEAM_TIP for f in v.link_faces}
+    w.interior, w.sharp_pos, w.wedge_isl = interior, sharp_pos, wedge_isl
+
+
+def _weld_seams(w):
+    """Stage 3. Reads orig, bm, isl. Replaces bm and isl (an attempt that loses a face starts again from a copy,
+    leaving those points apart). Adds tm (the weld map of the last attempt), skip (positions left apart)."""
+    orig, bm, isl = w.orig, w.bm, w.isl
     nf = len(bm.faces)
     fi = bm.faces.layers.int.new("rb_fi")
     for f in bm.faces:
@@ -226,7 +272,14 @@ def weld(orig):
     bm.faces.ensure_lookup_table()
     bm.normal_update()
     bm.verts.index_update(); bm.edges.index_update(); bm.faces.index_update()
+    w.bm, w.isl, w.tm, w.skip = bm, isl, tm, skip
 
+
+def _seam_creases(w):
+    """Stage 4. Reads bm, isl, kind_of, interior, wedge_isl. Adds E (the creased edges: here logo edges and edges
+    of more than two faces), seams (edges between islands), cand (seams sharp enough to stay hard: edge, angle,
+    the two islands - stage 5 decides)."""
+    bm, isl, kind_of, interior, wedge_isl = w.bm, w.isl, w.kind_of, w.interior, w.wedge_isl
     E, seams, cand = set(), set(), []
     for e in bm.edges:
         lf = e.link_faces
@@ -247,6 +300,13 @@ def weld(orig):
         limit = WEDGE_SEAM if (a in wedge_isl or b in wedge_isl) else SEAM_SHARP
         if d >= limit:
             cand.append((e, d, a, b))
+    w.E, w.seams, w.cand = E, seams, cand
+
+
+def _hole_rings(w):
+    """Stage 5. Reads bm, seams, cand. Adds ring (the seam edges between the walls of a polygonised hole - they
+    stay smooth) and puts every other sharp seam of cand into E."""
+    bm, E, seams, cand = w.bm, w.E, w.seams, w.cand
     # ring rule on flat patches (faces joined across non-seam edges within 1 deg): the
     # nostril recess of 10509a4 is one island whose six wall faces meet at slits
     patch, npatch = {}, 0
@@ -337,6 +397,13 @@ def weld(orig):
                 RINGS.append((orig_name[0], len(cyc), round(d0, 1)))
                 break
     E |= {e for e, _, _, _ in cand if e not in ring}
+    w.ring = ring
+
+
+def _island_creases(w):
+    """Stage 6. Reads bm, isl, kind_of. Adds to E the edges inside islands that must stay hard; adds degen_v (the
+    corners of degenerate faces - pinned in stage 8)."""
+    bm, isl, kind_of, E = w.bm, w.isl, w.kind_of, w.E
     # flat stays flat (as R2 of the rules): a flat island without round outline gets all its
     # inner edges creased - left free, its open edges curled inward (run 50: 54200 0.29)
     # degenerate faces of the import (zero area: two corners at one point, 54200 faces 21/35
@@ -382,6 +449,13 @@ def weld(orig):
             if any(parea[patch[x]] >= PLANE_RATIO * max(parea[patch[y]], 1e-9) for x, y in ((f, g), (g, f))):
                 E.add(e); PLANE_EDGES[0] += 1
                 if PLANE_DEBUG: print('PLANEEDGE', [tuple(round(x, 3) for x in v.co) for v in e.verts], round(math.degrees(e.calc_face_angle(0)), 1), round(parea[patch[f]], 3), round(parea[patch[g]], 3))
+    w.degen_v = degen_v
+
+
+def _relief_tips(w):
+    """Stage 7. Reads orig, bm, isl, kind_of, E, ring. Takes the relief tips out of E. Adds rung (those edges),
+    tipv and ringv (the vertices of tips and rings - never pinned), ring_faces (faces that get smooth normals)."""
+    orig, bm, isl, kind_of, E, ring = w.orig, w.bm, w.isl, w.kind_of, w.E, w.ring
     ringv = {v for e in ring for v in e.verts}
     # relief tips (run 48e, zigzag mane of 10509a4): a short creased edge (< RELIEF_H)
     # between two small wall faces (longest edge < RELIEF_FACE), both ends corners of three
@@ -420,12 +494,18 @@ def weld(orig):
                                    for v in e.verts]))
     E -= rung
     tipv = {v for e in rung for v in e.verts}
-    tip_faces = sorted({f.index for e in rung for f in e.link_faces})
     # islands of a ring are round now: their faces get smooth normals instead of the
     # imported per-wall normals, the ring edges are not sharp (nostril, run 48b)
     ring_isl = {f[isl] for e in ring for f in e.link_faces}
     ring_faces = [f.index for f in bm.faces if f[isl] in ring_isl]
+    w.ringv, w.rung, w.tipv, w.ring_faces = ringv, rung, tipv, ring_faces
 
+
+def _pinned_corners(w):
+    """Stage 8. Reads orig, bm, isl, kind_of, E, flat_share, ringv, tipv, sharp_pos, degen_v. Adds V (the pinned
+    corner vertices) and, for W15b, a few more edges to E."""
+    orig, bm, isl, kind_of, E, flat_share = w.orig, w.bm, w.isl, w.kind_of, w.E, w.flat_share
+    ringv, tipv, sharp_pos, degen_v = w.ringv, w.tipv, w.sharp_pos, w.degen_v
     # corner vertices on crease chains, K3/K3b of the rules applied to the chains
     CE = set(E) | {e for e in bm.edges if len(e.link_faces) == 1}
     # organic shapes (every face at the vertex in a curved island: hair, mane) are rounded
@@ -498,7 +578,13 @@ def weld(orig):
           and v not in ringv and v not in tipv and not groove_end(v)
           and sum(1 for e in v.link_edges if e in E) < 3}
     V |= degen_v
+    w.V = V
 
+
+def _t_vertices(w):
+    """Stage 9. Reads bm, V. Adds tv [(vertex, host face)] and pins (adds to V) the T vertices, the ends of their
+    host edges and every open point that stays apart."""
+    bm, V = w.bm, w.V
     # T vertices: open vertex on the inside of another open edge
     tv = []
     be = [e for e in bm.edges if len(e.link_faces) == 1]
@@ -541,7 +627,13 @@ def weld(orig):
         for e in bm.faces[host].edges:
             if e.is_boundary and (bm.verts[vi].co - (e.verts[0].co + e.verts[1].co) / 2).length <= e.calc_length() / 2 + config.MERGE_DIST:
                 V |= set(e.verts)
-    arc_released = release_arc_corners(E, V, kind_of, isl)
+    w.tv = tv
+
+
+def _work_mesh(w, arc_released):
+    """Stage 10. Reads everything; frees bm. Returns (work mesh, T vertices, report) - the result of weld()."""
+    orig, bm, E, V, seams, ring, rung = w.orig, w.bm, w.E, w.V, w.seams, w.ring, w.rung
+    ring_faces, tm, tv, skip = w.ring_faces, w.tm, w.tv, w.skip
     wm = bpy.data.meshes.new(f"{orig.name} RBweld")
     bm.to_mesh(wm)
     for m in orig.materials:

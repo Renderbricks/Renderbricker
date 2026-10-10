@@ -351,7 +351,6 @@ class MECSUB_OT_sun_picture(bpy.types.Operator):
         return sun_poll(context)
 
     def execute(self, context):
-        sc = context.scene
         w = core.sky_world()
         w[core.SUN_PICTURE] = not bool(w.get(core.SUN_PICTURE))
         core.sun_picture_setup(w)
