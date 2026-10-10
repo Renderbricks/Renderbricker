@@ -49,6 +49,11 @@ class MECSUB_PT_panel(bpy.types.Panel):
         row.operator("mecsub.guide_start", icon='HELP')
         body = L.column()
         body.enabled = not s.running
+        source = context.scene.get(core.RENDER_SCENE_MARK)
+        if source:                              # a file written by "Save render scene" (UPDATES #25)
+            col = body.box().column(align=True)
+            col.label(text="Render scene of", icon='INFO')
+            col.label(text=str(source), icon='BLANK1')
         props.draw_scope(body, s)
         body.prop(s, "variant", text="")
         widgets.draw_levels(body, s, context)
@@ -92,6 +97,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         body.operator("mecsub.remove", icon='X')
         body.separator()
         body.operator("mecsub.headless", icon='CONSOLE')
+        body.operator("mecsub.render_scene", icon='RENDER_STILL')
         body.operator("wm.url_open", text="Documentation", icon='HELP').url = DOCUMENTATION_URL
         widgets.draw_summary(L, s)
         wrapped(L, COPYRIGHT, context, center=True)     # centred under Documentation (user, 2026-09-29)

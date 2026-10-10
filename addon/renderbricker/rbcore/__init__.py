@@ -8,6 +8,7 @@
     memory    memory estimates and the number of Blender processes
     welding   the conversion of one part: weld, creases, repair, bake (process)
     cache     the cache file next to the scene
+    renderfile  the render scene: a second file, complete without the add-on and the cache
     workers   several Blender processes (shares, segments, merge)
     camera    the render camera
     engine    Cycles or EEVEE with the Renderbricks sky (EEVEE: sun lamp linked to the sky)
@@ -19,9 +20,9 @@ Without a window: blender -b scene.blend --python rbcore/run.py -- result.blend 
 """
 import importlib, sys, types as _types
 
-from . import config, creases, checks, copies, shading, memory, welding, cache, workers, camera, engine, headless, reparam
+from . import config, creases, checks, copies, shading, memory, welding, cache, workers, camera, engine, renderfile, headless, reparam
 
-MODULES = (config, creases, checks, copies, shading, memory, welding, cache, workers, camera, engine, headless, reparam,)
+MODULES = (config, creases, checks, copies, shading, memory, welding, cache, workers, camera, engine, renderfile, headless, reparam,)
 
 def _owners(modules):
     """name -> module that defines it: everything a module binds itself (functions and classes defined

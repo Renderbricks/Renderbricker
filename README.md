@@ -43,6 +43,7 @@ To build the package from the source instead: `python scripts/core/build_addon.p
 - **Subdivision: ON / OFF** switches every link between the subdivided copy and the original.
 - **F12 / Ctrl+F12** render with the render level.
 - **Convert headless** runs the conversion without the window (faster for large scenes).
+- **Save render scene** writes `<scene>_render.blend` for computers without Renderbricker (render farms): all parts at the render level, parts and materials inside the file. A scene with a cache file needs the add-on to show its materials and to render the render level – the render scene does not.
 
 Batch conversion of many models (system Python):
 

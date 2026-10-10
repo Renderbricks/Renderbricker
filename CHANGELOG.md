@@ -7,6 +7,7 @@ documentation changes are not.
 
 ## [1.2.8] – unreleased
 
+- **Save render scene:** a new button below *Convert headless* writes `<scene>_render.blend` next to the scene, for rendering on a computer without Renderbricker – a render farm, for example. Every converted part is at the render level, and the parts and their materials are inside the file: it needs neither the add-on nor the cache file. Before, a scene with a cache file opened there without materials and rendered the viewport level. The open scene, its file and its cache stay as they are; the render scene is a snapshot, so click again after changes. It is about as large as the cache file. Reported by the maintainer.
 - **Only the scope is converted, also headless:** **Convert headless** now converts only the parts in scope – with *Selected* or *Collection* nothing outside is touched. Before, it converted every part of the file whatever the scope said. The list of parts is saved next to the start script (`<result>_objects.json`).
 - **Rendering keeps parts outside the scope as they are:** a part outside the scope that uses the same mesh as a converted part (a copy made with Alt+D, for example) now renders as it shows in the viewport. Before, F12 rendered it subdivided. For scenes converted with an earlier version, F12 keeps the old behaviour at viewport level 0 until the next **Apply**.
 - An object outside the scope that already shows a subdivided copy of a mesh converted again inside the scope gets the new copy, also with several Blender processes and the cache file.

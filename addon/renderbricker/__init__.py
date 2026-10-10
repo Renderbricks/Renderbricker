@@ -70,7 +70,7 @@ _sys.modules[__name__].__class__ = _Package
 classes = (props.MECSUB_Problem, props.MECSUB_CollectionItem, props.MECSUB_Settings, props.MECSUB_UL_collections,
            props.MECSUB_OT_collection_add, props.MECSUB_OT_collection_remove, logfile.MECSUB_OT_open_log, convert.MECSUB_OT_apply, convert.MECSUB_OT_check, convert.MECSUB_OT_levels, operators.MECSUB_OT_toggle,
            operators.MECSUB_OT_remove, operators.MECSUB_OT_select, operators.MECSUB_OT_headless, panels.MECSUB_PT_panel, operators.MECSUB_OT_move_cache, operators.MECSUB_OT_copy_cache,
-           operators.MECSUB_OT_cache_switch, render.MECSUB_OT_render, panels.MECSUB_PT_about,
+           operators.MECSUB_OT_cache_switch, operators.MECSUB_OT_render_scene, render.MECSUB_OT_render, panels.MECSUB_PT_about,
            guide.MECSUB_OT_guide_start, guide.MECSUB_OT_guide_nav, guide.MECSUB_OT_guide_exit, props.MECSUB_OT_level_confirm,
            camera_ui.MECSUB_OT_frame_camera, camera_ui.MECSUB_OT_render_camera, camera_ui.MECSUB_OT_camera_view, camera_ui.MECSUB_OT_samples,
            render.MECSUB_OT_render_views, camera_ui.MECSUB_OT_sun_follow, edit.MECSUB_OT_edit_mode, edit.MECSUB_OT_edit_finish,

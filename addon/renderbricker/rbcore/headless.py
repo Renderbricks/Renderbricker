@@ -1,6 +1,6 @@
 """The run without a window: blender -b scene.blend --python rbcore/run.py -- result.blend [options]."""
 import bpy
-from . import cache as cache_mod, camera, config, copies, memory, workers
+from . import cache as cache_mod, camera, config, copies, memory, renderfile, workers
 
 
 def _copies_outside(users):
@@ -18,6 +18,10 @@ def _copies_outside(users):
 def main():
     if "--merge-cache" in config.args:     # helper Blender of write_cache (run 62)
         cache_mod._merge_cache(config.args[config.args.index("--merge-cache") + 1])
+        return
+    if "--render-scene" in config.args:    # helper Blender of render_scene_steps (UPDATES #25)
+        k = config.args.index("--render-scene")
+        renderfile._build_render_scene(config.args[k + 1], config.args[k + 2])
         return
     users = {}
     for ob in bpy.data.objects:

@@ -283,6 +283,107 @@ class MECSUB_OT_cache_switch(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class MECSUB_OT_render_scene(bpy.types.Operator):
+    bl_idname = "mecsub.render_scene"
+    bl_label = "Save render scene"
+    bl_description = ("Write <scene>_render.blend next to the scene, for rendering on a computer without Renderbricker "
+                      "(a render farm): every converted part at the render level, the parts and their materials inside "
+                      "the file - it needs neither the add-on nor the cache file. This scene stays as it is; click "
+                      "again after changes. Esc cancels")
+    _timer = None
+
+    @classmethod
+    def poll(cls, context):
+        if not bpy.data.filepath:
+            cls.poll_message_set("Save the scene first - the render scene is written next to it")
+            return False
+        return True
+
+    def invoke(self, context, event):
+        import os
+        if not self._converted():
+            return self.execute(context)
+        out = core.render_scene_path(bpy.data.filepath)
+        st = core.cache_state()
+        size = os.path.getsize(st[1]) / 1e9 if st is not None and st[3] else 0
+        msg = (f"Write {os.path.basename(out)} with all parts at the render level inside"
+               + (f" (about {size:.1f} GB)" if size >= 0.1 else "") + "? It renders without Renderbricker; this "
+               "scene stays as it is" + (". The existing file is replaced" if os.path.exists(out) else ""))
+        return context.window_manager.invoke_confirm(self, event, title="Render scene", message=msg)
+
+    @staticmethod
+    def _converted():
+        return any(m.get("rb_original") for m in bpy.data.meshes)
+
+    def execute(self, context):
+        from . import edit
+        if not self._converted():
+            self.report({'WARNING'}, "Nothing converted yet - Apply first")
+            return {'CANCELLED'}
+        common.object_mode(context)
+        s = context.scene.mecsub
+        self.t0, self.fail, self.result = time.time(), None, None
+        edit._CACHING[0] = True                 # the copy written for the helper Blender is no save of the scene
+        self.gen = core.render_scene_steps()
+        if bpy.app.background or context.window is None:     # scripts: no timer, straight through
+            try:
+                self.result = core.run_steps(self.gen)
+            except Exception as e:
+                self.fail = e
+            return self._end(context)
+        s.running, s.progress, s.progress_text = True, 0.0, "preparing the render scene"
+        context.workspace.status_text_set(f"Renderbricker: {s.progress_text} ...")
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.1, window=context.window)
+        wm.modal_handler_add(self)
+        convert.redraw(context)
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            self.gen.close()                    # stops the helper Blender, removes its working files
+            self.fail = "stopped"
+            return self._end(context)
+        if event.type != 'TIMER':
+            return {'RUNNING_MODAL'}
+        try:
+            done, st = convert.step_gen(self.gen, convert.work_budget(self, 0.1))
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            done, st, self.fail = True, None, e
+        if not done:
+            convert.show_step(context, "render scene", st)
+            convert.tick_done(self)
+            return {'RUNNING_MODAL'}
+        self.result = st
+        return self._end(context)
+
+    def _end(self, context):
+        import os
+        from . import edit
+        edit._CACHING[0] = False
+        s = context.scene.mecsub
+        if self._timer is not None:
+            context.window_manager.event_timer_remove(self._timer)
+        s.running = False
+        if context.workspace is not None:
+            context.workspace.status_text_set(None)
+        if self.fail is not None:
+            s.summary = ("Render scene stopped - nothing written" if self.fail == "stopped"
+                         else f"Render scene failed: {self.fail}")
+        else:
+            r = self.result
+            size = f"{r['size'] / 1e9:.2f} GB" if r['size'] >= 1e8 else f"{r['size'] / 1e6:.1f} MB"
+            s.summary = (f"Render scene written: {os.path.basename(r['path'])} ({size}), {r['objects']} objects at the "
+                         f"render level, parts and materials inside - renders without Renderbricker and without "
+                         f"the cache file ({convert.fmt_time(time.time() - self.t0)})")
+        convert.phase("render scene", self.t0)
+        self.report({'ERROR'} if self.fail not in (None, "stopped") else {'INFO'}, "Renderbricker: " + s.summary)
+        convert.redraw(context)
+        return {'CANCELLED'} if self.fail is not None else {'FINISHED'}
+
+
 class MECSUB_OT_copy_cache(bpy.types.Operator):
     bl_idname = "mecsub.copy_cache"
     bl_label = "Copy cache to this scene"

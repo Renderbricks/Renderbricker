@@ -270,6 +270,24 @@ def point_links(obs, orig, which="view"):
             ob["rb_on"] = 1
 
 
+def render_targets(obs):
+    """(object, render copy) for every object of `obs` that a render shows on the render copy: those on the view
+    copy, and those on the original that Apply marked (rb_on, viewport level 0) - an object of the same mesh outside
+    the scope stays on the original (UPDATES #24). Meshes converted before 1.2.8 have no mark at all: all their
+    objects on the original go, as before. Switched-off objects (rb_off) stay."""
+    obs = [ob for ob in obs if ob.type == 'MESH' and ob.data is not None and not ob.get("rb_off")]
+    marked = {original_of(ob.data) for ob in obs if ob.get("rb_on")}
+    out = []
+    for ob in obs:
+        orig = original_of(ob.data)
+        rc = copy_of(orig, "render")
+        if rc is None or ob.data == rc:
+            continue
+        if ob.data == copy_of(orig, "view") or (ob.data == orig and (ob.get("rb_on") or orig not in marked)):
+            out.append((ob, rc))
+    return out
+
+
 def drop_copies(orig, keep=()):
     """Remove the copies of a mesh that nothing uses any more (keep: the copies to keep)."""
     for m in all_copies(orig):
