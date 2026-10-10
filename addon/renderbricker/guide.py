@@ -165,7 +165,7 @@ def draw_guide(L, context):
     head = L.row()
     head.label(text=f"Step {i + 1} of {len(GUIDE)}: {title}")
     head.operator("mecsub.guide_exit", text="", icon='X')
-    widgets.bullets(L.box(), text, context)
+    widgets.justified_bullets(L.box(), text, context)      # set like the About text (UPDATES #36)
     body = L.column()
     body.enabled = not s.running
     ready = draw(body, context, s)

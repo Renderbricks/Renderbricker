@@ -137,64 +137,6 @@ LINKS = (("www.renderbricks.com", "https://www.renderbricks.com", 'URL'),
           'FILE_MOVIE'))                    # the film strip: the study programme Digital Film Design
 
 
-def justified(layout, text, context):
-    """Text in a block: lines as wide as the panel, the space between the words widened with thin and hair
-    spaces (Blender labels have no justification), long words broken at their hyphenation points ("|" in
-    the text) - the legal texts of About (user, 2026-09-29)."""
-    import blf
-    pref = context.preferences
-    size = pref.ui_styles[0].widget.points * pref.system.ui_scale
-    blf.size(0, size)
-    wid = lambda t: blf.dimensions(0, t)[0]
-    region = context.region.width if context.region else 300
-    avail = region - 53 * pref.system.ui_scale            # the width of the buttons above (measured)
-    fills = sorted(((wid(c), c) for c in (chr(0x2005), chr(0x2009), chr(0x200a)) if wid(c) > 0), reverse=True)   # 4/6, thin, hair space
-    words = text.split(" ")
-    lines, cur = [], []
-    while words:
-        w = words.pop(0)
-        parts = w.split("|")
-        plain = "".join(parts)
-        if not cur or wid(" ".join(cur + [plain])) <= avail:
-            if wid(" ".join(cur + [plain])) <= avail:
-                cur.append(plain)
-                continue
-        broke = False
-        for k in range(len(parts) - 1, 0, -1):      # a hyphenation point that lets the line end there
-            head = "".join(parts[:k]) + "-"
-            if cur and wid(" ".join(cur + [head])) <= avail:
-                cur.append(head)
-                words.insert(0, "|".join(parts[k:]))
-                broke = True
-                break
-        lines.append(cur)
-        cur = [] if broke else [plain]
-    if cur:
-        lines.append(cur)
-    col = layout.column(align=True)
-    col.scale_y = 0.8
-    for n, line in enumerate(lines):
-        last = n == len(lines) - 1
-        if last or len(line) < 2:
-            col.label(text=" ".join(line))
-            continue
-        gaps = len(line) - 1
-        extra = avail - wid(" ".join(line))
-        out = line[0]
-        given = 0.0
-        for i in range(gaps):
-            want = extra * (i + 1) / gaps - given            # this gap's share of the room left over
-            pad = ""
-            rest = want
-            for fw, ch in fills:
-                while rest >= fw and fw > 0:
-                    pad += ch
-                    rest -= fw
-            given += want - rest
-            out += " " + pad + line[i + 1]
-        col.label(text=out)
-
-
 def wrapped(layout, text, context, center=False):
     """Label lines that fit the sidebar width (a label does not wrap by itself). text: a string, or a
     tuple of strings that each start a new line; center: every line centred."""
@@ -230,4 +172,4 @@ class MECSUB_PT_about(bpy.types.Panel):
         col = L.column(align=True)
         for text, url, icon in LINKS:
             col.operator("wm.url_open", text=text, icon=icon).url = url
-        justified(L, DISCLAIMER, context)
+        widgets.justified(L, DISCLAIMER, context)

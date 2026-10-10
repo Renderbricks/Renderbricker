@@ -1,7 +1,8 @@
-"""Panel pieces used by the panel and the Start Guide: summary, bullets, levels, Apply button."""
+"""Panel pieces used by the panel and the Start Guide: summary, bullets, block text, levels, Apply button."""
+import re
 import bpy
 from . import rbcore as core
-from . import props
+from . import hyphens, props
 
 
 # ---------------------------------------------------------------- guide for new users
@@ -33,6 +34,126 @@ def bullets(layout, items, context, prefix="•  "):
     col.scale_y = 0.8
     for text in items:
         for line in textwrap.wrap(text, chars, initial_indent=prefix, subsequent_indent=" " * len(prefix)):
+            col.label(text=line)
+
+
+# ---------------------------------------------------------------- block text (About, the guide's explanations)
+# Blender labels are single lines without justification or hyphenation. A text is set here line by line: the
+# lines as wide as the panel, the gaps between the words widened with thin and hair spaces, long words broken at
+# their hyphenation points ("|" in the text). First for the legal texts of About (user, 2026-09-29), then for the
+# explanations of the Start Guide (UPDATES #36, maintainer 2026-10-10: "Text wie in About.").
+FILL_CHARS = (chr(0x2005), chr(0x2009), chr(0x200a))       # four-per-em, thin and hair space
+
+
+ABOUT_MARGIN = 53           # panel width minus this = the width of the buttons in a panel (measured, ui scale 1)
+
+
+BOX_MARGIN = 69             # the same inside a box of the panel (the guide's explanations; measured in run 255)
+
+
+_WORD = re.compile(r"(?<![\w/.\\<_-])[A-Za-z]{%d,}(?![\w/\\>_-]|\.\w)" % hyphens.MIN_WORD)   # not in file names
+
+
+def hyphenated(text):
+    """The text with the hyphenation points of its long words (table hyphens.TABLE, made for the guide's texts)."""
+    return _WORD.sub(lambda m: hyphens.TABLE.get(m.group(0), m.group(0)), text)
+
+
+def _pad(width, wid, fills):
+    """Blank characters as wide as `width`: spaces, the rest in thin and hair spaces."""
+    space = wid(" ")
+    if space <= 0:                              # no font size (no window): one blank per character will do
+        return ""
+    n = int(width // space)
+    out, rest = " " * n, width - n * space
+    for fw, ch in fills:
+        while rest >= fw > 0:
+            out += ch
+            rest -= fw
+    return out
+
+
+def set_block(text, wid, avail, fills, prefix=""):
+    """The lines of `text` set as a block `avail` wide. wid(text) measures, fills: (width, character) of the blank
+    characters that widen the gaps, widest first. Words break at "|" (a hyphen is added) and after a hyphen they
+    have. prefix (a bullet) stands in front of the first line, the others are indented by its width. The last
+    line is not stretched."""
+    lead = wid(prefix) if prefix else 0.0
+    room = avail - lead
+    indent = (_pad(lead, wid, fills) or " " * len(prefix)) if prefix else ""
+    words, lines, cur = text.split(" "), [], []
+    while words:
+        w = words.pop(0)
+        parts = [p for p in re.split(r"\||(?<=[A-Za-z]-)(?=[A-Za-z])", w) if p]
+        plain = "".join(parts)
+        if wid(" ".join(cur + [plain])) <= room:
+            cur.append(plain)
+            continue
+        for k in range(len(parts) - 1, 0, -1):      # a hyphenation point that lets the line end there
+            head = "".join(parts[:k])
+            head += "" if head.endswith("-") else "-"
+            if wid(" ".join(cur + [head])) <= room:
+                cur.append(head)
+                words.insert(0, "|".join(parts[k:]))
+                break
+        else:
+            if cur:
+                words.insert(0, w)                  # onto the next line
+            else:
+                cur.append(plain)                   # wider than a line and no point fits: alone on its line
+        lines.append(cur)
+        cur = []
+    if cur:
+        lines.append(cur)
+    out = []
+    for n, line in enumerate(lines):
+        start = prefix if n == 0 else indent
+        if n == len(lines) - 1 or len(line) < 2:
+            out.append(start + " ".join(line))
+            continue
+        gaps = len(line) - 1
+        extra = room - wid(" ".join(line))
+        text_line, given = line[0], 0.0
+        for i in range(gaps):
+            want = extra * (i + 1) / gaps - given        # this gap's share of the room left over
+            pad, rest = "", want
+            for fw, ch in fills:
+                while rest >= fw > 0:
+                    pad += ch
+                    rest -= fw
+            given += want - rest
+            text_line += " " + pad + line[i + 1]
+        out.append(start + text_line)
+    return out
+
+
+def _measure(context, margin):
+    """(wid, avail, fills) for set_block from the font of the panel's labels and the width of the sidebar."""
+    import blf
+    pref = context.preferences
+    blf.size(0, pref.ui_styles[0].widget.points * pref.system.ui_scale)
+    wid = lambda t: blf.dimensions(0, t)[0]
+    region = context.region.width if context.region else 300
+    fills = sorted(((wid(c), c) for c in FILL_CHARS if wid(c) > 0), reverse=True)
+    return wid, region - margin * pref.system.ui_scale, fills
+
+
+def justified(layout, text, context, margin=ABOUT_MARGIN):
+    """A text as a block in the panel (About)."""
+    wid, avail, fills = _measure(context, margin)
+    col = layout.column(align=True)
+    col.scale_y = 0.8
+    for line in set_block(text, wid, avail, fills):
+        col.label(text=line)
+
+
+def justified_bullets(layout, items, context, prefix="•  ", margin=BOX_MARGIN):
+    """Explanations as bullet points set as blocks, one directly under the other (the guide)."""
+    wid, avail, fills = _measure(context, margin)
+    col = layout.column(align=True)
+    col.scale_y = 0.8
+    for text in items:
+        for line in set_block(hyphenated(text), wid, avail, fills, prefix):
             col.label(text=line)
 
 
