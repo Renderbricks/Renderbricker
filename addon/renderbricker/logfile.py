@@ -69,8 +69,8 @@ def write_log(context, label):
     if not s.use_log or not path or not s.summary:
         return
     import datetime
-    scope = {"ALL": "all parts", "SELECTED": "selected parts",
-             "COLLECTION": "collections " + (", ".join(c.name for c in props.scope_collections(s)) or "-")}[s.scope]
+    scope = ("selected parts" if s.scope == 'SELECTED' else
+             "collections " + (", ".join(c.name for c in props.scope_collections(s)) or "-"))
     lines = [f"=== {datetime.datetime.now():%Y-%m-%d %H:%M:%S}  {label}  "
              f"(Renderbricker {common.VERSION}, Blender {bpy.app.version_string})",
              f"scene: {bpy.data.filepath}",

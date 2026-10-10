@@ -94,7 +94,9 @@ class MECSUB_PT_panel(bpy.types.Panel):
         label, icon = {"ON": ("Subdivision: ON", 'CHECKBOX_HLT'), "OFF": ("Subdivision: OFF", 'CHECKBOX_DEHLT'),
                        "MIXED": ("Subdivision: partly on", 'CHECKBOX_HLT')}.get(state, ("Subdivision: -", 'CHECKBOX_DEHLT'))
         row.operator("mecsub.toggle", icon=icon, text=label, depress=(state == "ON"))
-        body.operator("mecsub.remove", icon='X')
+        row = body.row(align=True)              # Remove: the scope; Remove All: the whole file (UPDATES #33)
+        row.operator("mecsub.remove", icon='X')
+        row.operator("mecsub.remove", text="Remove All", icon='TRASH').whole = True
         body.separator()
         body.operator("mecsub.headless", icon='CONSOLE')
         body.operator("mecsub.render_scene", icon='RENDER_STILL')

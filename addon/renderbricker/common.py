@@ -9,15 +9,13 @@ def targets(context):
     s = context.scene.mecsub
     if s.scope == 'SELECTED':
         obs = context.selected_objects
-    elif s.scope == 'COLLECTION':           # the collections and their child collections, objects of this scene
-        seen, obs = set(), []
+    else:                                   # the collections and their child collections, objects of this scene;
+        seen, obs = set(), []               # never the whole scene: other models lie in it (UPDATES #33)
         for c in props.scope_collections(s):
             for o in c.all_objects:
                 if o not in seen and context.scene.objects.get(o.name) is o:
                     seen.add(o)
                     obs.append(o)
-    else:
-        obs = context.scene.objects
     return [o for o in obs if o.type == 'MESH' and o.data.polygons and not core.is_master(o)
             and o.name != core.WORK_NAME]
 

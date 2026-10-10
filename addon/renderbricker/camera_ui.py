@@ -379,7 +379,7 @@ class MECSUB_OT_import_mecabricks(bpy.types.Operator):
     def description(cls, context, properties):
         if mecabricks_import_available():
             return ("Import a Mecabricks scene (.zmbx) with the Mecabricks add-on - the same as File > Import > "
-                    "Mecabricks (.zmbx)")
+                    "Mecabricks (.zmbx). The collection of the imported model is put into the collection list")
         return ("Needs the Mecabricks Lite or Advanced add-on by Nicolas 'Scrubs' Jarraud, installed and "
                 "enabled - available at www.mecabricks.com")
 
@@ -388,8 +388,67 @@ class MECSUB_OT_import_mecabricks(bpy.types.Operator):
         return mecabricks_import_available()
 
     def execute(self, context):
+        if not bpy.app.background:              # the imported model's collection goes into the list (UPDATES #33)
+            if _IMPORT_WATCH[0] is not None and bpy.app.timers.is_registered(_IMPORT_WATCH[0]):
+                bpy.app.timers.unregister(_IMPORT_WATCH[0])
+            _IMPORT_WATCH[0] = watch_import(context.scene)
+            bpy.app.timers.register(_IMPORT_WATCH[0], first_interval=1.0)
         bpy.ops.import_mecabricks.zmbx('INVOKE_DEFAULT')
         return {'FINISHED'}
+
+
+# The importer puts every model into a collection of its own, named after the file. With the scope Collection
+# that collection has to be in the list before Apply does anything - after an import through this button it is put
+# there. The button only opens the importer's file dialog; the import runs later (Mecabricks Advanced: step by
+# step with a progress bar, the collection linked at the end), so a timer waits for a new collection with parts.
+IMPORT_WATCH_MAX = 1800.0       # seconds: a large model takes minutes, the dialog may stay open before
+
+
+_IMPORT_WATCH = [None]          # the running timer function
+
+
+def _import_busy():
+    """The importer's file dialog is open or its import runs (a modal operator of import_mecabricks)."""
+    for win in bpy.context.window_manager.windows:
+        if any(a.type == 'FILE_BROWSER' for a in win.screen.areas):
+            return True
+        if any(op.bl_idname.upper().startswith("IMPORT_MECABRICKS") for op in win.modal_operators):
+            return True
+    return False
+
+
+def watch_import(scene):
+    """The timer function that waits for the collection of a model being imported into `scene` and puts it into
+    the collection list. It ends (returns None) when the collection is listed, when the dialog was closed and no
+    import runs any more (cancelled), or after IMPORT_WATCH_MAX."""
+    import time
+    from . import collection_list
+    name = scene.name
+    before = {c.name for c in collection_list.scene_collections(scene)}
+    state = {"t0": time.time(), "busy_seen": False, "idle": 0}
+
+    def tick():
+        sc = bpy.data.scenes.get(name)
+        if sc is None or time.time() - state["t0"] > IMPORT_WATCH_MAX:
+            return None
+        new = [c for c in collection_list.scene_collections(sc) if c.name not in before
+               and c.name not in props.OWN_COLLECTIONS and any(o.type == 'MESH' for o in c.all_objects)]
+        if new:
+            top = [c for c in new if not any(c in p.children_recursive for p in new)]    # the model, not its children
+            added = props.list_collections(sc.mecsub, top)
+            if added:
+                sc.mecsub.summary = (f"{' and '.join(c.name for c in added)} added to the collection list - "
+                                     f"Apply converts this model")
+            return None
+        if _import_busy():
+            state["busy_seen"], state["idle"] = True, 0
+        elif state["busy_seen"]:                # dialog closed, nothing imports: cancelled
+            state["idle"] += 1
+            if state["idle"] >= 3:
+                return None
+        return 1.0
+
+    return tick
 
 
 def draw_import(L, context):

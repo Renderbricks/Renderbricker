@@ -2,7 +2,7 @@
 import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty, CollectionProperty, PointerProperty
 from . import rbcore as core
-from . import common
+from . import collection_list, common
 
 
 # ---------------------------------------------------------------- properties
@@ -165,6 +165,19 @@ def setup_blend():
     return os.path.join(os.path.dirname(__file__), "setup", "renderbricks_setup.blend")
 
 
+def scope_from_before():
+    """After loading: scenes saved with the scope All (up to 1.2.7) get Collection - converted parts stay as they
+    are, Apply asks for a collection first. Returns the scenes whose list is empty."""
+    todo = []
+    for sc in bpy.data.scenes:
+        s = getattr(sc, "mecsub", None)
+        if s is not None and s.scope not in ('COLLECTION', 'SELECTED'):
+            s.scope = 'COLLECTION'
+            if not scope_collections(s):
+                todo.append(sc)
+    return todo
+
+
 def scope_collections(s):
     """The collections of the list (scenes from before: the single collection)."""
     cols = [it.collection for it in s.collections if it.collection is not None]
@@ -209,27 +222,154 @@ class MECSUB_UL_collections(bpy.types.UIList):
                  icon='OUTLINER_OB_CAMERA' if item.render else 'CAMERA_DATA')
 
 
+# ---------------------------------------------------------------- the collection list (UPDATES #33)
+# The rules are in collection_list.py; here the list of this add-on: scene.mecsub.collections.
+OWN_COLLECTIONS = (core.MASTER_COLL,)       # made by the add-on (scenes before 1.4): never listed
+
+
+LOOSE_HINT = ("lies directly in the Scene Collection, which cannot be listed - put the model into a collection "
+              "or use Selected")
+
+
+def _prune(s):
+    """Entries whose collection was deleted go (none are made empty any more)."""
+    for i in reversed(range(len(s.collections))):
+        if s.collections[i].collection is None:
+            s.collections.remove(i)
+
+
+def offered_collections(context):
+    """What + offers with nothing selected (rule 2)."""
+    s = context.scene.mecsub
+    return collection_list.offered(context.scene, {it.collection for it in s.collections}, OWN_COLLECTIONS)
+
+
+def list_collections(s, cols):
+    """Put the collections into the list (those not in it yet); the last one becomes the selected entry.
+    Returns the collections added."""
+    _prune(s)
+    listed = {it.collection for it in s.collections}
+    new = [c for c in cols if c not in listed]
+    for c in new:
+        s.collections.add().collection = c
+    if new:
+        s.collections_index = len(s.collections) - 1
+    return new
+
+
+class MECSUB_MT_collection_add(bpy.types.Menu):
+    bl_label = "Add a collection"
+
+    def draw(self, context):
+        for c in offered_collections(context):
+            self.layout.operator("mecsub.collection_add", text=c.name, icon='OUTLINER_COLLECTION').name = c.name
+
+
+class MECSUB_MT_collection_remove(bpy.types.Menu):
+    bl_label = "Remove a collection from the list"
+
+    def draw(self, context):
+        for it in context.scene.mecsub.collections:
+            if it.collection is not None:
+                self.layout.operator("mecsub.collection_remove", text=it.collection.name,
+                                     icon='OUTLINER_COLLECTION').name = it.collection.name
+
+
 class MECSUB_OT_collection_add(bpy.types.Operator):
     bl_idname = "mecsub.collection_add"
     bl_label = "Add collection"
-    bl_description = "Add the collection active in the Outliner to the list (or an empty entry to choose one)"
+    bl_description = ("With a part selected: add the collection of that part to the list (one part of the model is "
+                      "enough). With nothing selected: choose from the collections that hold parts")
     bl_options = {'REGISTER', 'UNDO'}
+    name: StringProperty(default="", options={'SKIP_SAVE'})        # the choice from the menu
+
+    def invoke(self, context, event):
+        if not self.name and not context.selected_objects and offered_collections(context):
+            bpy.ops.wm.call_menu(name="MECSUB_MT_collection_add")
+            return {'INTERFACE'}
+        return self.execute(context)
+
+    def _stop(self, context, text, level='INFO'):
+        context.scene.mecsub.summary = text
+        self.report({level}, "Renderbricker: " + text)
+        return {'CANCELLED'}
 
     def execute(self, context):
-        s = context.scene.mecsub
-        c = context.collection
-        listed = {it.collection for it in s.collections}
-        it = s.collections.add()
-        if c is not None and c != context.scene.collection and c not in listed:
-            it.collection = c
-        s.collections_index = len(s.collections) - 1
+        sc = context.scene
+        s = sc.mecsub
+        loose = []
+        if self.name:                                   # from the menu (rule 2)
+            cols = [c for c in offered_collections(context) if c.name == self.name]
+            if not cols:
+                return self._stop(context, f"{self.name} cannot be added to the list", 'WARNING')
+        else:                                           # the collections of the selected objects (rule 1)
+            sel = list(context.selected_objects)
+            if not sel:
+                if offered_collections(context):
+                    return self._stop(context, "Select a part of the model first - then press +")
+                if collection_list.loose_meshes(sc):
+                    return self._stop(context, "The parts lie directly in the Scene Collection which cannot be "
+                                               "listed - put the model into a collection or use Selected")
+                return self._stop(context, "No collection with parts to add")
+            cols, loose = collection_list.of_objects(sc, sel, OWN_COLLECTIONS)
+            if not cols:                                # rule 4: a hint, no error
+                return self._stop(context, f"{sel[0].name} {LOOSE_HINT}")
+        new = list_collections(s, cols)
+        if not new:
+            return self._stop(context, f"{' and '.join(c.name for c in cols)}: already in the list")
+        if not self.name and loose:                     # some of the selected parts cannot be listed
+            s.summary = (f"{' and '.join(c.name for c in new)} added to the list, {len(loose)} selected "
+                         f"object{'s' if len(loose) != 1 else ''} directly in the Scene Collection left out")
+        _collection_render_update(None, context)
         return {'FINISHED'}
 
 
 class MECSUB_OT_collection_remove(bpy.types.Operator):
     bl_idname = "mecsub.collection_remove"
     bl_label = "Remove collection"
-    bl_description = "Remove the selected collection from the list (the collection itself stays)"
+    bl_description = ("Remove the selected collection from the list; with no entry selected, choose which one "
+                      "(the collection itself stays in the scene)")
+    bl_options = {'REGISTER', 'UNDO'}
+    name: StringProperty(default="", options={'SKIP_SAVE'})        # the choice from the popup
+
+    @classmethod
+    def poll(cls, context):
+        return len(context.scene.mecsub.collections) > 0
+
+    def _index(self, s):
+        """The entry to remove, or None when it has to be chosen (rule 3)."""
+        if self.name:
+            return next((i for i, it in enumerate(s.collections)
+                         if it.collection is not None and it.collection.name == self.name), None)
+        if 0 <= s.collections_index < len(s.collections):
+            return s.collections_index
+        return 0 if len(s.collections) == 1 else None
+
+    def invoke(self, context, event):
+        s = context.scene.mecsub
+        _prune(s)
+        if len(s.collections) and not self.name and self._index(s) is None:
+            bpy.ops.wm.call_menu(name="MECSUB_MT_collection_remove")
+            return {'INTERFACE'}
+        return self.execute(context)
+
+    def execute(self, context):
+        s = context.scene.mecsub
+        _prune(s)
+        i = self._index(s)
+        if i is None:
+            self.report({'INFO'}, "Renderbricker: choose the collection to remove")
+            return {'CANCELLED'}
+        s.collections.remove(i)
+        s.collections_index = -1                        # none selected: the next - asks (rule 3)
+        _collection_render_update(None, context)
+        return {'FINISHED'}
+
+
+class MECSUB_OT_collection_clear(bpy.types.Operator):
+    bl_idname = "mecsub.collection_clear"
+    bl_label = "Remove all collections from the list"
+    bl_description = "Empty the list (the collections themselves stay in the scene)"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -238,28 +378,34 @@ class MECSUB_OT_collection_remove(bpy.types.Operator):
 
     def execute(self, context):
         s = context.scene.mecsub
-        i = min(s.collections_index, len(s.collections) - 1)
-        s.collections.remove(i)
-        s.collections_index = max(0, i - 1)
+        s.collections.clear()
+        s.collections_index = -1
         _collection_render_update(None, context)
         return {'FINISHED'}
 
 
 def draw_scope(L, s):
-    col = L.column(align=True)
-    col.prop(s, "scope", expand=True)
-    if s.scope == 'COLLECTION':
+    L.row(align=True).prop(s, "scope", expand=True)
+    if s.scope != 'SELECTED':
         row = L.row()
-        row.template_list("MECSUB_UL_collections", "", s, "collections", s, "collections_index", rows=2)
+        row.template_list("MECSUB_UL_collections", "", s, "collections", s, "collections_index", rows=3)
         sub = row.column(align=True)
         sub.operator("mecsub.collection_add", text="", icon='ADD')
         sub.operator("mecsub.collection_remove", text="", icon='REMOVE')
+        sub.operator("mecsub.collection_clear", text="", icon='TRASH')
+        if not scope_collections(s):                    # what to do with an empty list
+            col = L.column(align=True)
+            col.scale_y = 0.8
+            col.label(text="Select a part of the model, then +", icon='INFO')
+            if collection_list.loose_meshes(s.id_data):
+                col.label(text="Parts directly in the Scene Collection:", icon='BLANK1')
+                col.label(text="put them into a collection or use Selected", icon='BLANK1')
 
 
 def scope_empty_text(context):
     s = context.scene.mecsub
-    if s.scope == 'COLLECTION' and not scope_collections(s):
-        return "Add a collection first"
+    if s.scope != 'SELECTED' and not scope_collections(s):
+        return "Add a collection first: select a part of the model and press +"
     return "No mesh objects in scope"
 
 
@@ -321,11 +467,13 @@ def _sun_prop(key, angle=False):
 
 
 class MECSUB_Settings(bpy.types.PropertyGroup):
+    # No "All" since 1.2.8 (maintainer, 2026-10-10: it converted other models in the scene by accident). The
+    # numbers are those 1.2.7 stored (All 0, Selected 1, Collection 2): a scene saved with All reads as "" and
+    # is set to Collection when it is loaded (scope_from_before).
     scope: EnumProperty(name="Scope", items=[
-        ('ALL', "All", "Every mesh object in the scene"),
-        ('SELECTED', "Selected", "Selected mesh objects only"),
-        ('COLLECTION', "Collection", "Mesh objects in the chosen collection and its child collections")],
-        default='ALL')        # Collection starts with an empty list (user, 2026-09-28)
+        ('COLLECTION', "Collection", "Mesh objects in the collections of the list and their child collections", 2),
+        ('SELECTED', "Selected", "Selected mesh objects only", 1)],
+        default='COLLECTION')     # the list starts empty (user, 2026-09-28)
     collections: CollectionProperty(type=MECSUB_CollectionItem)
     collections_index: IntProperty(default=0)
     collection: PointerProperty(type=bpy.types.Collection, name="Collection",       # scenes from before: taken over
