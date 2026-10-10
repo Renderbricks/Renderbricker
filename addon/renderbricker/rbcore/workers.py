@@ -807,6 +807,13 @@ def _parallel(users, weight, total_w, jobs, scene_path=None):
         if e.startswith("Error: worker"):
             print(e, flush=True)
     print(f"MERGE loaded and linked {time.time() - t_m:.0f} s", flush=True)
+    # the rule report of every part, as a run without workers prints it (UPDATES #39): the workers hand their
+    # reports over as JSON and their own PART lines end in the progress above - the log of a large scene had no
+    # report at all, and the part catalog read none for three quarters of its parts
+    by_name = {me.name: me for me in users}
+    for name in sorted(reps):
+        if name in by_name:
+            print(f"PART {name!r} objects={len(users[by_name[name]])} {reps[name]}", flush=True)
     skipped, failed = list(w.skipped), []
     if rest:        # a worker failed: its meshes are done here, one after the other
         print(f"MERGE {len(rest)} meshes without a worker result - processing them here", flush=True)
