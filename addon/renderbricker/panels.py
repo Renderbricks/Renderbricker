@@ -57,6 +57,11 @@ class MECSUB_PT_panel(bpy.types.Panel):
         props.draw_scope(body, s)
         body.prop(s, "variant", text="")
         widgets.draw_levels(body, s, context)
+        body.prop(s, "smooth_maps")
+        if s.smooth_maps:
+            sp = body.split(factor=0.4)
+            sp.label(text="Map Size")
+            sp.row(align=True).prop(s, "smooth_maps_size", expand=True)
         widgets.apply_button(body, context)
         left = edit.uncached(context)            # parts edited and converted again, still in the scene file (#18)
         if left:

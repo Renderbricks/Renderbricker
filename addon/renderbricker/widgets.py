@@ -261,6 +261,7 @@ def draw_low_memory(L, s):
 
 
 APPLIED_KEY = "rb_applied"      # scene: what the last Apply covered (apply_key)
+APPLIED_MAPS = "rb_applied_maps"    # scene: the size of the bevel maps the last Apply baked, "" without (#40)
 
 
 def apply_key(context):
@@ -279,6 +280,8 @@ def apply_key(context):
 
 def apply_button(L, context, **kw):
     """Apply, or "Apply: up to date" when the last Apply covered the same (user, 2026-09-29)."""
-    if context.scene.get(APPLIED_KEY) == apply_key(context):
+    sc = context.scene
+    s = sc.mecsub
+    if sc.get(APPLIED_KEY) == apply_key(context) and (not s.smooth_maps or sc.get(APPLIED_MAPS) == s.smooth_maps_size):
         return L.operator("mecsub.apply", text="Apply: up to date", icon='CHECKMARK', **kw)
     return L.operator("mecsub.apply", icon='MOD_SUBSURF', **kw)

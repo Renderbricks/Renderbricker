@@ -261,17 +261,28 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         core.LEVELS = s.render_level                    # the checks run at the render level
         core.VIEW_LEVEL, core.RENDER_LEVEL = s.view_level, s.render_level
         core.SHADING = "mecabricks" if s.variant == 'A' else "geometric"
+        core.SMOOTH_MAPS, core.MAP_SIZE = s.smooth_maps, s.smooth_maps_size.lower()
         items = list(common.by_mesh(common.targets(context)).items())
+        self.scope_items = items
         if self.force:
             return items, []
         core.copy_index_begin()
         try:
             todo, fresh = [], []
             for me, obs in items:
-                (fresh if core.up_to_date(me, s.view_level, s.render_level) else todo).append((me, obs))
+                ok = core.up_to_date(me, s.view_level, s.render_level)
+                if ok and s.smooth_maps:    # converted before the option was on: marked now, or converted again (#40)
+                    ok = core.mark_existing(me, core.all_copies(me))
+                (fresh if ok else todo).append((me, obs))
         finally:
             core.copy_index_end()
         return todo, fresh
+
+    def map_pairs(self, context):
+        """(import mesh, render copy, world matrix of one of its objects) of the parts in scope, for the bevel maps
+        (UPDATES #40)."""
+        return [(me, core.copy_of(me, "render"), obs[0].matrix_world.copy())
+                for me, obs in getattr(self, "scope_items", []) if obs]
 
     def prepare(self, context):
         common.object_mode(context)
@@ -286,11 +297,14 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                 ob.pop("rb_off", None)
             core.point_links(obs, me, "view")
         self.skipped = len(fresh)
-        if not self.items:
+        self.maps_rep = None
+        only_maps = not self.items and s.smooth_maps and core.maps_pending(self.map_pairs(context))
+        if not self.items and not only_maps:
             s.summary = (f"All {self.skipped} parts are already converted with these settings, "
                          f"Shift+click on Apply converts all again")
             props.refresh_state(context)
             context.scene[widgets.APPLIED_KEY] = widgets.apply_key(context)
+            context.scene[widgets.APPLIED_MAPS] = s.smooth_maps_size if s.smooth_maps else ""
             self.report({'INFO'}, "Renderbricker: " + s.summary)
             if not bpy.app.background:      # at the mouse - the summary line alone was overlooked (user, 2026-09-29)
                 n = self.skipped
@@ -308,7 +322,17 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         self.cache_part, self.tail_pending = None, None
         self.tail = [("writing the cache file" if s.use_cache and bpy.data.filepath else "finishing the copies",
                       self._cache_phase)]
+        if s.smooth_maps:                       # before the cache file: the copies are still this file's own
+            self.tail.insert(0, ("baking the bevel maps", self._maps_phase))
         return True
+
+    def _maps_phase(self, context):
+        """Tail phase (UPDATES #40): the bevel maps of the parts in scope are baked from their render copies.
+        A generator - fit_maps_steps yields after every map; its report goes into the summary."""
+        if self.cancelled:
+            return None
+        self.maps_rep = yield from core.fit_maps_steps(self.map_pairs(context))
+        return None
 
     def _cache_phase(self, context):
         import os
@@ -329,7 +353,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
 
     def tail_done(self, context, n):
         import os
-        if getattr(self, "cache_path", None):
+        if n is not None and getattr(self, "cache_path", None):
             self.cache_part = f", {n} copies in {os.path.basename(self.cache_path)}"
 
     def item_name(self, i):
@@ -366,7 +390,8 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         if bpy.data.is_dirty:
             bpy.ops.wm.save_mainfile()
         opts = ["--view-level", str(s.view_level), "--render-level", str(s.render_level),
-                "--shading", "mecabricks" if s.variant == 'A' else "geometric"]
+                "--shading", "mecabricks" if s.variant == 'A' else "geometric",
+                "--smooth-maps", "1" if s.smooth_maps else "0", "--map-size", s.smooth_maps_size.lower()]
         self.workers = core.Workers(dict(self.items), jobs, opts, [me.name for me, _ in self.items])
         self.jobs, self.merging, self.t_start = jobs, False, time.time()
         s.running, s.progress, s.progress_text = True, 0.0, f"0 / {len(self.items)}   starting {jobs} Blenders"
@@ -438,8 +463,8 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                 _reps, rest, n = st
                 self.merge_gen = None
                 self.cache_part = f", {n} copies in {os.path.basename(path)}"
-                if not rest:
-                    self.tail = []
+                if not rest:                 # all copies are in the cache file already
+                    self.tail = [t for t in self.tail if t[1] != self._cache_phase]
                 phase("cache file written and linked", self.merge_t0)
             else:
                 _reps, rest = self.workers.merge(on_mesh)
@@ -489,6 +514,14 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                         else f", T fans creased {self.fans}")
                      + (f", unresolved {self.unresolved}" if self.unresolved else "")
                      + (f", folds left {self.folds}" if self.folds else ""))
+        if getattr(self, "cache_part", None) is None and s.smooth_maps and not self.cancelled:   # scripts (execute)
+            try:
+                self.maps_rep = core.fit_maps(self.map_pairs(context))
+            except Exception as e:              # the conversion stands without the maps
+                import traceback
+                traceback.print_exc()
+                self.maps_rep = {"fitted": 0, "taken": 0, "failed": [("bevel maps", f"{type(e).__name__}: {e}")]}
+        s.summary += core.maps_text(getattr(self, "maps_rep", None))
         if self.done:
             if getattr(self, "cache_part", None) is None:     # scripts (execute): no tail phases
                 try:
@@ -500,6 +533,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
             s.summary += self.cache_part
         if not self.cancelled:
             context.scene[widgets.APPLIED_KEY] = widgets.apply_key(context)
+            context.scene[widgets.APPLIED_MAPS] = s.smooth_maps_size if s.smooth_maps else ""
             if self.done and not bpy.app.background:
                 from . import camera_ui
                 camera_ui.viewport_clip(context, True, keep=False)     # 0.1 cm for real-size parts (#19)

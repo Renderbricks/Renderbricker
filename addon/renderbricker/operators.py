@@ -110,6 +110,7 @@ class MECSUB_OT_remove(bpy.types.Operator):
             ws = bpy.data.scenes.get(core.WORK_SCENE)
             if ws is not None and ws != context.scene:
                 bpy.data.scenes.remove(ws)
+        core.drop_unused_maps()            # bevel maps baked for copies that are gone now (UPDATES #40)
         core.cleanup_libraries()
         left = sum(1 for m in bpy.data.meshes if m.get("rb_original"))
         context.scene.mecsub.summary = (f"Removed from {len(obs)} objects" + (" in the whole file" if whole else "")
@@ -571,7 +572,8 @@ def headless_args(context, out):
             os.path.join(os.path.dirname(__file__), "rbcore", "run.py"),
             "--", out, "--view-level", str(s.view_level), "--render-level", str(s.render_level),
             "--shading", "mecabricks" if s.variant == 'A' else "geometric", "--jobs", "auto",
-            "--low-memory", s.low_memory.lower()]
+            "--low-memory", s.low_memory.lower(), "--smooth-maps", "1" if s.smooth_maps else "0",
+            "--map-size", s.smooth_maps_size.lower()]
     listing = os.path.splitext(out)[0] + "_objects.json"
     with open(listing, "w", encoding="utf-8") as fh:
         json.dump(sorted(o.name for o in common.targets(context)), fh, ensure_ascii=False)

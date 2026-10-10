@@ -508,6 +508,21 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
                             "slower, for computers with little memory (16 or 32 GB) or very large parts")],
         description="How the Blender processes share the parts: all at once (fastest) or in small segments "
                     "that need less memory")
+    smooth_maps: bpy.props.BoolProperty(
+        name="Bevel maps for EEVEE", default=False,
+        description="EEVEE has no bevel shader; the importer shows a small baked map there, made for the coarse "
+                    "import. With this on, Apply bakes the rounded edges of every converted part from its smooth "
+                    "copy into a new map, so round rims come out clean in EEVEE. One to five seconds per part, "
+                    "depending on the size. The import mesh keeps its map, Remove takes the new maps out again")
+    smooth_maps_size: bpy.props.EnumProperty(
+        name="Map Size",
+        items=[('ORIGINAL', "Original", "As large as the map of the import (mostly 256 px): about a second per "
+                                        "part, 50 KB in the scene file", 0),
+               ('MED', "Med", "Twice the size: about two seconds per part, 140 KB - as close to Cycles as High", 1),
+               ('HIGH', "High", "Four times the size: about five seconds per part, 450 KB", 2)],
+        default='ORIGINAL',
+        description="Size of the bevel maps Apply bakes. A larger map follows the edges more exactly; "
+                    "the gain from Med to High is small")
     use_cache: bpy.props.BoolProperty(
         name="Cache file next to the scene", default=True, update=_cache_update,
         description="The subdivided copies are kept in <scene>_rbcache.blend next to the scene and "

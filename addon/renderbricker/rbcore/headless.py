@@ -7,7 +7,7 @@ One entry, four roles - main() picks the role from the options:
   none of these                   the parent (_parent): converts alone or starts workers, writes the cache file,
                                   saves the result"""
 import bpy, datetime, json, os, tempfile, time
-from . import cache as cache_mod, camera, config, copies, memory, renderfile, workers
+from . import cache as cache_mod, camera, config, copies, maps, memory, renderfile, workers
 
 
 def _copies_outside(users):
@@ -129,6 +129,10 @@ def _parent(users, weight, total_w):
         workers.say(f"SKIPPED for memory: {len(skipped)} meshes ({', '.join(skipped[:5])}) - close other programs and run again")
     if failed:
         workers.say(f"Errors in {len(failed)} meshes ({', '.join(failed)}) - left as imported")
+    if maps.SMOOTH_MAPS:                    # bevel maps baked from the render copies (UPDATES #40)
+        rep = maps.fit_maps([(me, copies.copy_of(me, "render"), obs[0].matrix_world.copy())
+                             for me, obs in users.items() if obs])
+        workers.say(f"MAPS{maps.maps_text(rep).lstrip(',')} ({rep['seconds']:.0f} s)")
     _write_result()
     _log("\n")
 

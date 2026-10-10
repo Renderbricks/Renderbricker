@@ -1,7 +1,7 @@
 """The subdivided copies of a part: baking a level, UVs, links pointing to the copy of a level, masters."""
 import bpy
 import numpy as np
-from . import config, creases, reparam, workscene
+from . import config, creases, maps, reparam, workscene
 
 
 def original_of(me):
@@ -107,6 +107,8 @@ def bake_copy(orig, work, level):
     cp["rb_original"], cp["rb_level"], cp["rb_variant"] = orig.name, level, config.SHADING
     cp["rb_rules"] = config.RULES_VERSION          # Apply skips meshes whose copies are up to date (user, 2026-09-28)
     cp["rb_src"] = source_hash(orig)                # ... and whose import was not edited since (UPDATES #18)
+    if maps.SMOOTH_MAPS or any(c.get(maps.MARK) for c in all_copies(orig)):
+        maps.mark_copy(cp, orig)                        # the material switches to the bevel map baked for it (#40)
     if _COPY_INDEX[0] is not None:
         _COPY_INDEX[0].setdefault(orig.name, []).append(cp)
     cp.use_fake_user = True      # a copy no link uses right now (L1, the render copy) is saved too (run 40)
