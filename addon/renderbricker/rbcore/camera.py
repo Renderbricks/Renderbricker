@@ -2,7 +2,7 @@
 import bpy, math
 import numpy as np
 from mathutils import Vector
-from . import copies, workscene
+from . import workscene
 
 
 # ---------------------------------------------------------------- render camera (user, 2026-09-28)
