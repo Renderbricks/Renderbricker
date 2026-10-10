@@ -2,7 +2,7 @@
 import bpy
 from bpy.props import EnumProperty, IntProperty
 from . import rbcore as core
-from . import common, convert, props
+from . import collection_list, common, convert, importer, props, widgets
 
 
 _VIEW_BEFORE = {}           # 3D viewport -> (view, relationship lines, statistics) before Render camera ON
@@ -422,7 +422,6 @@ def watch_import(scene):
     the collection list. It ends (returns None) when the collection is listed, when the dialog was closed and no
     import runs any more (cancelled), or after IMPORT_WATCH_MAX."""
     import time
-    from . import collection_list
     name = scene.name
     before = {c.name for c in collection_list.scene_collections(scene)}
     state = {"t0": time.time(), "busy_seen": False, "idle": 0}
@@ -464,6 +463,12 @@ def draw_import(L, context):
         col.label(text="Needs the Mecabricks add-on", icon='INFO')
         col.label(text="(Lite or Advanced), enabled", icon='BLANK1')
         L.operator("wm.url_open", text="www.mecabricks.com", icon='URL').url = MECABRICKS_URL
+    else:                               # which importer it is (UPDATES #34); red when two are enabled
+        line = importer.importer_line()
+        if line:
+            box = L.column(align=True)
+            box.alert = line[1]
+            widgets.bullets(box, (line[0],), context, prefix="")
 
 
 def is_transparent(scene):

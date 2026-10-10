@@ -21,9 +21,11 @@ from . import rbcore as core
 if "props" in locals():
     import importlib
     core.reload_all()
-    for _m in (collection_list, common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels, edit):
+    for _m in (collection_list, common, importer, props, render, camera_ui, logfile, widgets, convert, operators,
+               guide, panels, edit):
         importlib.reload(_m)
-from . import collection_list, common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels, edit
+from . import (collection_list, common, importer, props, render, camera_ui, logfile, widgets, convert, operators,
+               guide, panels, edit)
 
 # the package reads and writes like one module: renderbricker.NAME finds NAME in the module that holds it,
 # renderbricker.NAME = value sets it there (the tests replace open_file and start_script)
@@ -46,7 +48,8 @@ def _owners(modules):
     return out
 
 
-OWNER = _owners((collection_list, common, props, render, camera_ui, logfile, widgets, convert, operators, guide, panels, edit))
+OWNER = _owners((collection_list, common, props, render, camera_ui, logfile, widgets, convert, operators, guide,
+                  panels, edit, importer))
 
 
 class _Package(_types.ModuleType):

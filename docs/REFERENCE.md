@@ -11,7 +11,12 @@ tooltips in Blender say the same in short.
 **Import from Mecabricks** at the very top of the panel imports a Mecabricks scene (`.zmbx`) – the same
 as *File > Import > Mecabricks (.zmbx)*. It needs the Mecabricks Lite or Advanced add-on by Nicolas
 'Scrubs' Jarraud, installed and enabled; without it the button is greyed out, with a note and a link to
-[www.mecabricks.com](https://www.mecabricks.com) below it.
+[www.mecabricks.com](https://www.mecabricks.com) below it. The collection of the imported model is put
+into the collection list (see *Collection / Selected* below), so Apply works right after the import.
+
+Below the button the panel names the importer that is enabled – Mecabricks Advanced, Mecabricks Lite or
+Renderbricks – with its version; the log file names it too. If two importers are enabled at the same
+time, the line turns red and says which one imports.
 
 ## Start Guide
 
