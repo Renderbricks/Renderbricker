@@ -147,12 +147,19 @@ def justified(layout, text, context, margin=ABOUT_MARGIN):
         col.label(text=line)
 
 
-def justified_bullets(layout, items, context, prefix="•  ", margin=BOX_MARGIN):
-    """Explanations as bullet points set as blocks, one directly under the other (the guide)."""
+POINT_GAP = 1.2             # between two points of the guide: about half a line (chosen from pictures, 2026-10-10)
+
+
+def justified_bullets(layout, items, context, prefix="•  ", margin=BOX_MARGIN, gap=POINT_GAP):
+    """Explanations as bullet points set as blocks, with a small gap between two points (the guide; maintainer
+    2026-10-10: "Bulletpoints mit Leerzeilen getrennt, außer die Zahlenstatistik." - the summary box keeps the plain
+    bullets). gap: the separator between two points, 0 for none."""
     wid, avail, fills = _measure(context, margin)
     col = layout.column(align=True)
     col.scale_y = 0.8
-    for text in items:
+    for n, text in enumerate(items):
+        if n and gap:
+            col.separator(factor=gap)
         for line in set_block(hyphenated(text), wid, avail, fills, prefix):
             col.label(text=line)
 
