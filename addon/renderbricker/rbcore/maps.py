@@ -111,24 +111,53 @@ def _slot_of(tree):
     return Slot(tree, normal, images[0], uv or normal.uv_map)
 
 
+def _trees_behind(tree, target):
+    """The node groups that feed the material outputs of one render engine (target 'EEVEE' or 'CYCLES'; an output
+    for all engines counts for both), with the groups inside them."""
+    found = set()
+
+    def inside(t, depth):
+        for n in t.nodes:
+            if n.type == 'GROUP' and n.node_tree is not None and n.node_tree not in found and depth < 8:
+                found.add(n.node_tree)
+                inside(n.node_tree, depth + 1)
+
+    todo = [n for n in tree.nodes if n.type == 'OUTPUT_MATERIAL' and n.target in (target, 'ALL')]
+    seen = set(todo)
+    while todo:
+        n = todo.pop()
+        if n.type == 'GROUP' and n.node_tree is not None and n.node_tree not in found:
+            found.add(n.node_tree)
+            inside(n.node_tree, 0)
+        for i in n.inputs:
+            for l in i.links:
+                if l.from_node not in seen:
+                    seen.add(l.from_node)
+                    todo.append(l.from_node)
+    return found
+
+
 def find_maps(orig):
-    """The normal maps of a part (Slot), one per group, found through the materials of its import mesh."""
+    """The normal maps of a part (Slot), one per group, found through the materials of its import mesh. Only maps
+    the material reads for EEVEE alone: a tangent normal map that Cycles reads too (the part's own detail map -
+    the hair 25379, the textiles 66830 and 66831) is not ours to replace."""
     slots, seen = [], set()
 
-    def walk(tree, depth):
+    def walk(tree, depth, eevee, cycles):
         for n in tree.nodes:
             if n.type != 'GROUP' or n.node_tree is None or n.node_tree in seen:
                 continue
             seen.add(n.node_tree)
             s = _slot_of(n.node_tree)
             if s is not None:
-                slots.append(s)
+                if n.node_tree in eevee and n.node_tree not in cycles:
+                    slots.append(s)
             elif depth < 8:
-                walk(n.node_tree, depth + 1)
+                walk(n.node_tree, depth + 1, eevee, cycles)
 
     for mt in orig.materials:
         if mt is not None and mt.node_tree is not None:
-            walk(mt.node_tree, 0)
+            walk(mt.node_tree, 0, _trees_behind(mt.node_tree, 'EEVEE'), _trees_behind(mt.node_tree, 'CYCLES'))
     return slots
 
 
