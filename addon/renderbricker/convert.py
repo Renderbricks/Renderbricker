@@ -221,6 +221,10 @@ class _Stepped:
 
     def _end(self, context):
         phase("operator end")
+        gen, pending = getattr(self, "tail_gen", None), getattr(self, "tail_pending", None)
+        if gen is not None and pending is not None and pending[1] == getattr(self, "_maps_phase", None):
+            gen.close()                     # Esc while the bevel maps are baked: its clean-up runs now (#40)
+            self.tail_gen = None
         s = context.scene.mecsub
         try:
             context.window_manager.event_timer_remove(self._timer)

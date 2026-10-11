@@ -21,10 +21,35 @@ def work_scene():
     return sc
 
 
+def remove_scene(sc, empty_only=False):
+    """Remove a helper scene. Blender 4.5 crashes when a scene is removed in the script call that opened a file
+    from a window - the context has no window yet then (run 267: plain Blender 4.5.14, no add-on needed; 5.2 and
+    5.3 do not crash). In that case the scene goes a moment later, from a timer - with empty_only only if nothing
+    was put into it meanwhile. Returns whether it is gone now."""
+    if bpy.app.background or bpy.app.version >= (5, 0) or bpy.context.window is not None:
+        bpy.data.scenes.remove(sc)
+        return True
+    name, tries = sc.name, [0]
+
+    def later():
+        s = bpy.data.scenes.get(name)
+        if s is None or len(bpy.data.scenes) < 2 or (empty_only and s.collection.all_objects):
+            return None
+        if bpy.context.window is None and tries[0] < 50:
+            tries[0] += 1
+            return 0.1
+        if bpy.context.window is not None:
+            bpy.data.scenes.remove(s)
+        return None
+
+    bpy.app.timers.register(later, first_interval=0.0)
+    return False
+
+
 def drop_work_scene():
     sc = bpy.data.scenes.get(WORK_SCENE)
     if sc is not None and not sc.collection.all_objects:
-        bpy.data.scenes.remove(sc)
+        remove_scene(sc, empty_only=True)
 
 
 def link_work(ob):

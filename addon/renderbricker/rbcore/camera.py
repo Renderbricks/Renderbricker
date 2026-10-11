@@ -700,7 +700,7 @@ def apply_template(scene, path):
         scene.render.engine = tpl.render.engine
     world = tpl.world
     objs = list(tpl.objects)
-    bpy.data.scenes.remove(tpl)
+    workscene.remove_scene(tpl)
     for o in objs:                      # the setup scene's own objects are not taken over
         if o.users == 0:
             bpy.data.objects.remove(o)

@@ -109,7 +109,7 @@ class MECSUB_OT_remove(bpy.types.Operator):
                 removed += 1
             ws = bpy.data.scenes.get(core.WORK_SCENE)
             if ws is not None and ws != context.scene:
-                bpy.data.scenes.remove(ws)
+                core.remove_scene(ws)
         core.drop_unused_maps()            # bevel maps baked for copies that are gone now (UPDATES #40)
         core.cleanup_libraries()
         left = sum(1 for m in bpy.data.meshes if m.get("rb_original"))

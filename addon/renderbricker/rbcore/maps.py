@@ -29,7 +29,7 @@ import bmesh
 import bpy
 import numpy as np
 
-from . import config
+from . import config, workscene
 
 ATTR = "rb_smooth_map"          # mesh attribute of the copies (Float, per point): the number of the shape
 MARK = "rb_map"                 # the same number as a property of the copy (readable without the geometry)
@@ -306,27 +306,27 @@ def build_switch(slot, image, src):
     nodes, links = slot.tree.nodes, slot.tree.links
     before = slot.normal.inputs["Color"].links[0].from_socket
     low = min(n.location.y - max(n.height, 260.0) for n in nodes)
-    x0, y0 = slot.image_node.location.x, low - 120.0
+    x0, y0 = slot.normal.location.x - 180.0, low - 140.0     # the Mix node: below the gap in front of the Normal Map
 
     frame = nodes.new("NodeFrame")
-    frame.name, frame.label = NODE + "frame", FRAME_TEXT
+    frame.name, frame.label, frame.label_size = NODE + "frame", FRAME_TEXT, 14
 
-    def new(kind, short, label, dx, dy):
+    def new(kind, short, label, dx, dy, width):
         n = nodes.new(kind)
-        n.name, n.label, n.parent = NODE + short, label, frame
+        n.name, n.label, n.parent, n.width = NODE + short, label, frame, width
         n.location = (x0 + dx, y0 + dy)
         return n
 
-    attr = new("ShaderNodeAttribute", "attribute", "Mark of the smooth copy", 0.0, 0.0)
+    attr = new("ShaderNodeAttribute", "attribute", "Copy mark", -480.0, -320.0, 170.0)
     attr.attribute_type, attr.attribute_name = 'GEOMETRY', ATTR
-    same = new("ShaderNodeMath", "shape", "A copy of this shape?", 220.0, 0.0)
+    same = new("ShaderNodeMath", "shape", "This shape?", -250.0, -320.0, 170.0)
     same.operation = 'COMPARE'
     same.inputs[1].default_value, same.inputs[2].default_value = map_value(src), 0.5
-    img = new("ShaderNodeTexImage", "image", "Bevel map of the smooth copy", 0.0, -220.0)
+    img = new("ShaderNodeTexImage", "image", "Bevel map of the smooth copy", -480.0, 0.0, 240.0)
     img.image = image
     img.interpolation, img.extension = slot.image_node.interpolation, slot.image_node.extension
     img.projection = slot.image_node.projection
-    mix = new("ShaderNodeMix", "mix", "Import mesh: A, smooth copy: B", 440.0, -60.0)
+    mix = new("ShaderNodeMix", "mix", "Import: A, copy: B", 0.0, -40.0, 160.0)
     mix.data_type, mix.blend_type, mix.clamp_factor = 'RGBA', 'MIX', True
     for l in slot.image_node.inputs["Vector"].links:
         links.new(l.from_socket, img.inputs["Vector"])
@@ -467,7 +467,7 @@ def _map_scene():
 def drop_map_scene():
     sc = bpy.data.scenes.get(MAP_SCENE)
     if sc is not None and len(bpy.data.scenes) > 1:
-        bpy.data.scenes.remove(sc)
+        workscene.remove_scene(sc, empty_only=True)
 
 
 def _unit(v):
