@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
-## [1.2.8] – unreleased
+## [1.2.8] – 2026-10-11
 
 - **Blender 4.5: no crash right after opening a file.** Blender 4.1 to 4.5 crash when a script removes a scene in the same call that opened a file; a script that opened a scene and ran Apply at once took Blender down, because Apply tidies up a helper scene. The add-on now removes its helper scenes a moment later in that case. Pressing Apply by hand was not affected; Blender 5.0 and later do not have the fault.
 - **Bevel maps for EEVEE:** a new option below the levels. EEVEE cannot round edges the way Cycles does; the importer shows a small map there that was made for the coarse import, and round rims come out scalloped. With the option on, **Apply** bakes the rounded edges of every converted part from its smooth copy into a new map of the same size, and the part uses it in EEVEE: round rims are clean arcs. About a second per part; Cycles is not changed. The import keeps its map (Subdivision OFF shows it as before), **Remove** takes the new maps out again. Works with the cache file, with several Blender processes, with **Convert headless** and **Save render scene**. For parts imported with their EEVEE maps (Renderbricks); other parts are left as they are.

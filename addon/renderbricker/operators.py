@@ -260,10 +260,10 @@ class MECSUB_OT_cache_after_save(bpy.types.Operator):
         due = cache_question_due()
         L = self.layout
         col = L.column(align=True)
-        col.label(text=f"The scene was saved as {os.path.basename(bpy.data.filepath)}.", icon='INFO')
-        if due:
-            col.label(text=f"Its smoothed parts are still in {os.path.basename(due[0])},", icon='BLANK1')
-            col.label(text="the cache file of the scene it was before.", icon='BLANK1')
+        col.label(text=f"The scene was saved as {os.path.basename(bpy.data.filepath)}.")
+        if due:                             # the names on lines of their own: long ones are not cut short
+            col.label(text="Its smoothed parts are still in the cache file of the scene it was before:")
+            col.label(text=os.path.basename(due[0]))
         L.column(align=True).prop(self, "choice", expand=True)
         col = L.column(align=True)
         col.scale_y = 0.8
@@ -633,9 +633,19 @@ class MECSUB_OT_headless(bpy.types.Operator):
             self.report({'INFO'}, "Save the scene first - Convert headless continues after saving")
             widgets.continue_after_save(context, "mecsub.headless")
             return bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT', filepath=widgets.save_as_name(context))
-        return context.window_manager.invoke_confirm(
-            self, event, title="Convert headless",
-            message=" ".join(common.HEADLESS_ABOUT) + " The scene is saved now. Continue?")
+        # a dialog of its own: the question of invoke_confirm is one line, and with the sentence about what
+        # Convert headless does it grew wider than the Blender window (seen in the tutorial pictures, run 271)
+        return context.window_manager.invoke_props_dialog(self, width=460, title="Convert headless",
+                                                          confirm_text="Continue")
+
+    def draw(self, context):
+        import textwrap
+        col = self.layout.column(align=True)
+        col.scale_y = 0.85
+        for sentence in common.HEADLESS_ABOUT:
+            for line in textwrap.wrap(sentence, 62):
+                col.label(text=line)
+        self.layout.label(text="The scene is saved now. Continue?")
 
     def execute(self, context):
         import os

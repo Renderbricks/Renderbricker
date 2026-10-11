@@ -13,6 +13,7 @@ Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Meca
 - **Checks** – the original is verified untouched, folds and seam gaps are measured after every conversion.
 - **Render camera** – a camera, a physical sky and render settings of their own, switched on and off without touching yours: six views around the model, sun sliders, transparent background, sample levels, all views in one go.
 - **Cycles | EEVEE** – either engine in the viewport and for rendering; EEVEE gets a sun lamp that follows the sky and comes close to Cycles.
+- **Bevel maps for EEVEE** – an option that bakes the rounded edges of the smooth parts into new maps, so round rims come out clean in EEVEE.
 - **Real size** – models imported at scale 0.001 (the metric real size) work like those at scale 1; the render camera follows scale changes.
 
 ## Requirements
@@ -39,10 +40,10 @@ To build the package from the source instead: `python scripts/core/build_addon.p
 
 ## Usage
 
-- **Apply** converts the parts in the collections of the list (or the selection): select a part of the model and press **+** to list its collection – a model imported with *Import from Mecabricks* is listed already. Choose viewport and render level first; with "Cache file next to the scene" the scene is saved automatically once the cache is written.
+- **Apply** converts the parts in the collections of the list (or the selection): select a part of the model and press **+** to list its collection – an imported model is listed already, whichever way it was imported. Choose viewport and render level first; with "Cache file next to the scene" the scene is saved automatically once the cache is written.
 - **Subdivision: ON / OFF** switches every link between the subdivided copy and the original.
 - **F12 / Ctrl+F12** render with the render level.
-- **Convert headless** runs the conversion without the window (faster for large scenes).
+- **Convert headless** does the same as Apply, but outside Blender in a console window – for large scenes. It writes a new scene file with the converted parts; the open scene stays as it is. It does not render.
 - **Save render scene** writes `<scene>_render.blend` for computers without Renderbricker (render farms): all parts at the render level, parts and materials inside the file. A scene with a cache file needs the add-on to show its materials and to render the render level – the render scene does not.
 
 Batch conversion of many models (system Python):

@@ -121,16 +121,20 @@ into a cache file next to the scene – so the scene needs a file first.
 **What it is for:** knowing what the defaults do. They suit most scenes – for the Italian Riviera
 all of them stay as they are.
 
-![The panel with its default settings (1–6)](images/tutorial/T03_settings.webp)
+![The panel with its default settings (1–7)](images/tutorial/T03_settings.webp)
 
 | | Setting | Default | In short |
 |---|---|---|---|
-| 1 | Scope | **All** | which parts: all, the selected ones, or chosen collections |
+| 1 | Collection / Selected | **Collection** | which parts: the ones in the collections of the list – the imported model is in it already – or the selected ones |
 | 2 | Variant | **A – Mecabricks normals** | keeps the shading of the import; *B* gives crisper logos on the studs |
 | 3 | Levels | **Viewport 1 / Render 2** | smooth enough to work with, full quality in the render |
-| 4 | Several Blender processes | **on** | larger scenes are converted by several Blenders at once |
-| 5 | Low Memory | **Auto** | only for very large parts or little memory – see [Going further](#low-memory) |
-| 6 | Cache file | **on** | the copies go into a file of their own, the scene file stays small |
+| 4 | Bevel maps for EEVEE | **off** | clean round rims in EEVEE renders – see [Going further](#bevel-maps-for-eevee) |
+| 5 | Several Blender processes | **on** | larger scenes are converted by several Blenders at once |
+| 6 | Low Memory | **Auto** | only for very large parts or little memory – see [Going further](#low-memory) |
+| 7 | Cache file | **on** | the copies go into a file of their own, the scene file stays small |
+
+Every mesh in the listed col­lec­tions is treated as a Mecabricks part: Ren­der­bricker does not tell LEGO parts
+from other meshes. Keep your own models out of these collections.
 
 **Why two levels:** level 2 has three to four times the faces of level 1. The view­port stays fast
 with level 1, and F12 switches to level 2 only while it renders.
@@ -275,12 +279,18 @@ whole 8K render (1.7 MB):
 **What it is for:** the copies live in `<scene>_rbcache.blend`. A scene saved under another name or
 in another folder still links the old cache – here you decide where it belongs.
 
-![After Save As: the cache of another scene (1) with Move and Copy (2, 3)](images/tutorial/T09_save_as.webp)
+![Right after Save As: the question about the cache file (1–3)](images/tutorial/T09a_cache_question.webp)
 
-1. Right after *Save As* under another name or folder, Ren­der­bricker asks: **Move cache here**, **Copy cache
-   here** or **Not now**. With *Not now* the panel shows **Cache of another scene** and its name (the picture).
-2. **Move cache here** takes the cache along – the old scene then has none.
-3. **Copy cache here** keeps one cache for each file.
+Right after *Save As* under another name or in another folder, Ren­der­bricker asks what to do with the cache file:
+
+1. **Move cache here** takes the cache along – the scene it was before then shows its orig­i­nal meshes.
+2. **Copy cache here** keeps one cache for each file – it needs the disk space twice.
+3. **Not now** leaves every­thing as it is. Confirm with **OK**.
+
+![After Not now: the cache of another scene (1) with Move and Copy (2, 3)](images/tutorial/T09_save_as.webp)
+
+After *Not now* the panel keeps saying **Cache of another scene** (1) and offers **Move cache here** (2) and
+**Copy cache here** (3) until you decide. *File → Save Copy* asks nothing: the open scene keeps its cache.
 
 **Check:** the panel shows *Cache file:* with the new name, e.g.
 `Italian_Riviera_Tutorial_SaveAs_rbcache.blend`.
@@ -292,9 +302,9 @@ in another folder still links the old cache – here you decide where it belongs
 **What it is for:** Convert head­less does the same as Apply, but outside Blender in a console window – for large scenes. It writes a new scene file with the con­verted parts; the open scene stays as it is. It does not render. Blender stays free
 meanwhile.
 
-1. Press **Convert head­less** and confirm with **OK**. The scene is saved first.
+1. Press **Convert head­less** and confirm with **Con­tinue**. The scene is saved first.
 
-![The question of Convert headless (picture of an earlier version: the question now also says what Convert headless does)](images/tutorial/T10_headless_question.webp)
+![The question of Convert headless](images/tutorial/T10_headless_question.webp)
 
 A ter­mi­nal shows the progress; the result is written next to the scene as a new file:
 
@@ -354,26 +364,45 @@ From that menu, parts from the cache file refuse Edit Mode (*error chang­ing mo
 
 ![After Remove: the plain import again (1, 2)](images/tutorial/T11_removed.webp)
 
-**Check:** the summary (2) names the objects and the copies removed – with *All*, Remove covers the
-whole file, every scene included – and the button reads **Sub­di­vi­sion: -**. The cache file stays on
-the disk until you delete it.
+**Check:** the summary (2) names the objects and the copies removed, and the button reads
+**Sub­di­vi­sion: -**. The cache file stays on the disk until you delete it.
+
+**Remove** works on the parts of the list (or the selected ones). **Remove All** next to it takes every
+con­verted part of the file back to its import – all models, every scene – after a question.
 
 ---
 
 ## Going further
 
-### Only some collections
+### The collection list
 
-A large scene can be con­verted piece by piece.
+Apply, Check, ON/OFF and Remove work on the col­lec­tions of the list. A large scene can be con­verted piece by
+piece, and other models in the scene are never con­verted by accident.
 
-![Collection with the list of collections (1–3)](images/tutorial/T03b_collection.webp)
+![Collection, the list and the camera icon (1–3)](images/tutorial/T03b_collection.webp)
 
-1. Choose **Col­lec­tion**. The list starts empty.
-2. Click the col­lec­tion in the Out­liner and press **+**; **−** takes the selected entry out of the list.
+1. **Col­lec­tion** works on the col­lec­tions of the list, **Selected** on the objects selected in the view­port or
+   the Out­liner instead.
+2. The list: an imported model is in it already. **+** beside it adds the col­lec­tion of the selected part – one
+   part of the model is enough; with nothing selected, **+** offers the col­lec­tions that hold parts. **−** takes
+   the selected entry out, the trash empties the list.
 3. The **camera icon** marks a col­lec­tion for the render camera: with the camera on, only the marked
    col­lec­tions are shown and rendered.
 
-Parts outside the chosen col­lec­tions stay as imported; Apply con­verts only what is not up to date.
+Parts outside the choice stay as imported; Apply con­verts only what is not up to date.
+
+### Bevel maps for EEVEE
+
+EEVEE cannot round edges the way Cycles does. The import shows a small baked map there, made for the coarse
+mesh – round rims come out scalloped. With **Bevel maps for EEVEE** on, Apply bakes the rounded edges of every
+con­verted part from its smooth copy into a new map of the same size: round rims are clean arcs. It takes about a
+second per part; Cycles is not changed, and **Remove** takes the maps out again.
+
+### Rendering on another computer
+
+**Save render scene** writes `<scene>_render.blend` next to the scene: every con­verted part at the render level,
+parts and mate­ri­als inside the file. It renders without Ren­der­bricker and without the cache file – on a render
+farm, for example.
 
 ### Levels above 2
 
@@ -398,11 +427,12 @@ prob­lems, into `<scene>_Renderbricker.log` next to the scene.
 
 ## Summary
 
+- The **col­lec­tion list** says which models Ren­der­bricker works on; an imported model is in it by itself.
 - **Apply** smooths every part once; all bricks of that part share the copy.
 - **Sub­di­vi­sion ON/OFF** com­pares with the import, **Check** finds prob­lems before you render.
 - **F12** renders at the render level; the **render camera** gives quick pic­tures without touch­ing
   your setup.
-- The copies live in the **cache file** next to the scene – after *Save As*, move or copy it.
+- The copies live in the **cache file** next to the scene – after *Save As*, Ren­der­bricker asks whether to move or copy it.
 - **Tab** on a con­verted part edits its import; leaving Edit Mode con­verts it again, saving puts it into the cache.
 - **Convert head­less** handles large scenes in the back­ground; **Remove** goes back to the import.
 
