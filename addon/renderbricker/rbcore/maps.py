@@ -241,8 +241,10 @@ def bevel_tree(orig):
 
 # ---------------------------------------------------------------- the mark on the copies
 def map_value(src):
-    """The number of a shape (rb_src) - exact as a 32-bit float."""
-    return float(1 + int(src[:6], 16) % 16777000)
+    """The number of a shape (rb_src): 1 to 65,536. Small on purpose - the Attribute node hands it on as the average
+    of three channels, and for numbers in the millions that average is off by up to 1 in a 32-bit float: the
+    comparison in the switch failed for the whole part (run 264: 80179 and 11609 never showed their map)."""
+    return float(1 + int(src[:4], 16))
 
 
 def is_marked(cp):
