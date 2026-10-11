@@ -572,8 +572,7 @@ def headless_args(context, out):
             os.path.join(os.path.dirname(__file__), "rbcore", "run.py"),
             "--", out, "--view-level", str(s.view_level), "--render-level", str(s.render_level),
             "--shading", "mecabricks" if s.variant == 'A' else "geometric", "--jobs", "auto",
-            "--low-memory", s.low_memory.lower(), "--smooth-maps", "1" if s.smooth_maps else "0",
-            "--map-size", s.smooth_maps_size.lower()]
+            "--low-memory", s.low_memory.lower(), "--smooth-maps", "1" if s.smooth_maps else "0"]
     listing = os.path.splitext(out)[0] + "_objects.json"
     with open(listing, "w", encoding="utf-8") as fh:
         json.dump(sorted(o.name for o in common.targets(context)), fh, ensure_ascii=False)

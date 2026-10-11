@@ -265,7 +265,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         core.LEVELS = s.render_level                    # the checks run at the render level
         core.VIEW_LEVEL, core.RENDER_LEVEL = s.view_level, s.render_level
         core.SHADING = "mecabricks" if s.variant == 'A' else "geometric"
-        core.SMOOTH_MAPS, core.MAP_SIZE = s.smooth_maps, s.smooth_maps_size.lower()
+        core.SMOOTH_MAPS = s.smooth_maps
         items = list(common.by_mesh(common.targets(context)).items())
         self.scope_items = items
         if self.force:
@@ -308,7 +308,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                          f"Shift+click on Apply converts all again")
             props.refresh_state(context)
             context.scene[widgets.APPLIED_KEY] = widgets.apply_key(context)
-            context.scene[widgets.APPLIED_MAPS] = s.smooth_maps_size if s.smooth_maps else ""
+            context.scene[widgets.APPLIED_MAPS] = bool(s.smooth_maps)
             self.report({'INFO'}, "Renderbricker: " + s.summary)
             if not bpy.app.background:      # at the mouse - the summary line alone was overlooked (user, 2026-09-29)
                 n = self.skipped
@@ -395,7 +395,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
             bpy.ops.wm.save_mainfile()
         opts = ["--view-level", str(s.view_level), "--render-level", str(s.render_level),
                 "--shading", "mecabricks" if s.variant == 'A' else "geometric",
-                "--smooth-maps", "1" if s.smooth_maps else "0", "--map-size", s.smooth_maps_size.lower()]
+                "--smooth-maps", "1" if s.smooth_maps else "0"]
         self.workers = core.Workers(dict(self.items), jobs, opts, [me.name for me, _ in self.items])
         self.jobs, self.merging, self.t_start = jobs, False, time.time()
         s.running, s.progress, s.progress_text = True, 0.0, f"0 / {len(self.items)}   starting {jobs} Blenders"
@@ -537,7 +537,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
             s.summary += self.cache_part
         if not self.cancelled:
             context.scene[widgets.APPLIED_KEY] = widgets.apply_key(context)
-            context.scene[widgets.APPLIED_MAPS] = s.smooth_maps_size if s.smooth_maps else ""
+            context.scene[widgets.APPLIED_MAPS] = bool(s.smooth_maps)
             if self.done and not bpy.app.background:
                 from . import camera_ui
                 camera_ui.viewport_clip(context, True, keep=False)     # 0.1 cm for real-size parts (#19)

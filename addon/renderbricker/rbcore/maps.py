@@ -34,13 +34,14 @@ from . import config, workscene
 ATTR = "rb_smooth_map"          # mesh attribute of the copies (Float, per point): the number of the shape
 MARK = "rb_map"                 # the same number as a property of the copy (readable without the geometry)
 NODE = "rb_map_"                # names of the nodes of a switch
-IMAGE_OF, IMAGE_SRC, IMAGE_SIZE = "rb_map_of", "rb_map_src", "rb_map_size"   # image: original image, shape, size
+IMAGE_OF, IMAGE_SRC = "rb_map_of", "rb_map_src"     # image: the importer's image it stands in for, the shape
 MAP_SCENE = "RB map scene"
 FRAME_TEXT = "Renderbricker: bevel map baked from the smooth copy"
 
 SMOOTH_MAPS = config.opt("--smooth-maps", "0") == "1"     # set by the add-on or the command line
-MAP_SIZES = {"original": 1, "med": 2, "high": 4}          # times the size of Mecabricks' map (run 261: 0.9 / 0.5 /
-MAP_SIZE = config.opt("--map-size", "med")                # 0.4 degrees to the Bevel node, 1.1 / 1.9 / 5.1 s a part)
+# The map is as large as the importer's map (mostly 256 px): about a second a part. Twice and four times that size
+# were built and taken out again - "Original klappt wie gewünscht ... Das reicht für EEVEE aus." (maintainer,
+# 2026-10-11; measured in run 261: 0.9 / 0.5 / 0.4 degrees to the Bevel node, 1.1 / 1.9 / 5.1 s a part).
 BEVEL_SAMPLES = 64              # per texel of the bevel pass (16: 1.2 instead of 0.9 degrees)
 FRAME_SAMPLES = 4               # the frame passes are plain shading normals
 CHECK_SAMPLES = 16              # the second look at texels that several faces share
@@ -294,10 +295,10 @@ def _switch_image(sw):
     return sw["image"].image if "image" in sw else None
 
 
-def _switch_key(sw):
-    """(shape, size) the switch's image was made for."""
+def _switch_src(sw):
+    """The shape (rb_src) the switch's image was made for; None without an image."""
     img = _switch_image(sw)
-    return (img.get(IMAGE_SRC), int(img.get(IMAGE_SIZE, 1))) if img is not None else (None, 0)
+    return img.get(IMAGE_SRC) if img is not None else None
 
 
 def build_switch(slot, image, src):
@@ -375,7 +376,7 @@ def drop_unused_maps(everything=False):
     n = 0
     for tree in list(_trees()):
         sw = switch_of(tree)
-        if sw is not None and _switch_key(sw)[0] not in live:
+        if sw is not None and _switch_src(sw) not in live:
             remove_switch(tree)
             n += 1
     _drop_unused_images()
@@ -594,16 +595,16 @@ def _tangent_colours(sc, ob, bevel, uv, w, h, samples):
     return _unit(xyz), ok, in_c
 
 
-def map_colours(sc, target, bevel, uv, w, h, k):
-    """The colours of the map (h*w, 3 in 0..1) for a size k times the original's (w, h), and a report of the texels
-    left flat: {"no place": share of the surface, "shared": share of the covered texels}."""
-    W, H = w * k, h * k
+def map_colours(sc, target, bevel, uv, w, h):
+    """The colours of the map (h*w, 3 in 0..1), the texels the copy covers, and a report of the texels left flat:
+    {"no place": share of the surface, "shared": share of the covered texels}."""
+    W, H = w, h
     xyz, ok, in_c = _tangent_colours(sc, target, bevel, uv, W, H, BEVEL_SAMPLES)
     lost, share = no_place(target.data, uv or target.data.uv_layers.active.name, W, H)
-    # texels that faces share: once more at the original's size with the faces the other way round
+    # texels that faces share: once more with the faces the other way round
     twin = _reversed(target, sc)
     try:
-        a, ok_a, _c = (xyz, ok, in_c) if k == 1 else _tangent_colours(sc, target, bevel, uv, w, h, CHECK_SAMPLES)
+        a, ok_a = xyz, ok
         b, ok_b, _c = _tangent_colours(sc, twin, bevel, uv, w, h, CHECK_SAMPLES)
     finally:
         me = twin.data
@@ -611,7 +612,7 @@ def map_colours(sc, target, bevel, uv, w, h, k):
         bpy.data.meshes.remove(me)
     apart = np.degrees(np.arccos(np.clip((a * b).sum(1), -1.0, 1.0))) > CONFLICT_ANGLE
     clash = _areas((ok_a & ok_b & apart).reshape(h, w))     # single texels on an island's outline are no clash
-    clash = np.repeat(np.repeat(clash, k, axis=0), k, axis=1).ravel() & ~lost
+    clash = clash.ravel() & ~lost
     flat = in_c & (~ok | lost | clash)                  # covered, but nothing to write: the copy's own normal
     xyz[flat | lost] = (0.0, 0.0, 1.0)
     margin = max(2, W // 64)
@@ -621,10 +622,9 @@ def map_colours(sc, target, bevel, uv, w, h, k):
     return np.clip(colours, 0.0, 1.0), in_c, rep
 
 
-def bake_map(slot, orig, rc, src, matrix=None, size=None):
-    """The bevel map of the render copy `rc` of `orig` for a slot: a new packed image, `size` (MAP_SIZES) times
-    the original's. matrix: the world matrix of one of the part's objects. Raises NoBevel or RuntimeError."""
-    k = MAP_SIZES.get(size or MAP_SIZE, 1)
+def bake_map(slot, orig, rc, src, matrix=None):
+    """The bevel map of the render copy `rc` of `orig` for a slot: a new packed image as large as the importer's.
+    matrix: the world matrix of one of the part's objects. Raises NoBevel or RuntimeError."""
     w, h = slot.image.size
     if not w or not h:
         raise RuntimeError("the original map has no pixels")
@@ -635,7 +635,7 @@ def bake_map(slot, orig, rc, src, matrix=None, size=None):
         target, ok = _plain_copy("RB map target", rc, slot.uv, sc, matrix)
         if not ok:
             raise RuntimeError(f"UV layer {slot.uv!r} missing")
-        colours, covered, rep = map_colours(sc, target, bevel, slot.uv, w, h, k)
+        colours, covered, rep = map_colours(sc, target, bevel, slot.uv, w, h)
     finally:
         if target is not None:
             me = target.data
@@ -644,19 +644,19 @@ def bake_map(slot, orig, rc, src, matrix=None, size=None):
         bpy.data.node_groups.remove(bevel)
     if not covered.any():
         raise RuntimeError("the copy covers no texel of the map")
-    image = bpy.data.images.new(f"{slot.image.name} bevel"[:63], w * k, h * k, alpha=False)
+    image = bpy.data.images.new(f"{slot.image.name} bevel"[:63], w, h, alpha=False)
     image.colorspace_settings.name = slot.image.colorspace_settings.name
     rgba = np.concatenate([colours, np.ones((len(colours), 1), np.float32)], axis=1).astype(np.float32)
     image.pixels.foreach_set(rgba.ravel())
     image.pack()
-    image[IMAGE_OF], image[IMAGE_SRC], image[IMAGE_SIZE] = slot.image.name, src, k
+    image[IMAGE_OF], image[IMAGE_SRC] = slot.image.name, src
     image["rb_map_no_place"], image["rb_map_shared"] = rep["no place"], rep["shared"]
     return image
 
 
-def _todo(pairs, k):
-    """(import mesh, render copy, matrix, slot, shape) still without its switch of size k, and the number of slots
-    another shape holds. A shape is listed once per group."""
+def _todo(pairs):
+    """(import mesh, render copy, matrix, slot, shape) still without its switch, and the number of slots another
+    shape holds. A shape is listed once per group."""
     todo, taken, seen = [], 0, set()
     for orig, rc, matrix in pairs:
         if rc is None or not rc.get(MARK) or not rc.get("rb_src"):
@@ -668,39 +668,37 @@ def _todo(pairs, k):
                 continue
             seen.add(key)
             sw = switch_of(slot.tree)
-            have = _switch_key(sw) if sw is not None else None
-            if have is None or have[0] is None or (have[0] == src and have[1] != k):
+            have = _switch_src(sw) if sw is not None else None
+            if have is None:                    # no switch, or one that lost its image
                 todo.append((orig, rc, matrix, slot, src))
-            elif have[0] != src:
+            elif have != src:
                 taken += 1
     return todo, taken
 
 
-def maps_pending(pairs, size=None):
+def maps_pending(pairs):
     """How many maps fit_maps would make for these (import mesh, render copy, matrix) - cheap, for Apply."""
-    return len(_todo(pairs, MAP_SIZES.get(size or MAP_SIZE, 1))[0])
+    return len(_todo(pairs)[0])
 
 
-def fit_maps_steps(pairs, size=None):
+def fit_maps_steps(pairs):
     """Generator: yields (fraction, text) after every map. Returns a report {fitted, shared, taken, failed, seconds}:
-    fitted = made now, shared = a map of the same shape and size was there already, taken = the group holds the map
+    fitted = made now, shared = a map of the same shape was there already, taken = the group holds the map
     of another shape (two different meshes with one map - the first keeps it), failed = [(name, why)]."""
     t0 = time.time()
-    size = size or MAP_SIZE
-    k = MAP_SIZES.get(size, 1)
     drop_unused_maps()
-    todo, taken = _todo(pairs, k)
+    todo, taken = _todo(pairs)
     rep = {"fitted": 0, "shared": 0, "taken": taken, "failed": [], "seconds": 0.0}
     try:
         for i, (orig, rc, matrix, slot, src) in enumerate(todo):
             yield (i / len(todo), f"baking the bevel maps {i}/{len(todo)}")
-            if switch_of(slot.tree) is not None:        # of another size: replaced
+            if switch_of(slot.tree) is not None:        # one that lost its image: built anew
                 remove_switch(slot.tree)
-            image = next((im for im in baked_maps() if im[IMAGE_OF] == slot.image.name and im.get(IMAGE_SRC) == src
-                          and int(im.get(IMAGE_SIZE, 1)) == k), None)
+            image = next((im for im in baked_maps() if im[IMAGE_OF] == slot.image.name and im.get(IMAGE_SRC) == src),
+                         None)
             try:
                 if image is None:
-                    image = bake_map(slot, orig, rc, src, matrix, size)
+                    image = bake_map(slot, orig, rc, src, matrix)
                     rep["fitted"] += 1
                 else:
                     rep["shared"] += 1
@@ -714,8 +712,8 @@ def fit_maps_steps(pairs, size=None):
     return rep
 
 
-def fit_maps(pairs, size=None):
-    gen = fit_maps_steps(pairs, size)
+def fit_maps(pairs):
+    gen = fit_maps_steps(pairs)
     try:
         while True:
             next(gen)

@@ -31,7 +31,7 @@ def _settings(context):
     core.LEVELS = s.render_level
     core.VIEW_LEVEL, core.RENDER_LEVEL = s.view_level, s.render_level
     core.SHADING = "mecabricks" if s.variant == 'A' else "geometric"
-    core.SMOOTH_MAPS, core.MAP_SIZE = s.smooth_maps, s.smooth_maps_size.lower()
+    core.SMOOTH_MAPS = s.smooth_maps
 
 
 def on_copy(ob):
