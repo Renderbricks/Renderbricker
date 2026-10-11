@@ -520,7 +520,7 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
                                         "part, 50 KB in the scene file", 0),
                ('MED', "Med", "Twice the size: about two seconds per part, 140 KB - as close to Cycles as High", 1),
                ('HIGH', "High", "Four times the size: about five seconds per part, 450 KB", 2)],
-        default='ORIGINAL',
+        default='MED',
         description="Size of the bevel maps Apply bakes. A larger map follows the edges more exactly; "
                     "the gain from Med to High is small")
     use_cache: bpy.props.BoolProperty(

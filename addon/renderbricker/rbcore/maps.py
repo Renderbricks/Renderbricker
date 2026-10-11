@@ -40,7 +40,7 @@ FRAME_TEXT = "Renderbricker: bevel map baked from the smooth copy"
 
 SMOOTH_MAPS = config.opt("--smooth-maps", "0") == "1"     # set by the add-on or the command line
 MAP_SIZES = {"original": 1, "med": 2, "high": 4}          # times the size of Mecabricks' map (run 261: 0.9 / 0.5 /
-MAP_SIZE = config.opt("--map-size", "original")           # 0.4 degrees to the Bevel node, 1.1 / 1.9 / 5.1 s a part)
+MAP_SIZE = config.opt("--map-size", "med")                # 0.4 degrees to the Bevel node, 1.1 / 1.9 / 5.1 s a part)
 BEVEL_SAMPLES = 64              # per texel of the bevel pass (16: 1.2 instead of 0.9 degrees)
 FRAME_SAMPLES = 4               # the frame passes are plain shading normals
 CHECK_SAMPLES = 16              # the second look at texels that several faces share
