@@ -72,5 +72,15 @@ def seam_gaps(me, ev, level):
     return gv, ge
 
 
+# ---------------------------------------------------------------- what Convert headless does
+# One wording at every place - tooltip, the question before it starts, the guide, the console, the reference
+# (UPDATES #41: the maintainer had read "headless" as rendering without an open Blender; 2026-10-11: "Es muss
+# klarer sein, was headless genau macht." - "Satz passt, Name bleibt Convert headless").
+HEADLESS_ABOUT = ("Convert headless does the same as Apply, but outside Blender in a console window – for large "
+                  "scenes.",
+                  "It writes a new scene file with the converted parts; the open scene stays as it is.",
+                  "It does not render.")
+
+
 # ---------------------------------------------------------------- panel
 VERSION = ".".join(str(x) for x in __import__("sys").modules[__package__].bl_info["version"])

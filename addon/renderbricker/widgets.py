@@ -12,7 +12,7 @@ def draw_summary(L, s):
         return
     import bpy as _bpy
     box = L.box()
-    bullets(box, s.summary.split(", "), _bpy.context)
+    bullets(box, s.summary.split(", "), _bpy.context, gap=POINT_GAP)
     if len(s.problems):
         col = box.column(align=True)
         col.scale_y = 0.9
@@ -25,14 +25,18 @@ def draw_summary(L, s):
             col.label(text=f"   ... {len(s.problems) - 12} more" + (" - all in the log file" if s.use_log else ""))
 
 
-def bullets(layout, items, context, prefix="•  "):
-    """Explanations as bullet points, wrapped to the sidebar width."""
+def bullets(layout, items, context, prefix="•  ", gap=0):
+    """Explanations as bullet points, wrapped to the sidebar width. gap: the separator between two points - the
+    numbers after Apply and Check have the guide's half line too (maintainer 2026-10-11: "Die Statistik nach dem
+    Apply kann auch mit einer halben Zeile pro Bullet-Point getrennt werden.")."""
     import textwrap
     width = context.region.width if context.region else 300
     chars = max(20, int(width / (7.5 * context.preferences.system.ui_scale)))
     col = layout.column(align=True)
     col.scale_y = 0.8
-    for text in items:
+    for n, text in enumerate(items):
+        if n and gap:
+            col.separator(factor=gap)
         for line in textwrap.wrap(text, chars, initial_indent=prefix, subsequent_indent=" " * len(prefix)):
             col.label(text=line)
 
@@ -152,8 +156,7 @@ POINT_GAP = 1.2             # between two points of the guide: about half a line
 
 def justified_bullets(layout, items, context, prefix="•  ", margin=BOX_MARGIN, gap=POINT_GAP):
     """Explanations as bullet points set as blocks, with a small gap between two points (the guide; maintainer
-    2026-10-10: "Bulletpoints mit Leerzeilen getrennt, außer die Zahlenstatistik." - the summary box keeps the plain
-    bullets). gap: the separator between two points, 0 for none."""
+    2026-10-10: "Bulletpoints mit Leerzeilen getrennt"). gap: the separator between two points, 0 for none."""
     wid, avail, fills = _measure(context, margin)
     col = layout.column(align=True)
     col.scale_y = 0.8

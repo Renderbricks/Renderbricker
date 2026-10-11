@@ -279,7 +279,9 @@ class MECSUB_OT_collection_add(bpy.types.Operator):
     bl_idname = "mecsub.collection_add"
     bl_label = "Add collection"
     bl_description = ("With a part selected: add the collection of that part to the list (one part of the model is "
-                      "enough). With nothing selected: choose from the collections that hold parts")
+                      "enough). With nothing selected: choose from the collections that hold parts. Every mesh in "
+                      "a listed collection is treated as a Mecabricks part - Renderbricker does not tell LEGO "
+                      "parts from other meshes")
     bl_options = {'REGISTER', 'UNDO'}
     name: StringProperty(default="", options={'SKIP_SAVE'})        # the choice from the menu
 
@@ -471,8 +473,10 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
     # numbers are those 1.2.7 stored (All 0, Selected 1, Collection 2): a scene saved with All reads as "" and
     # is set to Collection when it is loaded (scope_from_before).
     scope: EnumProperty(name="Scope", items=[
-        ('COLLECTION', "Collection", "Mesh objects in the collections of the list and their child collections", 2),
-        ('SELECTED', "Selected", "Selected mesh objects only", 1)],
+        ('COLLECTION', "Collection", "Mesh objects in the collections of the list and their child collections. "
+                                     "Every mesh in them is treated as a Mecabricks part", 2),
+        ('SELECTED', "Selected", "Selected mesh objects only. Every selected mesh is treated as a Mecabricks "
+                                 "part", 1)],
         default='COLLECTION')     # the list starts empty (user, 2026-09-28)
     collections: CollectionProperty(type=MECSUB_CollectionItem)
     collections_index: IntProperty(default=0)

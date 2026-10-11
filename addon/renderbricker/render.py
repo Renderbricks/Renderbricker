@@ -1,4 +1,5 @@
 """F12 and Ctrl+F12 with the render level, and All views (render slots, timers)."""
+import contextlib
 import bpy
 from bpy.app.handlers import persistent
 from . import rbcore as core
@@ -52,11 +53,53 @@ def _render_post(scene, *args):
         _swap_back()
 
 
+# ---------------------------------------------------------------- where the picture shows
+# Blender decides where a render shows when it starts (render_view_open in editors/render/render_view.cc, called
+# from screen_render_invoke): with Preferences > Interface > Render In set to "Keep User Interface" it opens
+# nothing - the status bar runs, and whoever has no Image Editor open sees no picture (maintainer 2026-10-11, in
+# step 7 of the guide: "Unten sehe ich eine Statusleiste. Aber ich sehe kein Render?"). Renderbricker's renders
+# then open the render window: the preference is "New Window" for the start of the render and has its value back
+# at once (UPDATES #41; the same in Gaussian Render Capture). An Image Editor that shows the Render Result is left
+# alone - Blender draws into it, the picture is seen.
+def render_result_open():
+    """Some Image Editor shows the Render Result."""
+    for w in bpy.context.window_manager.windows:
+        for a in w.screen.areas:
+            if a.type == 'IMAGE_EDITOR':
+                img = a.spaces.active.image
+                if img is not None and img.type == 'RENDER_RESULT':
+                    return True
+    return False
+
+
+def has_window():
+    return not bpy.app.background
+
+
+@contextlib.contextmanager
+def render_window():
+    """For starting a render: the render window opens also with "Keep User Interface". Yields whether the
+    preference was changed for it; value and unsaved mark of the preferences are as before afterwards."""
+    prefs = bpy.context.preferences
+    old, dirty = prefs.view.render_display_type, prefs.is_dirty
+    force = old == 'NONE' and has_window() and not render_result_open()
+    if force:
+        prefs.view.render_display_type = 'WINDOW'
+    try:
+        yield force
+    finally:
+        if force:
+            prefs.view.render_display_type = old
+            prefs.is_dirty = dirty
+
+
 class MECSUB_OT_render(bpy.types.Operator):
     bl_idname = "mecsub.render"
     bl_label = "Render with the render level"
     bl_description = ("Render (F12 / Ctrl+F12): the links are switched to the copies of the render level "
-                      "before the render starts and back to the viewport level when it has ended")
+                      "before the render starts and back to the viewport level when it has ended. The render "
+                      "window opens also when Blender is set to keep the interface (Preferences > Interface > "
+                      "Render In) - unless an Image Editor shows the Render Result already")
     animation: bpy.props.BoolProperty(default=False)
     use_viewport: bpy.props.BoolProperty(default=False)
 
@@ -66,7 +109,8 @@ class MECSUB_OT_render(bpy.types.Operator):
         _swap_to_render(context.scene)
         _RENDER_OP[0] = True
         try:
-            r = bpy.ops.render.render('INVOKE_DEFAULT', animation=self.animation, use_viewport=self.use_viewport)
+            with render_window():
+                r = bpy.ops.render.render('INVOKE_DEFAULT', animation=self.animation, use_viewport=self.use_viewport)
         except Exception as e:
             self.report({'ERROR'}, f"Renderbricker: {e}")
             r = {'CANCELLED'}
@@ -112,7 +156,7 @@ def ensure_render_result(override=None):
     img = bpy.data.images.get("Render Result")
     if img is None:
         try:
-            with bpy.context.temp_override(**(override or {})):
+            with bpy.context.temp_override(**(override or {})), render_window():
                 bpy.ops.render.view_show('INVOKE_DEFAULT')
         except (RuntimeError, TypeError):
             pass
@@ -172,7 +216,7 @@ def _views_tick():
     set_render_slot(view, ov)
     sc.mecsub.progress_text = f"Rendering view {6 - len(_VIEWS['queue'])} / 6: {view.title()}"
     try:
-        with bpy.context.temp_override(**ov):
+        with bpy.context.temp_override(**ov), render_window():
             r = bpy.ops.render.render('INVOKE_DEFAULT', use_viewport=True)
     except RuntimeError as e:
         print("Renderbricker: render of view", view, "not started:", e)

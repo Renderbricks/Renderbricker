@@ -1,7 +1,7 @@
 """Subdivision ON/OFF, Remove, the cache file (move, copy, switch), select, Convert headless."""
 import time
 import bpy
-from bpy.props import StringProperty
+from bpy.props import EnumProperty, StringProperty
 from . import rbcore as core
 from . import common, convert, logfile, props, widgets
 
@@ -181,6 +181,107 @@ class MECSUB_OT_move_cache(bpy.types.Operator):
         self.report({'ERROR'} if err else {'INFO'}, "Renderbricker: " + s.summary)
         convert.redraw(context)
         return {'CANCELLED'} if err else {'FINISHED'}
+
+
+# ---------------------------------------------------------------- the cache after Save As (UPDATES #41)
+# Save As under another name or in another folder leaves the cache file with the old scene. The panel has shown
+# "Cache of another scene" with Move / Copy since run 63 - but only to those who look there. Now the add-on asks
+# right after such a save (maintainer 2026-10-11: "Wenn der User selbst Save as über das offizielle Menü
+# ausführt, kann man das auch abfangen, sobald er einen anderen Ort wählt?" - "so bauen, mit Frage nach Save As").
+# It asks and does not choose: Move leaves the old scene without its cache, Copy takes the disk space twice.
+# Save Copy does not change the open scene and asks nothing. Asked once per scene file and session; "Not now"
+# leaves the box in the panel.
+_CACHE_ASKED = set()        # (cache file, where it should lie) the question was shown for
+
+
+def cache_question_due():
+    """(cache file, where it should lie) when the scene links a cache file that exists and belongs to another
+    scene file; None otherwise."""
+    if not bpy.data.filepath:
+        return None
+    st = core.cache_state()
+    if st is None or not st[3] or st[1] == st[2]:
+        return None
+    return st[1], st[2]
+
+
+@bpy.app.handlers.persistent
+def cache_after_save(*_args):
+    """save_post: ask about the cache when the scene was saved somewhere else. A handler cannot open a dialog, a
+    timer right after it can. Not while a run of the add-on saves, not in the background."""
+    if bpy.app.background:
+        return
+    due = cache_question_due()
+    if due is None or due in _CACHE_ASKED:
+        return
+    if any(getattr(sc, "mecsub", None) is not None and sc.mecsub.running for sc in bpy.data.scenes):
+        return
+    _CACHE_ASKED.add(due)
+    bpy.app.timers.register(_ask_cache, first_interval=0.3)
+
+
+def _ask_cache():
+    from . import edit
+    if cache_question_due() is not None:
+        try:
+            with bpy.context.temp_override(**edit._context_override()):
+                bpy.ops.mecsub.cache_after_save('INVOKE_DEFAULT')
+        except Exception:
+            import traceback
+            traceback.print_exc()
+    return None
+
+
+class MECSUB_OT_cache_after_save(bpy.types.Operator):
+    bl_idname = "mecsub.cache_after_save"
+    bl_label = "Cache file"
+    bl_description = ("The scene was saved under another name or in another folder: move or copy the cache file "
+                      "to it, or decide later")
+    bl_options = {'INTERNAL'}
+    choice: EnumProperty(
+        name="Cache",
+        items=[('MOVE', "Move cache here", "The cache file goes to this scene; the scene file it belonged to "
+                                           "before then shows its original meshes"),
+               ('COPY', "Copy cache here", "Both scene files keep a cache of their own - needs the disk space "
+                                           "of a second cache"),
+               ('LATER', "Not now", "Nothing happens; the panel keeps offering Move cache here and Copy cache "
+                                    "here")],
+        default='LATER', options={'SKIP_SAVE'})
+
+    @classmethod
+    def poll(cls, context):
+        return cache_question_due() is not None
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=440, title="Renderbricker: the cache file")
+
+    def draw(self, context):
+        import os
+        due = cache_question_due()
+        L = self.layout
+        col = L.column(align=True)
+        col.label(text=f"The scene was saved as {os.path.basename(bpy.data.filepath)}.", icon='INFO')
+        if due:
+            col.label(text=f"Its smoothed parts are still in {os.path.basename(due[0])},", icon='BLANK1')
+            col.label(text="the cache file of the scene it was before.", icon='BLANK1')
+        L.column(align=True).prop(self, "choice", expand=True)
+        col = L.column(align=True)
+        col.scale_y = 0.8
+        col.label(text="Move: the scene it was before then shows its original meshes.")
+        col.label(text="Copy: both scenes keep a cache - twice the disk space.")
+
+    def execute(self, context):
+        if self.choice == 'MOVE':
+            bpy.ops.mecsub.move_cache('INVOKE_DEFAULT')
+        elif self.choice == 'COPY':         # its own question only when a file would be replaced
+            import os
+            due = cache_question_due()
+            bpy.ops.mecsub.copy_cache('INVOKE_DEFAULT' if due and os.path.exists(due[1]) else 'EXEC_DEFAULT')
+        else:
+            context.scene.mecsub.summary = ("The cache file still belongs to the scene this one was saved from - "
+                                            "the panel offers Move cache here and Copy cache here")
+            convert.redraw(context)
+        return {'FINISHED'}
 
 
 class MECSUB_OT_cache_switch(bpy.types.Operator):
@@ -523,9 +624,9 @@ class MECSUB_OT_select(bpy.types.Operator):
 class MECSUB_OT_headless(bpy.types.Operator):
     bl_idname = "mecsub.headless"
     bl_label = "Convert headless"
-    bl_description = ("Save the scene, write a start script next to it (.bat on Windows, .command on macOS, .sh on "
-                      "Linux) and run it in a terminal: Blender converts the meshes in scope in the background with several "
-                      "Blender processes and saves the result as <scene>_subdiv_<add-on version>.blend. The open scene is not changed")
+    bl_description = (" ".join(common.HEADLESS_ABOUT) + " The scene is saved first; the new file is "
+                      "<scene>_subdiv_<add-on version>.blend next to it. The start script written beside it (.bat on "
+                      "Windows, .command on macOS, .sh on Linux) can be run again by hand")
 
     def invoke(self, context, event):
         if not bpy.data.filepath:
@@ -534,7 +635,7 @@ class MECSUB_OT_headless(bpy.types.Operator):
             return bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT', filepath=widgets.save_as_name(context))
         return context.window_manager.invoke_confirm(
             self, event, title="Convert headless",
-            message="The scene is saved now and converted in a console window. Continue?")
+            message=" ".join(common.HEADLESS_ABOUT) + " The scene is saved now. Continue?")
 
     def execute(self, context):
         import os
@@ -596,8 +697,9 @@ def write_headless_script(base, stem, blend, out, args):
     head = f"Renderbricker {common.VERSION}: converting"
     if sys.platform.startswith("win"):
         q = lambda x: '"' + x.replace("%", "%%") + '"'
-        lines = ["@echo off", "chcp 65001 >nul", f"title Renderbricker {common.VERSION} headless: {stem}",
-                 f"echo {head} {q(blend)}", f"echo Result: {q(out)}", "echo.",
+        lines = ["@echo off", "chcp 65001 >nul", f"title Renderbricker {common.VERSION} headless: {stem}"]
+        lines += [f"echo {line}" for line in common.HEADLESS_ABOUT] + ["echo."]
+        lines += [f"echo {head} {q(blend)}", f"echo Result: {q(out)}", "echo.",
                  " ".join([q(blender)] + [q(a) if (" " in a or os.sep in a) else a for a in args])
                  + " 2>&1 | findstr /B " + " ".join(f'/C:"{w}"' for w in HEADLESS_SHOW),
                  "echo.", f"if exist {q(out)} (echo Done: {q(out)}) else (echo FAILED - no result written)", "pause"]
@@ -606,8 +708,9 @@ def write_headless_script(base, stem, blend, out, args):
             fh.write("\n".join(lines) + "\n")
         return path
     path = base + (".command" if sys.platform == "darwin" else ".sh")
-    lines = ["#!/bin/sh", f"# Renderbricker {common.VERSION} headless conversion of {stem}",
-             f"echo {shlex.quote(head + ' ' + blend)}", f"echo {shlex.quote('Result: ' + out)}", "echo",
+    lines = ["#!/bin/sh", f"# Renderbricker {common.VERSION} headless conversion of {stem}"]
+    lines += [f"echo {shlex.quote(line)}" for line in common.HEADLESS_ABOUT] + ["echo"]
+    lines += [f"echo {shlex.quote(head + ' ' + blend)}", f"echo {shlex.quote('Result: ' + out)}", "echo",
              " ".join(shlex.quote(a) for a in [blender] + args)
              + " 2>&1 | grep -E " + shlex.quote("^(" + "|".join(HEADLESS_SHOW) + ")"),
              "echo", f"if [ -f {shlex.quote(out)} ]; then echo {shlex.quote('Done: ' + out)}; "

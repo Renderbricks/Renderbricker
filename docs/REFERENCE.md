@@ -11,11 +11,12 @@ tooltips in Blender say the same in short.
 **Import from Mecabricks** at the very top of the panel imports a Mecabricks scene (`.zmbx`) – the same
 as *File > Import > Mecabricks (.zmbx)*. It needs the Mecabricks Lite or Advanced add-on by Nicolas
 'Scrubs' Jarraud, installed and enabled; without it the button is greyed out, with a note and a link to
-[www.mecabricks.com](https://www.mecabricks.com) below it. The collection of the imported model is put
-into the collection list (see *Collection / Selected* below), so Apply works right after the import.
+[www.mecabricks.com](https://www.mecabricks.com) below it. The col­lec­tion of an imported model is put
+into the col­lec­tion list (see *Col­lec­tion / Selected* below), so Apply works right after the import –
+which­ever way the model is imported: this button, *File > Import* or the importer's own panel.
 
 Below the button the panel names the importer that is enabled – Mecabricks Advanced, Mecabricks Lite or
-Renderbricks – with its version; the log file names it too. If two importers are enabled at the same
+Ren­der­bricks – with its version; the log file names it too. If two importers are enabled at the same
 time, the line turns red and says which one imports.
 
 ## Start Guide
@@ -24,14 +25,14 @@ time, the line turns red and says which one imports.
 steps: save the scene, choose the parts, set­tings, Apply, Check, compare with the import, render, and
 what next. Every step explains its func­tions in bullet points and shows only its own con­trols; a
 status line says what is still open (red) or done (green, with a tick), the action of the step is
-high­lighted, and **Next** is high­lighted once the step is done. **Back** and the **×** in the step
+high­lighted, and **Next** is high­lighted once the step is done. In the first step one thing is high­lighted at a time: **Import from Mecabricks** while no model is in the col­lec­tion list, then **Save As** until the scene has a file, then **Next**. **Back** and the **×** in the step
 header work any time.
 
 ## Settings
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Collection / Selected** | Collection | Which mesh objects Apply, Check, On/Off, Levels, Remove and Convert headless work on: the ones in the collections of a list and their child collections, or the selected ones. There is no "all" – other models in the scene are never converted by accident. The list starts empty: **+** with a part selected adds the collection of that part (one part of the model is enough; a part in several collections brings all of them), with nothing selected it offers the collections that hold parts. **−** removes the selected entry, or asks which one when none is selected; the trash empties the list. The Scene Collection cannot be listed – put parts that lie directly in it into a collection, or use *Selected*. A model imported with *Import from Mecabricks* is put into the list by itself. Only the links in scope switch to the copy; other links of the same part keep the original until they are converted too. Scenes saved with *All* (up to 1.2.7) open with *Collection* and an empty list; their converted parts stay converted. |
+| **Collection / Selected** | Collection | Which mesh objects Apply, Check, On/Off, Levels, Remove and Convert headless work on: the ones in the collections of a list and their child collections, or the selected ones. There is no "all" – other models in the scene are never converted by accident. The list starts empty: **+** with a part selected adds the collection of that part (one part of the model is enough; a part in several collections brings all of them), with nothing selected it offers the collections that hold parts. **−** removes the selected entry, or asks which one when none is selected; the trash empties the list. The Scene Collection cannot be listed – put parts that lie directly in it into a collection, or use *Selected*. An imported model is put into the list by itself, whichever way it is imported: a collection that arrives in the scene with mesh objects of its own is listed, and the line below the panel says so. A collection you make from parts that were already there is not – add it with **+**. **Every mesh in the listed collections, or selected, is treated as a Mecabricks part:** Renderbricker does not tell LEGO parts from other meshes, so keep your own models out of the choice. Only the links in scope switch to the copy; other links of the same part keep the original until they are converted too. Scenes saved with *All* (up to 1.2.7) open with *Collection* and an empty list; their converted parts stay converted. |
 | **Variant** | A – Mecabricks normals | **A:** the subdivision interpolates the custom normals of the import – the shading stays as Mecabricks made it, logos on studs look soft. **B – geometric normals:** normals of the smoothed surface, creased edges sharp – crisper logos, but the shading of the import is not kept. |
 | **Viewport** level | 1 | Subdivision shown in the viewport. 0 shows the original mesh (no viewport copy is stored – the file gets about a fifth smaller). Levels already baked switch at once, others are computed the first time (with a progress bar). |
 | **Render** level | 2 | Subdivision used for rendering; the checks use this level. 2 is enough even for close-ups. Raising a level above 2 asks first – *Cancel* (or Esc) keeps the old level – and the panel shows a warning while it is above 2: every level multiplies the faces by three to four, so memory, file size and conversion time grow a lot for a small visible gain. |
@@ -50,8 +51,8 @@ header work any time.
 | **Subdivision: ON / OFF** | Switches every link between the subdivided copy and the original mesh (viewport and render). The button shows the state: *ON* (pressed), *OFF*, or *partly on* when objects differ. |
 | **Update cache** | Shown under Apply when parts were edited and converted again while the scene uses a cache file: their new copies are still in the scene file. Writes them into the cache – the other copies are carried over unchanged, nothing is converted again. Saving the scene does the same by itself. |
 | **Remove** / **Remove All** | *Remove* points the links of the parts in scope back to the original meshes and removes their copies – these parts are the plain import again. *Remove All* does the same for the whole file, after a question: every model in every scene, and copies of parts deleted in the meantime. |
-| **Convert headless** | Saves the scene, writes a start script next to it (`.bat` on Windows, `.command` on macOS, `.sh` on Linux) and runs it in a terminal. Blender converts the parts in scope in the background on several cores and saves the result as `<scene>_subdiv_<version>.blend` – the open scene is not changed. If no terminal is found (Linux), the panel names the script to start by hand. |
-| **Move cache here / Copy cache here** | Shown when the scene was saved under another name or in another folder and still links the cache of the old scene file. *Move* renames the cache to belong to this scene (the old scene file then shows its original meshes); *Copy* gives this scene a cache of its own. |
+| **Convert headless** | Convert headless does the same as Apply, but outside Blender in a console window – for large scenes. It writes a new scene file with the converted parts; the open scene stays as it is. It does not render. In detail: the button saves the scene, writes a start script next to it (`.bat` on Windows, `.command` on macOS, `.sh` on Linux) and runs it in a terminal. There Blender converts the parts in scope without a window, on several cores, and saves the result as `<scene>_subdiv_<version>.blend`. If no terminal is found (Linux), the panel names the script to start by hand. |
+| **Move cache here / Copy cache here** | Right after *Save As* under another name or in another folder, Renderbricker asks what to do with the cache file: **Move cache here**, **Copy cache here** or **Not now** (*Save Copy* asks nothing – the open scene keeps its cache). The two buttons stay in the panel, and in the last step of the Start Guide, as long as the scene still links the cache of the old scene file. *Move* renames the cache to belong to this scene (the old scene file then shows its original meshes); *Copy* gives this scene a cache of its own. |
 
 ## Render camera
 
@@ -144,7 +145,7 @@ Apply and Convert head­less never change the camera, world or render settings.
 
 **F12** and **Ctrl+F12** render with the render level: the links are switched to the render copies
 before the render starts and back to the view­port level afterwards. The same is in the *Render*
-menu as *Render Image / Render Ani­ma­tion (Ren­der­bricker levels)*. Renders started from the command
+menu as *Render Image / Render Ani­ma­tion (Ren­der­bricker levels)*. These renders open the render window also when Blender is set to keep the inter­face (*Pref­er­ences > Inter­face > Render In: Keep User Inter­face*), where Blender itself would only show the progress in the status bar. The pref­er­ence is not changed. If an Image Editor already shows the *Render Result*, the picture appears there and no window is opened. Renders started from the command
 line (`blender -b … -f`) switch the level as well.
 
 ## Files
@@ -194,6 +195,6 @@ well), not on parts from the cache file: use Tab there.
 ## About
 
 The sub-panel **About** shows the copy­right, the trade­mark notes and links to
-[www.renderbricks.com](https://www.renderbricks.com), Face­book, YouTube and this repository.
+[vr.renderbricks.com](http://vr.renderbricks.com/RB0156_Large_Luxury_Yacht/), Face­book, Insta­gram, YouTube and this repository. Below the panel's buttons, **Tuto­rial** and **Doc­u­men­ta­tion** open the two pages on GitHub.
 
 </div>

@@ -71,24 +71,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         body.prop(s, "use_cache")
         logfile.draw_log(body, s)
         camera_ui.draw_render_camera(body, context)
-        st = core.cache_state()
-        if st is not None:
-            import os
-            box = body.box()
-            col = box.column(align=True)        # two lines: at the default sidebar width one line was cut
-            name = os.path.basename(st[1])      # (tutorial pictures, 2026-09-29)
-            if not st[3]:
-                col.label(text="Cache missing:", icon='ERROR')
-                col.label(text=name, icon='BLANK1')
-            elif st[1] != st[2]:
-                col.label(text="Cache of another scene:", icon='ERROR')
-                col.label(text=name, icon='BLANK1')
-                sub = box.column(align=True)
-                sub.operator("mecsub.move_cache", icon='FILE_FOLDER', text="Move cache here")
-                sub.operator("mecsub.copy_cache", icon='DUPLICATE', text="Copy cache here")
-            else:
-                col.label(text="Cache file:", icon='FILE_BLEND')
-                col.label(text=name, icon='BLANK1')
+        draw_cache_box(body)
         row = body.row(align=True)
         row.operator("mecsub.check", icon='VIEWZOOM')
         state = s.subdiv_state
@@ -101,15 +84,51 @@ class MECSUB_PT_panel(bpy.types.Panel):
         body.separator()
         body.operator("mecsub.headless", icon='CONSOLE')
         body.operator("mecsub.render_scene", icon='RENDER_STILL')
-        body.operator("wm.url_open", text="Documentation", icon='HELP').url = DOCUMENTATION_URL
+        draw_help_links(body)
         widgets.draw_summary(L, s)
         wrapped(L, COPYRIGHT, context, center=True)     # centred under Documentation (user, 2026-09-29)
+
+
+def draw_cache_box(L, only_trouble=False):
+    """The cache file of the scene: its name, or what is wrong with it - missing, or the cache of another scene
+    (after Save As elsewhere) with Move / Copy. only_trouble: nothing while all is well (the guide's last step)."""
+    st = core.cache_state()
+    if st is None:
+        return
+    import os
+    ok = st[3] and st[1] == st[2]
+    if ok and only_trouble:
+        return
+    box = L.box()
+    col = box.column(align=True)        # two lines: at the default sidebar width one line was cut
+    name = os.path.basename(st[1])      # (tutorial pictures, 2026-09-29)
+    if not st[3]:
+        col.label(text="Cache missing:", icon='ERROR')
+        col.label(text=name, icon='BLANK1')
+    elif st[1] != st[2]:
+        col.label(text="Cache of another scene:", icon='ERROR')
+        col.label(text=name, icon='BLANK1')
+        sub = box.column(align=True)
+        sub.operator("mecsub.move_cache", icon='FILE_FOLDER', text="Move cache here")
+        sub.operator("mecsub.copy_cache", icon='DUPLICATE', text="Copy cache here")
+    else:
+        col.label(text="Cache file:", icon='FILE_BLEND')
+        col.label(text=name, icon='BLANK1')
+
+
+def draw_help_links(L):
+    """Tutorial and Documentation side by side (maintainer 2026-10-11: "Nebeneinander in einer Zeile", Tutorial
+    first) - at the foot of the panel and in the guide's last step."""
+    row = L.row(align=True)
+    row.operator("wm.url_open", text="Tutorial", icon='IMAGE_DATA').url = TUTORIAL_URL
+    row.operator("wm.url_open", text="Documentation", icon='HELP').url = DOCUMENTATION_URL
 
 
 COPYRIGHT = "© 2026 Renderbricks®"                     # centred under Documentation (user, 2026-09-29)
 
 
 DOCUMENTATION_URL = "https://github.com/Renderbricks/Renderbricker#documentation"
+TUTORIAL_URL = "https://github.com/Renderbricks/Renderbricker/blob/main/docs/TUTORIAL.md"
 
 
 NAME_DROP = 1.15                        # header: height of the name's box - the logo's B between cap line and baseline (user's mock-up)
@@ -124,16 +143,18 @@ LOGO_SCALE = 4.37                       # About: the logo as wide as "Renderbric
 TRADEMARK = ("Renderbricks®", "is a registered word mark in Germany.")   # the name alone under the logo (user)
 
 
-DISCLAIMER = ("Au|thor: Prof. Mi|chael Klein—Me|di|a|de|sign Uni|ver|si|ty of Ap|plied Sci|ences. "
+DISCLAIMER = ("Au|thor: Prof. Mi|chael Klein – Me|di|a|de|sign Uni|ver|si|ty of Ap|plied Sci|ences. "
               "Ren|der|bricks is about ren|der|ing dig|i|tal LEGO®. LEGO® is a trade|mark of the LEGO Group of "
               "com|pa|nies which does not spon|sor, au|tho|rize or en|dorse this add-on.")   # | = hyphenation point
 
 
-LINKS = (("www.renderbricks.com", "https://www.renderbricks.com", 'URL'),
+# The first link is http: the web space has no certificate yet (checked 2026-10-11), https does not answer.
+LINKS = (("vr.renderbricks.com", "http://vr.renderbricks.com/RB0156_Large_Luxury_Yacht/", 'URL'),
          ("Facebook", "https://www.facebook.com/renderbricks", 'COMMUNITY'),
+         ("Instagram", "https://www.instagram.com/renderbricks/", 'IMAGE_DATA'),
          ("YouTube", "https://www.youtube.com/@renderbricks", 'PLAY'),
          ("Renderbricker on GitHub", "https://github.com/Renderbricks/Renderbricker", 'HELP'),
-         ("Digital Film Design—Animation/VFX",
+         ("Digital Film Design – Animation/VFX",
           "https://www.mediadesign.de/de/bachelor/digital-film-design-animation-vfx-ba",
           'FILE_MOVIE'))                    # the film strip: the study programme Digital Film Design
 

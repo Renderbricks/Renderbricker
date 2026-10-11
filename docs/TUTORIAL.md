@@ -94,7 +94,8 @@ into a cache file next to the scene – so the scene needs a file first.
 
 1. In [Mecabricks](https://www.mecabricks.com), export the model for Blender – a `.zmbx` file.
 2. In Blender: *File → Import → **Mecabricks (.zmbx)*** (1) – or **Import from Mecabricks** at the top
-   of the Ren­der­bricker panel (Mecabricks Lite or Advanced add-on) – and pick the file.
+   of the Ren­der­bricker panel (Mecabricks Lite or Advanced add-on) – and pick the file. Either way the
+   col­lec­tion of the model is put into Ren­der­bricker's col­lec­tion list.
 3. Save the scene (*File → Save As*). Ren­der­bricker offers the name of the imported model; the cache
    file will carry the same name:
 
@@ -191,7 +192,8 @@ to it selects and frames it – see [Trou­bleshoot­ing](TROUBLESHOOTING.md) an
 
 **What it is for:** ren­der­ing with your own camera, world and set­tings – in full quality.
 
-1. Press **F12** (or *Render → Render Image (Ren­der­bricker levels)*).
+1. Press **F12** (or *Render → Render Image (Ren­der­bricker levels)*). The render window opens – also when
+   Blender is set to *Keep User Inter­face* (*Pref­er­ences → Inter­face → Render In*).
 
 **Check:** the render shows the smooth level 2; the view­port stays at level 1 – the parts switch
 only while the render runs.
@@ -275,7 +277,8 @@ in another folder still links the old cache – here you decide where it belongs
 
 ![After Save As: the cache of another scene (1) with Move and Copy (2, 3)](images/tutorial/T09_save_as.webp)
 
-1. After *Save As*, the panel shows **Cache of another scene** and its name.
+1. Right after *Save As* under another name or folder, Ren­der­bricker asks: **Move cache here**, **Copy cache
+   here** or **Not now**. With *Not now* the panel shows **Cache of another scene** and its name (the picture).
 2. **Move cache here** takes the cache along – the old scene then has none.
 3. **Copy cache here** keeps one cache for each file.
 
@@ -286,12 +289,12 @@ in another folder still links the old cache – here you decide where it belongs
 
 ## Step 9: Large scenes
 
-**What it is for:** scenes with thou­sands of parts convert in the back­ground – Blender stays free
-mean­while, and the open scene is not changed.
+**What it is for:** Convert head­less does the same as Apply, but outside Blender in a console window – for large scenes. It writes a new scene file with the con­verted parts; the open scene stays as it is. It does not render. Blender stays free
+meanwhile.
 
 1. Press **Convert head­less** and confirm with **OK**. The scene is saved first.
 
-![The question of Convert headless](images/tutorial/T10_headless_question.webp)
+![The question of Convert headless (picture of an earlier version: the question now also says what Convert headless does)](images/tutorial/T10_headless_question.webp)
 
 A ter­mi­nal shows the progress; the result is written next to the scene as a new file:
 

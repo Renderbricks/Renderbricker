@@ -5,15 +5,22 @@ from . import camera_ui, logfile, panels, props, widgets
 
 
 def _g_save(L, context, s):
+    """One thing is blue at a time (maintainer 2026-10-11): Import while no model is in the choice of parts, then
+    Save As until the scene has a file, then Next."""
     import os
-    camera_ui.draw_import(L, context)
-    if bpy.data.filepath:
+    parts = widgets.scope_state(context)[0]
+    saved = bool(bpy.data.filepath)
+    camera_ui.draw_import(L, context, depress=not parts)
+    if saved:
         L.operator("wm.save_mainfile", text="Save", icon='FILE_TICK')
     else:
-        L.operator("wm.save_as_mainfile", text="Save As...", icon='FILE_TICK', depress=True).filepath =             widgets.save_as_name(context)
-    ok = bool(bpy.data.filepath)
-    widgets.status(L, ok, f"Saved: {os.path.basename(bpy.data.filepath)}" if ok else "Not saved yet")
-    return ok
+        op = L.operator("wm.save_as_mainfile", text="Save As...", icon='FILE_TICK', depress=parts)
+        op.filepath = widgets.save_as_name(context)
+    if not parts:
+        widgets.status(L, False, "No model in the list yet")
+    else:
+        widgets.status(L, saved, f"Saved: {os.path.basename(bpy.data.filepath)}" if saved else "Not saved yet")
+    return parts and saved
 
 
 def _g_parts(L, context, s):
@@ -83,7 +90,8 @@ def _g_render(L, context, s):
 
 def _g_next(L, context, s):
     L.operator("mecsub.headless", icon='CONSOLE')
-    L.operator("wm.url_open", text="Documentation", icon='HELP').url = panels.DOCUMENTATION_URL
+    panels.draw_help_links(L)
+    panels.draw_cache_box(L, only_trouble=True)     # Move / Copy cache, when Save As left the cache behind
     return True
 
 
@@ -95,11 +103,13 @@ GUIDE = (
         "needs a file first.",
         "Save it under the name you want to keep - Save As offers the name of the imported model.")),
     ("Choose the parts", _g_parts, (
-        "Collection: the parts in the collections of the list and their child collections. A model imported with "
-        "the button above is in the list already.",
+        "Collection: the parts in the collections of the list and their child collections. An imported model is "
+        "in the list already, whichever way it was imported.",
         "Select a part of a model and press + to add its collection; with nothing selected, + offers the "
         "collections that hold parts. - takes one out, the trash empties the list.",
         "Selected: only the objects selected in the viewport or the Outliner.",
+        "Every mesh in the listed collections, or selected, is treated as a Mecabricks part: Renderbricker does "
+        "not tell LEGO parts from other meshes. Keep your own models out of the choice.",
         "There is no \"all\": other models in the scene are never converted by accident.",
         "The camera icon of a collection marks it for the render camera: with the camera on, only the "
         "marked collections are shown and rendered.",
@@ -137,6 +147,8 @@ GUIDE = (
         "F12 (image) and Ctrl+F12 (animation) switch the parts to the render level while rendering "
         "and back to the viewport level afterwards.",
         "The Render menu has the same: Render Image / Animation (Renderbricker levels).",
+        "The render window opens also when Blender is set to keep the interface (Preferences > Interface > "
+        "Render In) - unless an Image Editor shows the Render Result already.",
         "Render camera ON: the camera \"Renderbricks\" frames the whole model, a world \"Renderbricks Sky\" "
         "(Physical Sky) and the Renderbricks render settings are used. OFF brings your own camera, world and "
         "render settings back - nothing is overwritten.",
@@ -149,11 +161,13 @@ GUIDE = (
         "strength), Sun in picture, Transparent, Resolution Scale, the samples, Render (F12) and All views "
         "(each view into its own slot).")),
     ("Done - what next", _g_next, (
-        "Save As under another name or folder: the panel then offers Move cache here or Copy cache "
-        "here, so the new file gets its cache.",
-        "Large scenes: Convert headless converts in a terminal window and writes a new file; the open "
-        "scene stays unchanged.",
+        "Convert headless does the same as Apply, but outside Blender in a console window – for large scenes. "
+        "It writes a new scene file with the converted parts; the open scene stays as it is. It does not "
+        "render.",
+        "Tutorial shows every step with pictures, Documentation explains every setting and button.",
         "Remove takes the scene back to the plain import.",
+        "Save As under another name or folder: Renderbricker asks whether to move or copy the cache file, so "
+        "the new file gets its cache. Not now leaves both buttons in the panel.",
         "Start the guide again any time from the top of the panel.")),
 )
 

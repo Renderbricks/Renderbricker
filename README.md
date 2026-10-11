@@ -77,7 +77,7 @@ Model files, results and the development journal are kept locally beside the cod
 
 Transparency note on the use of AI: the author is not a programmer but has worked in CGI since 1987. The add-on was developed entirely through vibe coding with Anthropic Claude (Claude Code): Claude wrote the code, the tests and this documentation from his descriptions. The concept, the design decisions, the rules checked against the real LEGO parts, the tests in Blender and the acceptance of every version are the author's; he is responsible for the content.
 
-[www.renderbricks.com](https://www.renderbricks.com) · [Facebook](https://www.facebook.com/renderbricks) · [YouTube](https://www.youtube.com/@renderbricks)
+[vr.renderbricks.com](http://vr.renderbricks.com/RB0156_Large_Luxury_Yacht/) · [Facebook](https://www.facebook.com/renderbricks) · [Instagram](https://www.instagram.com/renderbricks/) · [YouTube](https://www.youtube.com/@renderbricks)
 
 Renderbricks® is a registered word mark in Germany.
 
