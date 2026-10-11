@@ -90,6 +90,8 @@ Steps: [0 Install](#step-0-install-renderbricker) · [1 Import](#step-1-import-f
 **What it is for:** Ren­der­bricker works on a scene imported from Mecabricks and writes its copies
 into a cache file next to the scene – so the scene needs a file first.
 
+Ren­der­bricker is an inde­pen­dent add-on, not an offi­cial Mecabricks product, and has no importer of its own: **Import from Mecabricks** starts the Mecabricks add-on by Nicolas 'Scrubs' Jarraud, which must be installed.
+
 ![File → Import with Mecabricks (.zmbx) (1)](images/tutorial/T02a_import.webp)
 
 1. In [Mecabricks](https://www.mecabricks.com), export the model for Blender – a `.zmbx` file.

@@ -4,6 +4,8 @@ Smooth, render-ready LEGO® parts from Mecabricks imports – without touching t
 
 Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Mecabricks](https://www.mecabricks.com) by Nicolas 'Scrubs' Jarraud and imported with his Mecabricks Lite or Advanced add-on. Each part mesh is processed once: seams are welded in a temporary copy, edges get creases by a tested rule set, and the subdivided result is baked into a copy that every link of that part uses. The original import stays unchanged, so the conversion can always be undone.
 
+Renderbricker is an independent add-on, not an official Mecabricks product, and has no importer of its own: **Import from Mecabricks** starts the Mecabricks add-on by Nicolas 'Scrubs' Jarraud, which must be installed.
+
 ## Features
 
 - **Rule-based creases** – sharp where the real part is sharp, round where it is round; the rules are documented with the part and finding they come from in [docs/RULES.md](docs/RULES.md).
@@ -20,7 +22,7 @@ Renderbricker is a Blender add-on and a batch pipeline for scenes built in [Meca
 
 - Blender 4.5 LTS or newer (developed with 5.2 LTS and 5.3)
 - Windows, Linux or macOS
-- Scenes from [www.mecabricks.com](https://www.mecabricks.com), imported with the Mecabricks Lite or Advanced add-on
+- Scenes from [www.mecabricks.com](https://www.mecabricks.com), imported with the Mecabricks Lite or Advanced add-on – a separate add-on from mecabricks.com; Renderbricker has no importer of its own
 
 ## Installation
 
