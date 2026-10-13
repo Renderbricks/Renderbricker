@@ -34,8 +34,8 @@ EDGE_BEND = 50.0                        # a run ends where the line of chosen ed
 #                                         the pieces of a small rounded corner bend by 20 to 45 degrees: one run)
 EDGE_REACH = 1.5                        # the net: a face with a turned corner may reach this x width from the edges
 EDGE_SWEEPS = 2                         # a point a later run makes can lie inside the rounding of an earlier one
-EDGE_FLAT = 1e-4                        # a cut needs a point this far (mm) off its line on either side, or it cuts off nothing
-CARRY_SAME = 0.5                        # carry_normals: the old face a corner lies on has its face's normal within 60 degrees
+EDGE_FLAT = 1e-4                        # a cut needs a point this far (mm) off its line on either side
+CARRY_SAME = 0.5                        # carry_normals: the old face of a corner looks its face's way within 60 degrees
 CARRY_NEAR = 0.01                       # ... and is looked for this far (mm) beyond the nearest one
 
 
@@ -65,6 +65,11 @@ def edge_runs(bm, mark):
                 stack.append(o)
         runs.append(run)
     return runs
+
+
+def _cell(co, cell):
+    """The cell of the grid the place `co` lies in."""
+    return math.floor(co[0] / cell), math.floor(co[1] / cell), math.floor(co[2] / cell)
 
 
 def _has_area(vs, i, k):
@@ -137,18 +142,19 @@ def support_edges(me, chosen, width):
                 near.add(first[i])
         if grid:
             # along the run a place every `cell`, the cells around it: no point closer than lo_d is missed
-            box_lo, box_hi = (np.minimum(A, B).min(axis=0) - lo_d).tolist(), (np.maximum(A, B).max(axis=0) + lo_d).tolist()
+            box_lo = (np.minimum(A, B).min(axis=0) - lo_d).tolist()
+            box_hi = (np.maximum(A, B).max(axis=0) + lo_d).tolist()
             cells = set()
             for a, b in zip(A.tolist(), B.tolist(), strict=True):
                 steps = int(math.dist(a, b) / cell) + 1
                 for k in range(steps + 1):
                     t = k / steps
-                    cells.add((math.floor((a[0] + (b[0] - a[0]) * t) / cell), math.floor((a[1] + (b[1] - a[1]) * t) / cell),
-                               math.floor((a[2] + (b[2] - a[2]) * t) / cell)))
-            for key in {(x + dx, y + dy, z + dz) for x, y, z in cells for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)}:
+                    cells.add(_cell([a[k] + (b[k] - a[k]) * t for k in range(3)], cell))
+            beside = (-1, 0, 1)
+            around = {(x + dx, y + dy, z + dz) for x, y, z in cells for dx in beside for dy in beside for dz in beside}
+            for key in around:
                 for v in grid.get(key, ()):
-                    c = v.co
-                    if box_lo[0] <= c.x <= box_hi[0] and box_lo[1] <= c.y <= box_hi[1] and box_lo[2] <= c.z <= box_hi[2]:
+                    if all(box_lo[k] <= v.co[k] <= box_hi[k] for k in range(3)):
                         near.add(v)
         near = [v for v in near if v.is_valid]
         learn(near)
@@ -188,7 +194,7 @@ def support_edges(me, chosen, width):
             for e, pair, t_e in zip(crossing, ends, t.tolist(), strict=True):
                 _ne, nv = bmesh.utils.edge_split(e, pair[0], t_e)
                 cache[nv] = width
-                grid.setdefault((math.floor(nv.co.x / cell), math.floor(nv.co.y / cell), math.floor(nv.co.z / cell)), []).append(nv)
+                grid.setdefault(_cell(nv.co, cell), []).append(nv)
         # ... and each face is cut from point to point on that border, round every stretch of its outline outside
         work = list(faces)
         while work:
@@ -251,7 +257,8 @@ def _corner_data(me):
     me.polygons.foreach_get("loop_start", ls)
     lt = np.zeros(nf, np.int32)
     me.polygons.foreach_get("loop_total", lt)
-    return n.reshape(-1, 3), co.reshape(-1, 3)[lv], fn.reshape(-1, 3)[np.repeat(np.arange(nf), lt)], np.repeat(np.arange(nf), lt), ls, lt
+    face = np.repeat(np.arange(nf), lt)
+    return n.reshape(-1, 3), co.reshape(-1, 3)[lv], fn.reshape(-1, 3)[face], face, ls, lt
 
 
 def carry_normals(me, before):
@@ -264,10 +271,11 @@ def carry_normals(me, before):
     # a corner that was there: the same place (to 0.0001) on a face of the same direction (to 0.01)
     old_key = np.hstack([np.rint(oco * np.float32(1e4)), np.rint(ofn * np.float32(100.0))]).astype(np.int64)
     new_key = np.hstack([np.rint(co * np.float32(1e4)), np.rint(fn * np.float32(100.0))]).astype(np.int64)
-    mix = np.array([0x9E3779B97F4A7C15, 0xC2B2AE3D27D4EB4F, 0x165667B19E3779F9, 0x27D4EB2F165667C5, 0x85EBCA77C2B2AE63, 0xFF51AFD7ED558CCD],
-                   np.uint64)
-    with np.errstate(over="ignore"):
-        old_hash, new_hash = (old_key.astype(np.uint64) * mix).sum(axis=1), (new_key.astype(np.uint64) * mix).sum(axis=1)
+    mix = np.array([0x9E3779B97F4A7C15, 0xC2B2AE3D27D4EB4F, 0x165667B19E3779F9,
+                    0x27D4EB2F165667C5, 0x85EBCA77C2B2AE63, 0xFF51AFD7ED558CCD], np.uint64)
+    with np.errstate(over="ignore"):                # one number per corner; what it finds is compared in full below
+        old_hash = (old_key.astype(np.uint64) * mix).sum(axis=1)
+        new_hash = (new_key.astype(np.uint64) * mix).sum(axis=1)
     uniq, first = np.unique(old_hash, return_index=True)
     at = np.minimum(np.searchsorted(uniq, new_hash), len(uniq) - 1)
     j = first[at]
@@ -313,7 +321,8 @@ def carry_normals(me, before):
             weights.append(list(w) + [0.0] * (most - len(w)))
         if got:
             got, at_face, weights = np.array(got), np.array(at_face), np.array(weights)
-            corner = np.minimum(ols[at_face][:, None] + np.arange(most)[None, :], len(on) - 1)       # (weight 0 beyond the face)
+            # (weight 0 beyond the corners of the face)
+            corner = np.minimum(ols[at_face][:, None] + np.arange(most)[None, :], len(on) - 1)
             v = (weights[:, :, None] * on[corner]).sum(axis=1)
             flat = np.linalg.norm(v, axis=1) <= 1e-9
             v[flat] = fn[got[flat]]
@@ -354,7 +363,8 @@ def keep_plain(me, lines, width, plain):
     tree.balance()
     # per point the distance from the nearest rounded edge, as far as `reach` (further counts as far)
     vi, li = [], []
-    for i, (c, r) in enumerate(zip(((la + lb) / 2).tolist(), (np.linalg.norm(lb - la, axis=1) / 2 + reach).tolist(), strict=True)):
+    mid, radius = ((la + lb) / 2).tolist(), (np.linalg.norm(lb - la, axis=1) / 2 + reach).tolist()
+    for i, (c, r) in enumerate(zip(mid, radius, strict=True)):
         found = tree.find_range(Vector(c), r)
         vi.extend(f[1] for f in found)
         li.extend([i] * len(found))
