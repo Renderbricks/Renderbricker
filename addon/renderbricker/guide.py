@@ -33,6 +33,7 @@ def _g_parts(L, context, s):
 def _g_settings(L, context, s):
     L.prop(s, "variant", text="")
     widgets.draw_levels(L, s, context)
+    widgets.draw_edges(L, s)
     L.prop(s, "use_cores")
     widgets.draw_low_memory(L, s)
     L.prop(s, "use_cache")
@@ -120,6 +121,10 @@ GUIDE = (
         "from the smoothed surface (crisper logos).",
         "Viewport level: how smooth the parts look while you work. 1 keeps the viewport fast.",
         "Render level: how smooth they are in the render. 2 is enough even for close-ups.",
+        "Edges: Shader lets the importer's material round the sharp edges, as before. Bevel rounds them in the "
+        "smoothed parts themselves - the same in Cycles and EEVEE, cleaner in close-ups, a few more faces. "
+        "Radius sets the rounding of both; studs and logos keep the rounding they have.",
+        "Bevel maps for EEVEE: only with Edges: Shader - clean round rims in EEVEE for parts that have a map.",
         "Use several Blender processes: larger scenes are converted by several Blenders in the background "
         "at the same time - how many depends on the processor and the free memory.",
         "Low Memory: only for very large parts or little memory (16 or 32 GB) - Auto decides.",

@@ -4,7 +4,7 @@ import bpy, bmesh, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
-from . import checks, config, copies, creases, shading, workscene
+from . import bevel, checks, config, copies, creases, shading, workscene
 
 
 # ================================================================ rules 3.0: weld (runs 48-50)
@@ -870,6 +870,8 @@ def _bake_weld(orig, levels, method_rep=None):
     # meshes need the repair anyway and were then baked twice - slower (349 -> 396 s)
     work, wm, tv, rep = weld_work(orig)
     try:
+        if bevel.signature():                   # Edges: Bevel - the part's own sharp edges, as bevel weight on
+            rep["bevel_edges"] = bevel.mark_edges(orig, wm)      # the cage; the subdivision carries it along
         made = _bake_work(orig, work, levels, tv)
         # W10b (run 211): the repair checks the work object at the modifier's quality 3, the copies are baked at
         # the bake quality (10 / 6) - a fold that only exists from quality 4 up passes the repair (46524: four
@@ -883,6 +885,16 @@ def _bake_weld(orig, levels, method_rep=None):
             for cp in made.values():
                 copies.discard_copy(orig, cp)
             made = _bake_work(orig, work, levels, tv)
+        if bevel.signature():
+            # the checks read a copy by the layout of the subdivision; the bevel changes it. So the verdict is
+            # taken now and kept on the copy, then the copy is bevelled (copy_folds, weld_gap read the verdict).
+            for lv in list(made):
+                cp = made[lv]
+                cp[bevel.EDGE_FOLDS] = ",".join(str(i) for i in sorted(baked_folds(orig, cp, lv)))
+                cp[bevel.EDGE_GAP] = float(weld_gap(orig, cp))
+                new = bevel.bevel_copy(cp)
+                copies.swap_copy(orig, cp, new)
+                made[lv] = new
     finally:
         bpy.data.objects.remove(work)
         bpy.data.meshes.remove(wm)
@@ -984,6 +996,8 @@ def finish(orig, obs, made, rep, check=True):
     rc = made.get(config.RENDER_LEVEL) or made.get(config.VIEW_LEVEL)
     if check:              # a worker's report already has it (run 59)
         rep["flipped"] = len(copy_folds(orig, rc)) if rc else 0
+    if any(bevel.is_bevelled(cp) for cp in made.values()):     # the material's own rounding off for these copies
+        bevel.build_switches(orig)
     rep["t_fans_creased"], rep["t_fans_unresolved"] = 0, 0   # T points are pinned (rep["t_verts"])
     rep["copies"] = {lv: len(cp.polygons) for lv, cp in made.items()}
     return rep
@@ -991,6 +1005,8 @@ def finish(orig, obs, made, rep, check=True):
 
 def weld_gap(orig, cp):
     """Largest T gap of a weld copy (the only places where a welded copy can open)."""
+    if bevel.is_bevelled(cp) and bevel.EDGE_GAP in cp:      # measured before the bevel changed the layout
+        return float(cp[bevel.EDGE_GAP])
     flat = list(cp.get("rb_tv", []))
     tv = list(zip(flat[0::2], flat[1::2]))
     return t_gaps(orig, cp, tv, int(cp.get("rb_level", config.LEVELS))) if tv else 0.0
@@ -1045,7 +1061,8 @@ def process_24(me, obs):
 
 def copy_folds(orig, cp):
     """Faces of the original whose children in the copy flip (same test as the checks)."""
-    pass
+    if bevel.is_bevelled(cp) and bevel.EDGE_FOLDS in cp:    # tested before the bevel changed the layout
+        return [int(x) for x in str(cp[bevel.EDGE_FOLDS]).split(",") if x]
     keep, config.LEVELS = config.LEVELS, int(cp.get("rb_level", config.LEVELS))
     try:
         return checks.flipped_faces(None, cp, orig)

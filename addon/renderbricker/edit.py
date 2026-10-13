@@ -31,7 +31,9 @@ def _settings(context):
     core.LEVELS = s.render_level
     core.VIEW_LEVEL, core.RENDER_LEVEL = s.view_level, s.render_level
     core.SHADING = "mecabricks" if s.variant == 'A' else "geometric"
-    core.SMOOTH_MAPS = s.smooth_maps
+    core.SMOOTH_MAPS = bool(s.smooth_maps) and s.edges != 'BEVEL'
+    core.EDGES = "bevel" if s.edges == 'BEVEL' else "shader"          # as common.edge_settings (UPDATES #43)
+    core.BEVEL_RADIUS, core.BEVEL_SEGMENTS = s.bevel_radius, s.bevel_segments
 
 
 def on_copy(ob):

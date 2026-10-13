@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The project follows
 changes that break existing scenes or settings. Only changes to the add-on itself are listed;
 documentation changes are not.
 
+## [1.3.0] – unreleased
+
+- **Edges: Shader or Bevel** – a new switch below the levels. *Shader* is what Renderbricker did so far: the importer's material rounds the edges, with a Bevel node in Cycles and a baked map in EEVEE. With *Bevel*, **Apply** rounds the part's own sharp edges in the smooth copies – real geometry. The edges look the same in Cycles and EEVEE, also on parts that have no map, and close-ups show a clean line of light where the shader's highlights are blotchy. Studs and logos keep the rounding Mecabricks modelled; the material's own rounding is switched off for the bevelled copies by itself. Costs 2 to 11 % more faces on the parts measured (very small parts more). Changing the switch makes Apply convert the parts again; scenes converted with 1.2.8 need no new Apply as long as it stays on *Shader*.
+- **Radius** (0 to 0.5 mm, start 0.35 – the importer's value) sets the rounding for both: the bevel's width, and in *Shader* the importer's Bevel value of the parts in scope. **Segments** (1 to 4, start 1) sets the rows of faces across a bevelled edge. **Remove** puts the importer's own value back.
+- **Bevel maps for EEVEE** are only baked with *Edges: Shader* – a bevelled copy has its rounding in the mesh.
+
 ## [1.2.8] – 2026-10-11
 
 - **Blender 4.5: no crash right after opening a file.** Blender 4.1 to 4.5 crash when a script removes a scene in the same call that opened a file; a script that opened a scene and ran Apply at once took Blender down, because Apply tidies up a helper scene. The add-on now removes its helper scenes a moment later in that case. Pressing Apply by hand was not affected; Blender 5.0 and later do not have the fault.

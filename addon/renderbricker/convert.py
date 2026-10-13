@@ -248,6 +248,12 @@ class _Stepped:
         return {'FINISHED'}
 
 
+def maps_on(s):
+    """The bevel maps for EEVEE are baked: the option is on and the edges are rounded by the shader - a bevelled
+    copy has its rounding in the mesh and needs no map (UPDATES #43)."""
+    return bool(s.smooth_maps) and s.edges != 'BEVEL'
+
+
 class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
     bl_idname = "mecsub.apply"
     bl_label = "Apply"
@@ -265,8 +271,12 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         core.LEVELS = s.render_level                    # the checks run at the render level
         core.VIEW_LEVEL, core.RENDER_LEVEL = s.view_level, s.render_level
         core.SHADING = "mecabricks" if s.variant == 'A' else "geometric"
-        core.SMOOTH_MAPS = s.smooth_maps
+        core.SMOOTH_MAPS = maps_on(s)
+        common.edge_settings(s)
         items = list(common.by_mesh(common.targets(context)).items())
+        if s.edges == 'SHADER':                 # the Radius reaches the importer's Bevel value at once: no new copies
+            for me, _obs in items:
+                core.set_shader_radius(core.original_of(me), s.bevel_radius)
         self.scope_items = items
         if self.force:
             return items, []
@@ -275,7 +285,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
             todo, fresh = [], []
             for me, obs in items:
                 ok = core.up_to_date(me, s.view_level, s.render_level)
-                if ok and s.smooth_maps:    # converted before the option was on: marked now, or converted again (#40)
+                if ok and maps_on(s):       # converted before the option was on: marked now, or converted again (#40)
                     ok = core.mark_existing(me, core.all_copies(me))
                 (fresh if ok else todo).append((me, obs))
         finally:
@@ -302,7 +312,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
             core.point_links(obs, me, "view")
         self.skipped = len(fresh)
         self.maps_rep = None
-        only_maps = not self.items and s.smooth_maps and core.maps_pending(self.map_pairs(context))
+        only_maps = not self.items and maps_on(s) and core.maps_pending(self.map_pairs(context))
         if not self.items and not only_maps:
             s.summary = (f"All {self.skipped} parts are already converted with these settings, "
                          f"Shift+click on Apply converts all again")
@@ -326,7 +336,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         self.cache_part, self.tail_pending = None, None
         self.tail = [("writing the cache file" if s.use_cache and bpy.data.filepath else "finishing the copies",
                       self._cache_phase)]
-        if s.smooth_maps:                       # before the cache file: the copies are still this file's own
+        if maps_on(s):                          # before the cache file: the copies are still this file's own
             self.tail.insert(0, ("baking the bevel maps", self._maps_phase))
         return True
 
@@ -395,7 +405,9 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
             bpy.ops.wm.save_mainfile()
         opts = ["--view-level", str(s.view_level), "--render-level", str(s.render_level),
                 "--shading", "mecabricks" if s.variant == 'A' else "geometric",
-                "--smooth-maps", "1" if s.smooth_maps else "0"]
+                "--smooth-maps", "1" if maps_on(s) else "0",
+                "--edges", "bevel" if s.edges == 'BEVEL' else "shader", "--bevel-radius", f"{s.bevel_radius:.3f}",
+                "--bevel-segments", str(s.bevel_segments)]
         self.workers = core.Workers(dict(self.items), jobs, opts, [me.name for me, _ in self.items])
         self.jobs, self.merging, self.t_start = jobs, False, time.time()
         s.running, s.progress, s.progress_text = True, 0.0, f"0 / {len(self.items)}   starting {jobs} Blenders"
@@ -518,7 +530,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                         else f", T fans creased {self.fans}")
                      + (f", unresolved {self.unresolved}" if self.unresolved else "")
                      + (f", folds left {self.folds}" if self.folds else ""))
-        if getattr(self, "cache_part", None) is None and s.smooth_maps and not self.cancelled:   # scripts (execute)
+        if getattr(self, "cache_part", None) is None and maps_on(s) and not self.cancelled:   # scripts (execute)
             try:
                 self.maps_rep = core.fit_maps(self.map_pairs(context))
             except Exception as e:              # the conversion stands without the maps

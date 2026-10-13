@@ -1,7 +1,7 @@
 """The subdivided copies of a part: baking a level, UVs, links pointing to the copy of a level, masters."""
 import bpy
 import numpy as np
-from . import config, creases, maps, reparam, workscene
+from . import bevel, config, creases, maps, reparam, workscene
 
 
 def original_of(me):
@@ -107,7 +107,7 @@ def bake_copy(orig, work, level):
     cp["rb_original"], cp["rb_level"], cp["rb_variant"] = orig.name, level, config.SHADING
     cp["rb_rules"] = config.RULES_VERSION          # Apply skips meshes whose copies are up to date (user, 2026-09-28)
     cp["rb_src"] = source_hash(orig)                # ... and whose import was not edited since (UPDATES #18)
-    if maps.SMOOTH_MAPS or any(c.get(maps.MARK) for c in all_copies(orig)):
+    if not bevel.signature() and (maps.SMOOTH_MAPS or any(c.get(maps.MARK) for c in all_copies(orig))):
         maps.mark_copy(cp, orig)                        # the material switches to the bevel map baked for it (#40)
     if _COPY_INDEX[0] is not None:
         _COPY_INDEX[0].setdefault(orig.name, []).append(cp)
@@ -116,6 +116,16 @@ def bake_copy(orig, work, level):
         project_uvs(orig, cp, level)
     strip_copy(cp)
     return cp
+
+
+def swap_copy(orig, old, new):
+    """`new` takes the place of `old` in the copy index (the bevelled copy replaces the baked one)."""
+    if _COPY_INDEX[0] is not None:
+        lst = _COPY_INDEX[0].setdefault(orig.name, [])
+        if old in lst:
+            lst[lst.index(old)] = new
+        elif new not in lst:
+            lst.append(new)
 
 
 def discard_copy(orig, cp):
@@ -280,7 +290,8 @@ def up_to_date(orig, view, render):
     src = source_hash(orig)
     return all(have[lv].get("rb_rules") == config.RULES_VERSION and have[lv].get("rb_variant") == config.SHADING
                and (have[lv].get("rb_method") == "weld") == (config.METHOD == "weld")
-               and have[lv].get("rb_src") == src for lv in need)
+               and have[lv].get("rb_src") == src
+               and have[lv].get(bevel.EDGE_MARK, "") == bevel.signature() for lv in need)   # Edges (UPDATES #43)
 
 
 MASTER_COLL = "Renderbricks Masters"

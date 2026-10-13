@@ -173,6 +173,21 @@ def status(layout, ok, text):
     row.label(text=text, icon='CHECKMARK' if ok else 'INFO')
 
 
+def draw_edges(L, s):
+    """Edges: Shader or Bevel, the Radius of both, the Segments of the bevel; below them the bevel maps for EEVEE,
+    which only the shader's rounding needs (UPDATES #43)."""
+    sp = L.split(factor=0.4)
+    sp.label(text="Edges")
+    sp.row(align=True).prop(s, "edges", expand=True)
+    col = L.column(align=True)
+    col.prop(s, "bevel_radius")
+    if s.edges == 'BEVEL':
+        col.prop(s, "bevel_segments")
+    row = L.row()
+    row.active = s.edges != 'BEVEL'
+    row.prop(s, "smooth_maps")
+
+
 def draw_levels(L, s, context):
     """Viewport / render level with a warning above 2 (user, 2026-09-28): every level multiplies the
     faces by three to four - level 3 costs a lot of memory and time for hardly visible gain."""
@@ -278,7 +293,8 @@ def apply_key(context):
         scope += ":" + ",".join(sorted(c.collection.name for c in s.collections if c.collection))
     objs = context.scene.objects
     n = len(objs) - (1 if objs.get(core.CAMERA_NAME) else 0)     # the render camera is not a part
-    return f"{s.variant}|{s.view_level}|{s.render_level}|{scope}|{core.RULES_VERSION}|{len(bpy.data.meshes)}|{n}"
+    edges = f"{s.edges}|{s.bevel_radius:.3f}|{s.bevel_segments if s.edges == 'BEVEL' else 0}"       # UPDATES #43
+    return f"{s.variant}|{s.view_level}|{s.render_level}|{scope}|{core.RULES_VERSION}|{len(bpy.data.meshes)}|{n}|{edges}"
 
 
 def apply_button(L, context, **kw):

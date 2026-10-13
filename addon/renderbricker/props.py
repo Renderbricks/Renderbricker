@@ -512,6 +512,25 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
                             "slower, for computers with little memory (16 or 32 GB) or very large parts")],
         description="How the Blender processes share the parts: all at once (fastest) or in small segments "
                     "that need less memory")
+    # Edges (UPDATES #43, maintainer 2026-10-13): the limits are his - "0 bis 0,5"; the start is the importer's value
+    edges: EnumProperty(
+        name="Edges",
+        items=[('SHADER', "Shader", "The importer's material rounds the edges, as before: a Bevel node in Cycles, "
+                                    "a baked map in EEVEE", 0),
+               ('BEVEL', "Bevel", "Apply rounds the part's own sharp edges in the smooth copies - real geometry, "
+                                  "the same in Cycles and EEVEE, also on parts without a map. Studs and logos "
+                                  "keep the rounding Mecabricks modelled. The material's own rounding is off "
+                                  "for these copies", 1)],
+        default='SHADER',
+        description="How the sharp edges of the parts are rounded. Changing it makes Apply convert the parts again")
+    bevel_radius: bpy.props.FloatProperty(
+        name="Radius", default=0.35, min=0.0, max=0.5, step=1, precision=2,
+        description="Radius of the rounded edges in millimetres of the real part - for the shader and for the "
+                    "bevel. 0.35 is the importer's value; a real edge is nearer 0.1 to 0.2")
+    bevel_segments: bpy.props.IntProperty(
+        name="Segments", default=1, min=1, max=4,
+        description="Rows of faces across a bevelled edge. One is enough: its shading is round; more rows also "
+                    "round the outline in extreme close-ups and cost faces")
     smooth_maps: bpy.props.BoolProperty(
         name="Bevel maps for EEVEE", default=False,
         description="EEVEE has no bevel shader; the importer shows a small baked map there, made for the coarse "

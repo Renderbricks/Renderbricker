@@ -57,7 +57,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
         props.draw_scope(body, s)
         body.prop(s, "variant", text="")
         widgets.draw_levels(body, s, context)
-        body.prop(s, "smooth_maps")
+        widgets.draw_edges(body, s)
         widgets.apply_button(body, context)
         left = edit.uncached(context)            # parts edited and converted again, still in the scene file (#18)
         if left:

@@ -93,6 +93,7 @@ class MECSUB_OT_remove(bpy.types.Operator):
             if not whole and any(o.data in copies for o in bpy.data.objects if o.type == 'MESH'):
                 continue            # still used by objects outside the scope
             core.drop_cache_links(me)      # object materials back to the mesh, cache hold released
+            core.restore_shader_radius(me)         # the importer's own Bevel value again (UPDATES #43)
             for c in copies:
                 bpy.data.meshes.remove(c)
                 removed += 1
@@ -111,6 +112,7 @@ class MECSUB_OT_remove(bpy.types.Operator):
             if ws is not None and ws != context.scene:
                 core.remove_scene(ws)
         core.drop_unused_maps()            # bevel maps baked for copies that are gone now (UPDATES #40)
+        core.drop_unused_switches()        # ... and the switches of bevelled copies (UPDATES #43)
         core.cleanup_libraries()
         left = sum(1 for m in bpy.data.meshes if m.get("rb_original"))
         context.scene.mecsub.summary = (f"Removed from {len(obs)} objects" + (" in the whole file" if whole else "")
@@ -683,7 +685,10 @@ def headless_args(context, out):
             os.path.join(os.path.dirname(__file__), "rbcore", "run.py"),
             "--", out, "--view-level", str(s.view_level), "--render-level", str(s.render_level),
             "--shading", "mecabricks" if s.variant == 'A' else "geometric", "--jobs", "auto",
-            "--low-memory", s.low_memory.lower(), "--smooth-maps", "1" if s.smooth_maps else "0"]
+            "--low-memory", s.low_memory.lower(),
+            "--smooth-maps", "1" if s.smooth_maps and s.edges != 'BEVEL' else "0",
+            "--edges", "bevel" if s.edges == 'BEVEL' else "shader", "--bevel-radius", f"{s.bevel_radius:.3f}",
+            "--bevel-segments", str(s.bevel_segments)]
     listing = os.path.splitext(out)[0] + "_objects.json"
     with open(listing, "w", encoding="utf-8") as fh:
         json.dump(sorted(o.name for o in common.targets(context)), fh, ensure_ascii=False)

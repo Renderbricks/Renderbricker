@@ -7,6 +7,7 @@
     creases   the crease rules (islands, corners, logos, T fans, seams)       - docs/RULES.md
     shading   geometric shading (variant B)
     maps      bevel maps for EEVEE: baked from the smooth copies, switched in the importer's material (UPDATES #40)
+    bevel     edges: shader or bevel - real rounded edges in the copies, the material's rounding off (UPDATES #43)
     copies    the subdivided copies of a part and the links that use them
     welding   the conversion of one part: weld, creases, repair, bake (process), further levels
     memory    memory estimates and the number of Blender processes
@@ -18,7 +19,7 @@
     headless  the run without a window (run.py)
 
 The modules of the conversion import only modules listed above them (config - workscene, reparam - checks -
-creases - shading - maps - copies - welding): no import circle there, each can be read on its own.
+creases - shading - maps - bevel - copies - welding): no import circle there, each can be read on its own.
 
 The package reads and writes like one module: rbcore.NAME finds NAME in the module that holds it, and
 rbcore.NAME = value sets it there (the add-on sets the levels and the shading before a run).
@@ -26,9 +27,9 @@ Without a window: blender -b scene.blend --python rbcore/run.py -- result.blend 
 """
 import importlib, sys, types as _types
 
-from . import config, workscene, reparam, checks, creases, shading, maps, copies, welding, memory, cache, workers, camera, engine, renderfile, headless
+from . import config, workscene, reparam, checks, creases, shading, maps, bevel, copies, welding, memory, cache, workers, camera, engine, renderfile, headless
 
-MODULES = (config, workscene, reparam, checks, creases, shading, maps, copies, welding, memory, cache, workers, camera, engine, renderfile, headless,)
+MODULES = (config, workscene, reparam, checks, creases, shading, maps, bevel, copies, welding, memory, cache, workers, camera, engine, renderfile, headless,)
 
 def _owners(modules):
     """name -> module that defines it: everything a module binds itself (functions and classes defined
