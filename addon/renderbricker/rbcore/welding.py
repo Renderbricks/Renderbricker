@@ -30,6 +30,10 @@ INNER_SHARP = float(config.opt("--inner-sharp", "85"))   # inner island edge cre
 
 
 ORGANIC_CORNER = 60.0    # corner bend on organic (all-curved) surfaces, run 53
+COARSE_ROUNDING = config.opt("--coarse-rounding", "1") == "1"   # W17 (run 282); "0": rules 3.6, for comparisons
+ROUNDING_TOTAL = 100.0   # W17: the three bends of a coarse rounding make no more than this ...
+ROUNDING_RATIO = 2.0     # ... its two pieces are about the same length ...
+ROUNDING_DEPTH = 0.06    # ... and the free point gives way by no more than this (mm): a corner radius up to about 0.6
 
 
 DESIGN_TURN = 20.0       # W15 (run 73): designed corner - long crease edge into a short one ...
@@ -128,7 +132,8 @@ def weld(orig):
       5 _hole_rings       the walls of a polygonised hole stay smooth; convex rings and hexagons stay hard (W5b)
       6 _island_creases   flat stays flat, degenerate faces, steep inner edges (W12), plane beside a bevel (W13)
       7 _relief_tips      the tips of low relief steps are released
-      8 _pinned_corners   corners on the crease chains: brick and organic thresholds, designed corners (W15)
+      8 _pinned_corners   corners on the crease chains: brick and organic thresholds, designed corners (W15),
+                          coarse roundings stay free (W17)
       9 _t_vertices       T vertices and open points that stay apart are pinned
         release_arc_corners   coarse arcs across a flat island (W16)
      10 _work_mesh        the mesh with crease_edge, crease_vert, sharp_edge and normals; the report"""
@@ -144,7 +149,9 @@ def weld(orig):
     _pinned_corners(w)
     _t_vertices(w)
     arc_released = release_arc_corners(w.E, w.V, w.kind_of, w.isl)
-    return _work_mesh(w, arc_released)
+    wm, tv, rep = _work_mesh(w, arc_released)
+    rep["rounding_freed"] = w.rounded           # W17: middle points of coarse roundings left free
+    return wm, tv, rep
 
 
 def _islands(w):
@@ -538,6 +545,48 @@ def _pinned_corners(w):
         if not (la > 1e-9 and lb >= DESIGN_RATIO * la and len(chain(a.other_vert(v))) >= 3):
             return False
         return not organic(v) or flat_share >= MECH_FLAT
+
+    # W17 (run 282, maintainer 2026-10-13: "18747 wird nicht richtig rund gemacht."): the middle point of a coarse
+    # rounding - a corner rounded with two straight pieces (18747: bends of 23.5 / 45.1 / 21.4 degrees, pieces of
+    # 0.3 mm). Its bend lies above SHARP_TURN, so on a brick it was pinned and the outline stayed two straight
+    # pieces at every level, while the same point on the wall's other rim (all faces curved: ORGANIC_CORNER) was
+    # free. It stays free when it touches a curved island (the wall of the rounding), its two pieces are about the
+    # same length, and the creased line goes on at both neighbours with a gentle bend the same way - the three
+    # bends making no more than ROUNDING_TOTAL. A chamfer (45 / 45) and a single kink have no such neighbours.
+    # Only small roundings: the free point gives way by |a + b - 2v| / 6 (the limit of a creased line), 0.040 on
+    # 18747; above ROUNDING_DEPTH the corner stays (library, run 282: the larger ones are corners of organic
+    # shapes with pieces of 1.3 to 3.3 mm - the tip of the mudguard 31582 would lose 0.29).
+    def coarse_rounding(v, t):
+        if not COARSE_ROUNDING or not config.SHARP_TURN < t <= ORGANIC_CORNER:
+            return False
+        if not any(kind_of[f[isl]] == "curved" for f in v.link_faces):
+            return False
+        a, b = chain(v)
+        la, lb = a.calc_length(), b.calc_length()
+        if min(la, lb) < 1e-9 or max(la, lb) > ROUNDING_RATIO * min(la, lb):
+            return False
+        if ((a.other_vert(v).co - v.co) + (b.other_vert(v).co - v.co)).length / 6.0 > ROUNDING_DEPTH:
+            return False
+        bend = (a.other_vert(v).co - v.co).normalized() + (b.other_vert(v).co - v.co).normalized()
+        if bend.length < 1e-9:
+            return False
+        bend.normalize()
+        total = t
+        for e in (a, b):
+            n = e.other_vert(v)
+            back, best = (v.co - n.co).normalized(), None
+            for x in chain(n):                  # the line goes on along the creased edge that turns least
+                on = x.other_vert(n).co - n.co
+                if x is e or on.length < 1e-9:
+                    continue
+                turn = 180.0 - math.degrees(back.angle(on))
+                if best is None or turn < best[0]:
+                    best = (turn, back + on.normalized())
+            if (best is None or not ARC_RELEASE_TURN < best[0] < config.SHARP_TURN or best[1].length < 1e-9
+                    or best[1].normalized().dot(bend) <= 0.5):
+                return False
+            total += best[0]
+        return total <= ROUNDING_TOTAL
     g = vars(creases)                   # the crease rules read these two functions
     keep = g["boundary_neighbours"], g["_turn"]
     g["boundary_neighbours"], g["_turn"] = nb, tturn
@@ -545,6 +594,8 @@ def _pinned_corners(w):
         V = {v for v in bm.verts if len(chain(v)) == 2 and v not in ringv and v not in tipv
              and (t := tturn(v)) is not None and (t > corner_turn(v) or designed(v, t))
              and not creases._is_round(v) and not groove_end(v)}
+        rounded = {v for v in V if not designed(v, t := tturn(v)) and coarse_rounding(v, t)}
+        V -= rounded
     finally:
         g["boundary_neighbours"], g["_turn"] = keep
     # W15b: a bend (>= DESIGN_TURN) between two corners, one of them a designed corner, is
@@ -558,10 +609,10 @@ def _pinned_corners(w):
                     and math.degrees(e.calc_face_angle(0)) >= DESIGN_TURN):
                 E.add(e); DESIGN_EDGES[0] += 1
     V |= {v for v in bm.verts if P(v.co) in sharp_pos and (sharp_pos[P(v.co)] or 180) > corner_turn(v)
-          and v not in ringv and v not in tipv and not groove_end(v)
+          and v not in ringv and v not in tipv and not groove_end(v) and v not in rounded
           and sum(1 for e in v.link_edges if e in E) < 3}
     V |= degen_v
-    w.V = V
+    w.V, w.rounded = V, len(rounded - V)
 
 
 def _t_vertices(w):
