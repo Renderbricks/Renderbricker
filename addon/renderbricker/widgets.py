@@ -174,8 +174,8 @@ def status(layout, ok, text):
 
 
 def draw_edges(L, s):
-    """Edges: Shader or Bevel, the Radius of both, the Segments of the bevel; below them the bevel maps for EEVEE,
-    which only the shader's rounding needs (UPDATES #43)."""
+    """Edges: Shader or Bevel, the Radius of both, the Segments of the bevel; with Shader also the bevel maps for
+    EEVEE, which only the shader's rounding needs (UPDATES #43)."""
     sp = L.split(factor=0.4)
     sp.label(text="Edges")
     sp.row(align=True).prop(s, "edges", expand=True)
@@ -183,9 +183,8 @@ def draw_edges(L, s):
     col.prop(s, "bevel_radius")
     if s.edges == 'BEVEL':
         col.prop(s, "bevel_segments")
-    row = L.row()
-    row.active = s.edges != 'BEVEL'
-    row.prop(s, "smooth_maps")
+    if s.edges != 'BEVEL':                  # a bevelled copy has its rounding in the mesh: no maps, no option
+        L.prop(s, "smooth_maps")         # (maintainer 2026-10-13: "Sollte bei Bevels einfach weg sein")
 
 
 def draw_levels(L, s, context):

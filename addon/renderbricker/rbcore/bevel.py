@@ -31,6 +31,14 @@ did nothing (found when the maintainer said "0,35 ist offenbar sehr klein" and a
 the shader's). The clamp is off; edge_room gives every run of bevelled edges its own limit - what the faces beside it
 leave - as bevel weight, by which Blender scales the width of an edge.
 
+The normals (run 276): Harden Normals of the Bevel modifier, used at first, sets the normals of every face beside a
+bevelled edge to the face's own normal. Right for a flat face - on a round surface whose rim is bevelled it shows
+facets, and at the viewport level 1 nearly every face of a small round part lies beside a bevel (the maintainer's
+screenshot: "Was siehst Du hier? Facetten."). The first probe had only looked at flat-sided parts. Now nothing is
+hardened, and no normal is left to the modifier: it also garbles the custom normals a copy carries on every face it
+rebuilds. strip_normals sets all of them - an old face takes the normals the unbevelled copy has at that place, a
+strip takes at each corner the normal of the faces beside it and so shades from the one side's normal to the other's.
+
 One Radius for both (run 275, maintainer: "Bitte ermittle den passenden Bevelwert zum Bevelshaderwert."): the shader's
 radius and the bevel's width are not the same size. Measured on 3004 - the angle of the shading normal across an
 edge, the Bevel node at radius 0.20, 0.35 and 0.50 against geometric bevels in steps of 0.025 - the bevel that lies
@@ -57,7 +65,9 @@ EDGE_ATTR = "rb_bevel"                  # custom property of a bevelled copy: 1.
 MATCH = {1: 0.595, 2: 0.521, 3: 0.506, 4: 0.502}     # bevel width / shader radius that look alike, by segments (run 275)
 ROOM = 0.9                              # share of the room beside an edge the bevel may take (half of it between two)
 MIN_WEIGHT = 0.05                       # a run with less room than this share of the radius is left sharp
-EDGE_VERSION = 4                        # how a bevelled copy is marked; copies of the first test build (1) are made anew
+HARDEN = False                          # True: Blender's Harden Normals, as the first test build did (probe only)
+STRENGTH = "__mod_weightednormals_faceweight"       # the Bevel modifier's face strength: lower on the faces it made
+EDGE_VERSION = 5                        # how a bevelled copy is marked; copies of the first test build (1) are made anew
 EDGE_FOLDS, EDGE_GAP = "rb_folds", "rb_gap"       # the verdict of the checks, taken before the bevel changed the layout
 EDGE_NODE = "rb_bevel_"                      # names of the switch nodes
 RADIUS_WAS = "rb_bevel_was"                    # on a group node: the importer's Bevel value before the radius was set
@@ -171,6 +181,91 @@ def edge_room(cp, weight, radius):
     return out
 
 
+# ---------------------------------------------------------------- the normals of a bevelled copy
+def _corners(me):
+    """(corner normals, corner positions, face normal per corner, face per corner, loop start and total per face)."""
+    nf, nl = len(me.polygons), len(me.loops)
+    n = np.zeros(nl * 3, np.float32); me.corner_normals.foreach_get("vector", n)
+    lv = np.zeros(nl, np.int32); me.loops.foreach_get("vertex_index", lv)
+    co = np.zeros(len(me.vertices) * 3, np.float32); me.vertices.foreach_get("co", co)
+    fn = np.zeros(nf * 3, np.float32); me.polygons.foreach_get("normal", fn)
+    ls = np.zeros(nf, np.int32); me.polygons.foreach_get("loop_start", ls)
+    lt = np.zeros(nf, np.int32); me.polygons.foreach_get("loop_total", lt)
+    face = np.repeat(np.arange(nf), lt)
+    return n.reshape(-1, 3), co.reshape(-1, 3)[lv], fn.reshape(-1, 3)[face], face, ls, lt, lv
+
+
+def strip_normals(me, before):
+    """Custom normals for `me`, the mesh the Bevel modifier made of the copy `before` (face strength on).
+    The custom normals a mesh carries do not survive the modifier on the faces it rebuilds - they are stored relative
+    to each corner and come out interpolated as plain numbers (run 276: on the round brick 3062 at level 1, 15 % of
+    the untouched corners had turned by more than a degree: the facets of the maintainer's screenshot). So every
+    normal is set here:
+      a face that was there   takes the normal `before` has at that place - at a point that did not move the normal
+                              of the same corner, at a point the bevel slid along an edge the normals of the old
+                              face's corners, weighted for that place
+      a strip                 every corner takes the mean normal of the old faces at its point; a point inside a
+                              strip of several segments the mean of the strip faces around it.
+    Returns the number of strip faces."""
+    from mathutils import Vector
+    from mathutils.bvhtree import BVHTree
+    from mathutils.interpolate import poly_3d_calc
+    fs = me.attributes.get(STRENGTH)
+    if fs is None or not len(me.polygons):
+        return 0
+    strength = np.zeros(len(me.polygons), np.int32)
+    fs.data.foreach_get("value", strength)
+    strip = strength < strength.max()
+    if not strip.any():
+        return 0
+    on, oco, ofn, _oface, ols, olt, _olv = _corners(before)
+    _n, co, fn, face, ls, lt, lv = _corners(me)
+    of_strip = strip[face]
+    out = np.zeros((len(co), 3), np.float64)
+    known = {}
+    kp, kn = np.round(oco, 4), np.round(ofn, 2)
+    for i in range(len(oco)):
+        known.setdefault((kp[i, 0], kp[i, 1], kp[i, 2], kn[i, 0], kn[i, 1], kn[i, 2]), i)
+    kp, kn = np.round(co, 4), np.round(fn, 2)
+    moved = []
+    for i in np.nonzero(~of_strip)[0]:
+        j = known.get((kp[i, 0], kp[i, 1], kp[i, 2], kn[i, 0], kn[i, 1], kn[i, 2]))
+        if j is None:
+            moved.append(i)
+        else:
+            out[i] = on[j]
+    if moved:
+        verts = np.zeros(len(before.vertices) * 3, np.float32)
+        before.vertices.foreach_get("co", verts)
+        tree = BVHTree.FromPolygons(verts.reshape(-1, 3).tolist(), [tuple(p.vertices) for p in before.polygons])
+        centre = np.zeros(len(me.polygons) * 3, np.float32)
+        me.polygons.foreach_get("center", centre)
+        centre = centre.reshape(-1, 3)
+        for i in moved:
+            p = Vector(co[i].tolist())
+            inward = p.lerp(Vector(centre[face[i]].tolist()), 0.05)     # a little inside the face: which old face it is
+            _loc, _nor, f, _dist = tree.find_nearest(inward)
+            if f is None:
+                out[i] = fn[i]
+                continue
+            a, k = ols[f], olt[f]
+            weights = poly_3d_calc([Vector(c.tolist()) for c in oco[a:a + k]], p)
+            v = (np.array(weights)[:, None] * on[a:a + k]).sum(axis=0)
+            out[i] = v if np.linalg.norm(v) > 1e-9 else fn[i]
+    nv = len(me.vertices)
+    beside = np.zeros((nv, 3), np.float64)
+    np.add.at(beside, lv[~of_strip], out[~of_strip])
+    inside = np.zeros((nv, 3), np.float64)
+    np.add.at(inside, lv[of_strip], fn[of_strip])
+    has = np.linalg.norm(beside, axis=1) > 1e-6
+    vn = np.where(has[:, None], beside, inside)
+    out[of_strip] = vn[lv[of_strip]]
+    out /= np.maximum(np.linalg.norm(out, axis=1), 1e-12)[:, None]
+    me.normals_split_custom_set(out.tolist())
+    me.update()
+    return int(strip.sum())
+
+
 # ---------------------------------------------------------------- the bevelled copy
 def bevel_copy(cp):
     """The finished copy `cp` with its weighted edges bevelled: a new mesh with the properties of `cp`, which is
@@ -201,12 +296,18 @@ def bevel_copy(cp):
         mod = ob.modifiers.new("Bevel", 'BEVEL')
         mod.limit_method, mod.offset_type = 'WEIGHT', 'OFFSET'
         mod.width, mod.segments, mod.profile = width, segments, 0.5
-        mod.use_clamp_overlap, mod.harden_normals, mod.loop_slide = False, True, True       # the limit: edge_room
+        mod.use_clamp_overlap, mod.harden_normals, mod.loop_slide = False, HARDEN, True     # the limit: edge_room
+        mod.face_strength_mode = 'FSTR_ALL'             # tells the strips from the faces that were there
         dg = workscene.depsgraph_of(ob)
         dg.update()
         new = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
     finally:
         bpy.data.objects.remove(ob)
+    if not HARDEN:
+        strip_normals(new, cp)
+    left = new.attributes.get(STRENGTH)
+    if left is not None:
+        new.attributes.remove(left)
     for key in cp.keys():
         new[key] = cp[key]
     name = cp.name
