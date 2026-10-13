@@ -513,7 +513,8 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         description="How the Blender processes share the parts: all at once (fastest) or in small segments "
                     "that need less memory")
     # Edges (UPDATES #43, maintainer 2026-10-13): the Radius in millimetres, the limits are his - "mm so machen 0.08
-    # bis 0.2"; the start is the importer's look (its 0.35 is an edge radius of 0.208 mm)
+    # bis 0.2"; the start is close to the importer's look (its 0.35 is an edge radius of 0.208 mm, so the shader gets
+    # 0.336 - asked whether the field should end at 0.21, 2026-10-14: "Radius-Feld bleibt bei 0,2 mm")
     edges: EnumProperty(
         name="Edges",
         items=[('SHADER', "Shader", "The importer's material rounds the edges, as before: a Bevel node in Cycles, "
