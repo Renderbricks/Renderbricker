@@ -291,7 +291,7 @@ def up_to_date(orig, view, render):
     return all(have[lv].get("rb_rules") == config.RULES_VERSION and have[lv].get("rb_variant") == config.SHADING
                and (have[lv].get("rb_method") == "weld") == (config.METHOD == "weld")
                and have[lv].get("rb_src") == src
-               and have[lv].get(bevel.EDGE_MARK, "") == bevel.signature() for lv in need)   # Edges (UPDATES #43)
+               and bevel.is_current(have[lv]) for lv in need)   # Edges (UPDATES #43)
 
 
 MASTER_COLL = "Renderbricks Masters"

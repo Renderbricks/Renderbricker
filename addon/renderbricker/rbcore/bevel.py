@@ -16,10 +16,14 @@ Blender's Bevel modifier (by weight, Harden Normals) and replaced by the result.
 shading variants: the strips' corner normals sweep the full angle of the edge, all other faces keep the normals of
 the unbevelled copy (variant A within 0.03 degrees, B within 0.8).
 
-A bevelled copy carries a mark (property and point attribute). Through the attribute the importer's material switches
-its own rounding off for these meshes: the radius of the Bevel node and the strength of the EEVEE normal map are
-multiplied by (1 - mark). Import meshes and unbevelled copies have no such attribute and read 0: nothing changes
-for them.
+A bevelled copy carries a mark, the custom property rb_bevel = 1 on the mesh. Through it the importer's material
+switches its own rounding off for these meshes: the radius of the Bevel node and the strength of the EEVEE normal map
+are multiplied by (1 - mark). The Attribute node reads it as an object attribute (a custom property of the object,
+else of its mesh): one value per object. Import meshes and unbevelled copies have no such property and read 0:
+nothing changes for them.
+A point attribute of the mesh was the first choice and is wrong: fed into the radius of Cycles' Bevel node it gave
+white streaks all over the part (run 274, matrix_probe.py - found in a control picture after the build, before the
+maintainer had accepted anything). The same mark as an object attribute, or as a constant, renders clean.
 
 A live modifier on the objects is not used: thousands of bricks share one baked copy, and the cache file holds it.
 """
@@ -36,7 +40,8 @@ RADIUS_MAX, SEGMENTS_MAX = 0.5, 4       # maintainer 2026-10-13: "0 bis 0,5" - L
 EDGE_INNER = 85.0                            # an edge inside one island counts from this bend on (the rule W12)
 EDGE_WEIGHT = "bevel_weight_edge"            # edge attribute Blender's Bevel reads
 EDGE_MARK = "rb_edges"                       # property of a copy: the bevel it carries ("0.350/1"), "" without
-EDGE_ATTR = "rb_bevel"                       # point attribute of a bevelled copy: 1.0 (the material reads it)
+EDGE_ATTR = "rb_bevel"                  # custom property of a bevelled copy: 1.0 (the material reads it)
+EDGE_VERSION = 2                        # how a bevelled copy is marked; copies of the first test build (1) are made anew
 EDGE_FOLDS, EDGE_GAP = "rb_folds", "rb_gap"       # the verdict of the checks, taken before the bevel changed the layout
 EDGE_NODE = "rb_bevel_"                      # names of the switch nodes
 RADIUS_WAS = "rb_bevel_was"                    # on a group node: the importer's Bevel value before the radius was set
@@ -52,6 +57,12 @@ def signature():
 
 def is_bevelled(cp):
     return bool(cp.get(EDGE_MARK))
+
+
+def is_current(cp):
+    """The copy is what the current settings make: the same bevel (or none), marked the current way."""
+    sig = signature()
+    return cp.get(EDGE_MARK, "") == sig and (not sig or cp.get("rb_edges_v") == EDGE_VERSION)
 
 
 # ---------------------------------------------------------------- which edges
@@ -116,6 +127,7 @@ def bevel_copy(cp):
         if at is not None:
             cp.attributes.remove(at)
         cp[EDGE_MARK] = sig
+        cp["rb_edges_v"] = EDGE_VERSION
         return cp
     ob = bpy.data.objects.new(workscene.WORK_NAME + " bevel", cp)
     workscene.link_work(ob)
@@ -140,9 +152,9 @@ def bevel_copy(cp):
     left = new.attributes.get(EDGE_WEIGHT)
     if left is not None:
         new.attributes.remove(left)
-    mark = new.attributes.get(EDGE_ATTR) or new.attributes.new(EDGE_ATTR, 'FLOAT', 'POINT')
-    mark.data.foreach_set("value", np.ones(len(new.vertices), np.float32))
+    new[EDGE_ATTR] = 1.0
     new[EDGE_MARK] = sig
+    new["rb_edges_v"] = EDGE_VERSION
     return new
 
 
@@ -150,7 +162,7 @@ def bevel_copy(cp):
 def _keep_factor(tree, x, y):
     """Nodes in `tree` that give 1 for an import or a plain copy and 0 for a bevelled copy. Returns the output."""
     at = tree.nodes.new("ShaderNodeAttribute")
-    at.name, at.label, at.attribute_type, at.attribute_name = EDGE_NODE + "attribute", "Bevelled copy?", 'GEOMETRY', EDGE_ATTR
+    at.name, at.label, at.attribute_type, at.attribute_name = EDGE_NODE + "attribute", "Bevelled copy?", 'OBJECT', EDGE_ATTR
     at.location = (x - 420, y)
     inv = tree.nodes.new("ShaderNodeMath")
     inv.name, inv.label, inv.operation, inv.use_clamp = EDGE_NODE + "keep", "1 - mark", 'SUBTRACT', True
@@ -164,7 +176,11 @@ def _keep_factor(tree, x, y):
 
 
 def _switch_socket(tree, node, sock, label):
-    """Multiply what goes into `sock` of `node` by the keep factor. Nothing when the switch is there already."""
+    """Multiply what goes into `sock` of `node` by the keep factor. Nothing when the switch is there already (one of
+    the first test build reads a point attribute: set right)."""
+    old = tree.nodes.get(EDGE_NODE + "attribute")
+    if old is not None and old.attribute_type != 'OBJECT':
+        old.attribute_type = 'OBJECT'
     if any(n.name.startswith(EDGE_NODE) for n in tree.nodes):
         return False
     keep, frame = _keep_factor(tree, node.location.x, node.location.y - 260)
