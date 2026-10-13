@@ -25,6 +25,19 @@ A point attribute of the mesh was the first choice and is wrong: fed into the ra
 white streaks all over the part (run 274, matrix_probe.py - found in a control picture after the build, before the
 maintainer had accepted anything). The same mark as an object attribute, or as a constant, renders clean.
 
+The width (run 275): Blender's Clamp Overlap limits the width of every edge of a mesh to what its tightest spot allows.
+On 3004 that made the bevel about 0.02 mm wide whatever radius was asked for - the first test build had a Radius that
+did nothing (found when the maintainer said "0,35 ist offenbar sehr klein" and asked for the bevel value that matches
+the shader's). The clamp is off; edge_room gives every run of bevelled edges its own limit - what the faces beside it
+leave - as bevel weight, by which Blender scales the width of an edge.
+
+One Radius for both (run 275, maintainer: "Bitte ermittle den passenden Bevelwert zum Bevelshaderwert."): the shader's
+radius and the bevel's width are not the same size. Measured on 3004 - the angle of the shading normal across an
+edge, the Bevel node at radius 0.20, 0.35 and 0.50 against geometric bevels in steps of 0.025 - the bevel that lies
+closest to the shader (0.4 to 1.2 degrees apart) is 0.595 times the radius wide with one segment, 0.521 with two,
+0.506 with three, 0.502 with four; the same ratios at all three radii. MATCH holds them: the panel's Radius is the
+shader's, the bevel is made MATCH times as wide and so looks the same size.
+
 A live modifier on the objects is not used: thousands of bricks share one baked copy, and the cache file holds it.
 """
 import math
@@ -41,7 +54,10 @@ EDGE_INNER = 85.0                            # an edge inside one island counts 
 EDGE_WEIGHT = "bevel_weight_edge"            # edge attribute Blender's Bevel reads
 EDGE_MARK = "rb_edges"                       # property of a copy: the bevel it carries ("0.350/1"), "" without
 EDGE_ATTR = "rb_bevel"                  # custom property of a bevelled copy: 1.0 (the material reads it)
-EDGE_VERSION = 2                        # how a bevelled copy is marked; copies of the first test build (1) are made anew
+MATCH = {1: 0.595, 2: 0.521, 3: 0.506, 4: 0.502}     # bevel width / shader radius that look alike, by segments (run 275)
+ROOM = 0.9                              # share of the room beside an edge the bevel may take (half of it between two)
+MIN_WEIGHT = 0.05                       # a run with less room than this share of the radius is left sharp
+EDGE_VERSION = 4                        # how a bevelled copy is marked; copies of the first test build (1) are made anew
 EDGE_FOLDS, EDGE_GAP = "rb_folds", "rb_gap"       # the verdict of the checks, taken before the bevel changed the layout
 EDGE_NODE = "rb_bevel_"                      # names of the switch nodes
 RADIUS_WAS = "rb_bevel_was"                    # on a group node: the importer's Bevel value before the radius was set
@@ -111,6 +127,50 @@ def mark_edges(orig, wm):
     return n
 
 
+# ---------------------------------------------------------------- the room of an edge
+def edge_room(cp, weight, radius):
+    """Bevel weights 0..1 for the weighted edges of the baked copy `cp`: the share of `radius` each run of edges has
+    room for. The room of an edge is the shortest side edge of its two faces (the edges that leave its ends), half
+    of it where the face's far edge is bevelled too; a run - weighted edges linked through points where just two of
+    them meet - takes the smallest room along it, so its width does not change from face to face."""
+    bm = bmesh.new()
+    bm.from_mesh(cp)
+    bm.edges.ensure_lookup_table()
+    on = weight > 0.5
+    room = {}
+    for e in bm.edges:
+        if not on[e.index]:
+            continue
+        r = float("inf")
+        for f in e.link_faces:
+            far = any(on[g.index] for g in f.edges if g is not e and not (set(g.verts) & set(e.verts)))
+            for g in f.edges:
+                if g is not e and (set(g.verts) & set(e.verts)):
+                    r = min(r, g.calc_length() * (0.5 if far else 1.0))
+        room[e.index] = r * ROOM
+    done, out = set(), np.zeros(len(bm.edges), np.float32)
+    for start in room:
+        if start in done:
+            continue
+        run, stack = [], [start]
+        done.add(start)
+        while stack:
+            i = stack.pop()
+            run.append(i)
+            for v in bm.edges[i].verts:
+                linked = [g.index for g in v.link_edges if on[g.index]]
+                if len(linked) == 2:                    # the run goes on; at a corner (3 and more) it ends
+                    for j in linked:
+                        if j not in done:
+                            done.add(j)
+                            stack.append(j)
+        share = min(1.0, min(room[i] for i in run) / radius) if radius > 0 else 0.0
+        if share >= MIN_WEIGHT:
+            out[run] = share
+    bm.free()
+    return out
+
+
 # ---------------------------------------------------------------- the bevelled copy
 def bevel_copy(cp):
     """The finished copy `cp` with its weighted edges bevelled: a new mesh with the properties of `cp`, which is
@@ -123,7 +183,13 @@ def bevel_copy(cp):
     w = np.zeros(len(cp.edges), np.float32)
     if at is not None:
         at.data.foreach_get("value", w)
-    if not (w > 0.5).any():
+    radius, segments = float(sig.split("/")[0]), int(sig.split("/")[1])
+    width = radius * MATCH.get(segments, 0.5)       # as wide as the shader's rounding of this radius looks
+    if (w > 0.5).any():
+        w = edge_room(cp, w, width)
+        at.data.foreach_set("value", w)
+        cp.update()
+    if not (w > 0.0).any():
         if at is not None:
             cp.attributes.remove(at)
         cp[EDGE_MARK] = sig
@@ -132,11 +198,10 @@ def bevel_copy(cp):
     ob = bpy.data.objects.new(workscene.WORK_NAME + " bevel", cp)
     workscene.link_work(ob)
     try:
-        radius, segments = sig.split("/")
         mod = ob.modifiers.new("Bevel", 'BEVEL')
         mod.limit_method, mod.offset_type = 'WEIGHT', 'OFFSET'
-        mod.width, mod.segments, mod.profile = float(radius), int(segments), 0.5
-        mod.use_clamp_overlap, mod.harden_normals, mod.loop_slide = True, True, True
+        mod.width, mod.segments, mod.profile = width, segments, 0.5
+        mod.use_clamp_overlap, mod.harden_normals, mod.loop_slide = False, True, True       # the limit: edge_room
         dg = workscene.depsgraph_of(ob)
         dg.update()
         new = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
