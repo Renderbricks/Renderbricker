@@ -39,12 +39,22 @@ hardened, and no normal is left to the modifier: it also garbles the custom norm
 rebuilds. strip_normals sets all of them - an old face takes the normals the unbevelled copy has at that place, a
 strip takes at each corner the normal of the faces beside it and so shades from the one side's normal to the other's.
 
-One width per part (run 277, maintainer with a screenshot: "Die Fasen sind unterschiedlich dick. Zu dicke erzeugen
-Geometrie-Probleme." - the same he had seen with the importer's own bevel option): a run of edges is bevelled at the
-full width or not at all. mark_edges decides it on the welded cage, once for all levels: a run needs room for the
-width on the finest level; the two borders of a chamfer Mecabricks modelled (a narrow face between two shallow
-edges) are left alone - bevelled as well they made a rounding three strips thick. After the bevel, bevel_copy looks
-for faces that turned over, takes the bevel near them out and bevels again.
+Every edge, one size (runs 277 and 278; maintainer with a screenshot: "Die Fasen sind unterschiedlich dick. Zu dicke
+erzeugen Geometrie-Probleme." - then: "Ich muss doch für alle Kanten einen Bevel bekommen, sonst macht es gar keinen
+Sinn. Die Bevels müssen nur die einheitliche Größe haben und mit dem Bevel Shader vergleichbar sein."). A bevel of
+faces needs room beside the edge, and after the subdivision only 14 % of the chosen edges have it for the shader's
+size (run 277). The shader has no such limit - it changes nothing but the normal. So the two are split:
+  the size    is set in the normals (round_in_normals): every corner closer to a chosen edge than the bevel's width
+              is turned towards the other side - half the angle on the edge, in a straight line down to nothing at
+              the width. That is the run of the normal across a one-segment bevel, which matches the shader.
+  the faces   follow where there is room (edge_room): an edge of the copy is bevelled at the full width when its
+              own neighbours leave room for it, else not at all. Where the first row of faces is wide the bevel puts
+              points where the rounding ends; where the rows are narrow the points are there already.
+              A bevel of part of the width was tried first and is out: of 1642 faces that turned over on the part
+              78301, 1641 lay at such a bevel, one at a full one (diag_turned.py) - the maintainer's "Zu dicke
+              erzeugen Geometrie-Probleme".
+The borders of a chamfer Mecabricks modelled (a narrow face between two shallow edges) are left alone. After the
+bevel, bevel_copy looks for faces that turned over, takes the bevel near them out and bevels again.
 
 One Radius for both (run 275, maintainer: "Bitte ermittle den passenden Bevelwert zum Bevelshaderwert."): the shader's
 radius and the bevel's width are not the same size. Measured on 3004 - the angle of the shading normal across an
@@ -73,10 +83,13 @@ MATCH = {1: 0.595, 2: 0.521, 3: 0.506, 4: 0.502}     # bevel width / shader radi
 ROOM = 0.9                              # share of the room beside an edge the bevel may take (half of it between two)
 CHAMFER_ANGLE = 60.0                    # a modelled chamfer: both borders of a face bend by less than this ...
 CHAMFER_WIDTH = 1.5                     # ... and the face between them is narrower than this (mm)
+TRIES = 6                               # bevel, look for turned faces, take the bevel near them out: at most so often
+TURN_MAX = 56.0                         # no corner is turned further: the corner of a box takes 54.7 degrees
+SAME_SIDE = 30.0                        # a corner lies on the side of an edge whose normal it has within this angle
 TURNED = 0.3                            # a face that was there counts as turned over below this cosine to its old normal
 HARDEN = False                          # True: Blender's Harden Normals, as the first test build did (probe only)
 STRENGTH = "__mod_weightednormals_faceweight"       # the Bevel modifier's face strength: lower on the faces it made
-EDGE_VERSION = 6                        # how a bevelled copy is marked; copies of the first test build (1) are made anew
+EDGE_VERSION = 9                        # how a bevelled copy is marked; copies of the first test build (1) are made anew
 EDGE_FOLDS, EDGE_GAP = "rb_folds", "rb_gap"       # the verdict of the checks, taken before the bevel changed the layout
 EDGE_NODE = "rb_bevel_"                      # names of the switch nodes
 RADIUS_WAS = "rb_bevel_was"                    # on a group node: the importer's Bevel value before the radius was set
@@ -104,10 +117,9 @@ def is_current(cp):
 def mark_edges(orig, wm):
     """Bevel weight 1 on the part's own sharp edges of the welded cage `wm`; the sharp flag is taken off them (a
     bevelled edge is no hard edge any more). Returns the counts {"full", "bevel", "logo", "modelled"}; without
-    weights when the welded mesh does not have the faces of the import one to one. Of the edges chosen, those of a
-    modelled chamfer ("chamfer") and those of runs without room for the full width ("narrow") are taken out again;
-    "bevelled" is what remains."""
-    n = {"full": 0, "bevel": 0, "logo": 0, "modelled": 0, "chamfer": 0, "narrow": 0, "bevelled": 0}
+    weights when the welded mesh does not have the faces of the import one to one. Of the edges chosen, the borders
+    of a modelled chamfer ("chamfer") are taken out again; "bevelled" is what remains."""
+    n = {"full": 0, "bevel": 0, "logo": 0, "modelled": 0, "chamfer": 0, "bevelled": 0}
     if len(wm.polygons) != len(orig.polygons):
         return n
     bm = bmesh.new()
@@ -137,7 +149,7 @@ def mark_edges(orig, wm):
             else:
                 n["modelled"] += 1
     if n["bevel"]:
-        n.update(_full_width_or_none(bm, w))
+        n.update(_leave_chamfers(bm, w))
     bm.free()
     at = wm.attributes.get(EDGE_WEIGHT) or wm.attributes.new(EDGE_WEIGHT, 'FLOAT', 'EDGE')
     at.data.foreach_set("value", w)
@@ -165,15 +177,11 @@ def _sides(e, f):
     return [g for g in f.edges if g is not e and (set(g.verts) & ev)], [g for g in f.edges if not (set(g.verts) & ev)]
 
 
-def _full_width_or_none(bm, w):
-    """On the welded cage `bm`: take out of the weights `w` the borders of modelled chamfers and every run of edges
-    that has no room for the full width on the finest level baked. Returns the counts."""
-    width = bevel_width()
-    level = max([config.RENDER_LEVEL, config.VIEW_LEVEL, config.LEVELS] + list(config.PRE_LEVELS))
+def _leave_chamfers(bm, w):
+    """On the welded cage `bm`: take the borders of modelled chamfers out of the weights `w` - a narrow face between
+    two chosen edges that both bend only a little. Returns the counts."""
     bm.edges.ensure_lookup_table()
-    out = {"chamfer": 0, "narrow": 0, "bevelled": 0}
     on = w > 0.5
-    # the borders of a modelled chamfer: a narrow face between two chosen edges that both bend only a little
     shallow = {e.index for e in bm.edges if on[e.index] and math.degrees(e.calc_face_angle(0.0)) < CHAMFER_ANGLE}
     chamfer = set()
     for i in shallow:
@@ -184,46 +192,56 @@ def _full_width_or_none(bm, w):
                 chamfer.add(i)
                 chamfer.update(g.index for g in far if g.index in shallow)
     for i in chamfer:
-        w[i], on[i] = 0.0, False
-    out["chamfer"] = len(chamfer)
-    # the room of every chosen edge on the finest level: the subdivision halves the faces beside it once per level
-    for _pass in range(2):                              # a run taken out leaves its neighbours more room
-        room = {}
-        for e in bm.edges:
-            if not on[e.index]:
-                continue
-            r = float("inf")
-            for f in e.link_faces:
-                sides, far = _sides(e, f)
-                both = any(on[g.index] for g in far)
-                for g in sides:
-                    r = min(r, g.calc_length() * (0.5 if both else 1.0))
-            room[e.index] = r * ROOM / (2 ** level)
-        done, dropped = set(), 0
-        for start in room:
-            if start in done:
-                continue
-            run, stack = [], [start]
-            done.add(start)
-            while stack:
-                i = stack.pop()
-                run.append(i)
-                for v in bm.edges[i].verts:
-                    linked = [g.index for g in v.link_edges if on[g.index]]
-                    if len(linked) == 2:                # the run goes on; at a corner (3 and more) it ends
-                        for j in linked:
-                            if j not in done:
-                                done.add(j)
-                                stack.append(j)
-            if min(room[i] for i in run) < width:
-                for i in run:
-                    w[i], on[i] = 0.0, False
-                dropped += len(run)
-        out["narrow"] += dropped
-        if not dropped:
-            break
-    out["bevelled"] = int(on.sum())
+        w[i] = 0.0
+    return {"chamfer": len(chamfer), "bevelled": int((w > 0.5).sum())}
+
+
+# ---------------------------------------------------------------- the room of an edge, the lines of the edges
+def edge_room(cp, weight, width):
+    """Bevel weight 1 for the chosen edges of the baked copy `cp` that have room for a bevel `width` wide, 0 for the
+    others (their rounding is in the normals alone). The room of an edge is the shortest edge that leaves its ends
+    in its two faces, half of it where the face's far edge is chosen too; ROOM of it may be taken."""
+    bm = bmesh.new()
+    bm.from_mesh(cp)
+    on = weight > 0.5
+    out = np.zeros(len(bm.edges), np.float32)
+    for e in bm.edges:
+        if not on[e.index]:
+            continue
+        r = float("inf")
+        for f in e.link_faces:
+            sides, far = _sides(e, f)
+            both = any(on[g.index] for g in far)
+            for g in sides:
+                r = min(r, g.calc_length() * (0.5 if both else 1.0))
+        if width > 0 and r * ROOM >= width:
+            out[e.index] = 1.0
+    bm.free()
     return out
+
+
+def edge_lines(cp, chosen):
+    """The chosen edges of the copy `cp` as lines: (start points, end points, normals) - normals[i, side, end] is the
+    normal the face on that side of edge i has at that end."""
+    n = np.zeros(len(cp.loops) * 3, np.float32)
+    cp.corner_normals.foreach_get("vector", n)
+    n = n.reshape(-1, 3)
+    bm = bmesh.new()
+    bm.from_mesh(cp)
+    a, b, nn = [], [], []
+    for e in bm.edges:
+        if not chosen[e.index] or len(e.link_faces) != 2:
+            continue
+        va, vb = e.verts
+        row = []
+        for f in e.link_faces:
+            at = {lp.vert.index: lp.index for lp in f.loops}
+            row.append((n[at[va.index]], n[at[vb.index]]))
+        a.append(tuple(va.co))
+        b.append(tuple(vb.co))
+        nn.append(row)
+    bm.free()
+    return np.array(a, np.float64).reshape(-1, 3), np.array(b, np.float64).reshape(-1, 3), np.array(nn, np.float64).reshape(-1, 2, 2, 3)
 
 
 # ---------------------------------------------------------------- the normals of a bevelled copy
@@ -311,6 +329,88 @@ def strip_normals(me, before):
     return int(strip.sum())
 
 
+def _unit(v):
+    return v / np.maximum(np.linalg.norm(v, axis=1), 1e-12)[:, None]
+
+
+def round_in_normals(me, lines, width):
+    """The size of the rounding, in the normals of `me`: every corner closer than `width` to one of the `lines`
+    (edge_lines of the copy before the bevel) is turned from the normal of its side of the edge towards the normal
+    of the other side - by half the angle between the two on the line itself, falling in a straight line to nothing
+    at `width`; a corner that is turned that far already (inside a strip) stays. A corner near several edges takes
+    the turn of each. Writes custom normals; returns the number of corners turned."""
+    from mathutils import Vector
+    from mathutils.kdtree import KDTree
+    la, lb, ln = lines
+    if not len(la) or width <= 0:
+        return 0
+    nv, nl = len(me.vertices), len(me.loops)
+    co = np.zeros(nv * 3, np.float32); me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3).astype(np.float64)
+    tree = KDTree(nv)
+    for i, c in enumerate(co.tolist()):
+        tree.insert(c, i)
+    tree.balance()
+    mid, reach = (la + lb) / 2, np.linalg.norm(lb - la, axis=1) / 2 + width
+    vi, li = [], []
+    for i, (c, r) in enumerate(zip(mid.tolist(), reach.tolist())):
+        found = tree.find_range(Vector(c), r)
+        vi.extend(f[1] for f in found)
+        li.extend([i] * len(found))
+    if not vi:
+        return 0
+    vi, li = np.array(vi, np.int64), np.array(li, np.int64)
+    ab = lb[li] - la[li]
+    t = np.clip(((co[vi] - la[li]) * ab).sum(axis=1) / np.maximum((ab * ab).sum(axis=1), 1e-18), 0.0, 1.0)
+    d = np.linalg.norm(co[vi] - (la[li] + ab * t[:, None]), axis=1)
+    near = d < width
+    vi, li, t, d = vi[near], li[near], t[near], d[near]
+    # every corner of those points
+    lv = np.zeros(nl, np.int32); me.loops.foreach_get("vertex_index", lv)
+    order = np.argsort(lv, kind="stable")
+    first, count = np.searchsorted(lv[order], vi), np.bincount(lv, minlength=nv)[vi]
+    pair = np.repeat(np.arange(len(vi)), count)
+    loop = order[np.repeat(first, count) + (np.arange(len(pair)) - np.repeat(np.cumsum(count) - count, count))]
+    li, t, d = li[pair], t[pair], d[pair]
+    normals = np.zeros(nl * 3, np.float32); me.corner_normals.foreach_get("vector", normals)
+    normals = normals.reshape(-1, 3).astype(np.float64)
+    n = normals[loop]
+    side = [_unit(ln[li, k, 0] * (1.0 - t)[:, None] + ln[li, k, 1] * t[:, None]) for k in (0, 1)]
+    dots = [(n * side[k]).sum(axis=1) for k in (0, 1)]
+    own = dots[1] > dots[0]
+    n_own = np.where(own[:, None], side[1], side[0])
+    n_other = np.where(own[:, None], side[0], side[1])
+    theta = np.arccos(np.clip((n_own * n_other).sum(axis=1), -1.0, 1.0))
+    have = np.arccos(np.clip(np.maximum(dots[0], dots[1]), -1.0, 1.0))        # how far the corner is turned already
+    more = 0.5 * theta * (1.0 - d / width) - have
+    towards = n_other - n * (n_other * n).sum(axis=1)[:, None]
+    ok = (np.maximum(dots[0], dots[1]) > math.cos(math.radians(45.0 + SAME_SIDE / 2))) & (more > 1e-4) \
+        & (np.linalg.norm(towards, axis=1) > 1e-9)
+    if not ok.any():
+        return 0
+    loop, more, n_other, towards = loop[ok], more[ok], n_other[ok], _unit(towards[ok])
+    tilt = towards * np.tan(np.minimum(more, 1.4))[:, None]
+    # per corner: the strongest turn of each side - the same side reached from the next edge of a run counts once
+    rest = np.lexsort((-more, loop))
+    total, same = np.zeros((nl, 3)), math.cos(math.radians(SAME_SIDE))
+    for _pass in range(4):
+        if not len(rest):
+            break
+        lead = np.r_[True, loop[rest][1:] != loop[rest][:-1]]
+        total[loop[rest[lead]]] += tilt[rest[lead]]
+        of = rest[lead][np.cumsum(lead) - 1]
+        rest = rest[(n_other[rest] * n_other[of]).sum(axis=1) <= same]
+    touched = np.unique(loop)
+    # where many edges meet (folds of hair) the turns can add up to more than a corner of three edges takes
+    size = np.linalg.norm(total[touched], axis=1)
+    limit = math.tan(math.radians(TURN_MAX))
+    total[touched] *= np.minimum(1.0, limit / np.maximum(size, 1e-12))[:, None]
+    normals[touched] = _unit(normals[touched] + total[touched])
+    me.normals_split_custom_set(normals.tolist())
+    me.update()
+    return int(len(touched))
+
+
 def turned_faces(me, before):
     """Centres of the faces of the bevelled mesh `me` that were there before and have turned over: their normal
     points away from the normal `before` has at that place (a bevel wider than its room folds the faces beside it)."""
@@ -356,14 +456,22 @@ def bevel_copy(cp):
         at.data.foreach_get("value", w)
     segments = int(sig.split("/")[1])
     width = bevel_width()                           # as wide as the shader's rounding of this radius looks
-    if not (w > 0.5).any():
+    chosen = w > 0.5
+    if not chosen.any():
         if at is not None:
             cp.attributes.remove(at)
         cp[EDGE_MARK] = sig
         cp["rb_edges_v"] = EDGE_VERSION
         return cp
-    new, taken_out = None, 0
-    for attempt in range(3):
+    lines = edge_lines(cp, chosen)                  # where the edges are, before the bevel takes them away
+    w = edge_room(cp, w, width)
+    at.data.foreach_set("value", w)
+    cp.update()
+    new, taken_out, left_turned = None, 0, 0
+    for attempt in range(TRIES):
+        if not (w > 0.0).any():                     # no edge with room: the rounding is in the normals alone
+            new = None
+            break
         ob = bpy.data.objects.new(workscene.WORK_NAME + " bevel", cp)
         workscene.link_work(ob)
         try:
@@ -377,19 +485,23 @@ def bevel_copy(cp):
             new = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
         finally:
             bpy.data.objects.remove(ob)
-        bad = turned_faces(new, cp) if attempt < 2 else []
-        if not len(bad):
+        bad = turned_faces(new, cp)
+        left_turned = len(bad)
+        if not left_turned or attempt == TRIES - 1:
             break
         # the bevel near a face that turned over is taken out, the copy bevelled again
         ev = np.zeros(len(cp.edges) * 2, np.int32)
         cp.edges.foreach_get("vertices", ev)
         vco = np.zeros(len(cp.vertices) * 3, np.float32)
         cp.vertices.foreach_get("co", vco)
-        mid = vco.reshape(-1, 3)[ev.reshape(-1, 2)].mean(axis=1)
-        near = np.zeros(len(mid), bool)
-        for c in bad:
-            near |= np.linalg.norm(mid - c, axis=1) < 4.0 * width
-        near &= w > 0.5
+        ea, eb = vco.reshape(-1, 3)[ev.reshape(-1, 2)[:, 0]], vco.reshape(-1, 3)[ev.reshape(-1, 2)[:, 1]]
+        along = eb - ea
+        l2 = np.maximum((along * along).sum(axis=1), 1e-18)
+        near = np.zeros(len(ea), bool)
+        for c in bad:                               # the distance to the edge itself: an edge can be long
+            t = np.clip(((c - ea) * along).sum(axis=1) / l2, 0.0, 1.0)
+            near |= np.linalg.norm(ea + along * t[:, None] - c, axis=1) < 4.0 * width
+        near &= w > 0.0
         if not near.any():
             break
         taken_out += int(near.sum())
@@ -398,13 +510,16 @@ def bevel_copy(cp):
         cp.update()
         bpy.data.meshes.remove(new)
         new = None
-    if new is None:                                 # nothing left to bevel after the check
+    if new is None:                                 # no faces made
         cp.attributes.remove(at)
+        cp[EDGE_ATTR], cp["rb_bevel_out"] = 1.0, taken_out
+        cp["rb_bevel_normals"] = round_in_normals(cp, lines, width)
         cp[EDGE_MARK] = sig
         cp["rb_edges_v"] = EDGE_VERSION
         return cp
     if not HARDEN:
         strip_normals(new, cp)
+    rounded = round_in_normals(new, lines, width)
     left = new.attributes.get(STRENGTH)
     if left is not None:
         new.attributes.remove(left)
@@ -420,6 +535,8 @@ def bevel_copy(cp):
         new.attributes.remove(left)
     new[EDGE_ATTR] = 1.0
     new["rb_bevel_out"] = taken_out                 # edges whose bevel the check took out again
+    new["rb_bevel_left"] = left_turned              # faces still turned over after the last try (0: clean)
+    new["rb_bevel_normals"] = rounded               # corners turned for the size of the rounding
     new[EDGE_MARK] = sig
     new["rb_edges_v"] = EDGE_VERSION
     return new
