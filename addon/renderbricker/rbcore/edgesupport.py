@@ -34,6 +34,9 @@ EDGE_BEND = 50.0                        # a run ends where the line of chosen ed
 #                                         the pieces of a small rounded corner bend by 20 to 45 degrees: one run)
 EDGE_REACH = 1.5                        # the net: a face with a turned corner may reach this x width from the edges
 EDGE_SWEEPS = 2                         # a point a later run makes can lie inside the rounding of an earlier one
+EDGE_FLAT = 1e-4                        # a cut needs a point this far (mm) off its line on either side, or it cuts off nothing
+CARRY_SAME = 0.5                        # carry_normals: the old face a corner lies on has its face's normal within 60 degrees
+CARRY_NEAR = 0.01                       # ... and is looked for this far (mm) beyond the nearest one
 
 
 def edge_runs(bm, mark):
@@ -64,6 +67,23 @@ def edge_runs(bm, mark):
     return runs
 
 
+def _has_area(vs, i, k):
+    """True if a cut from point i to point k of the outline `vs` leaves a face with area on either side: on each side
+    a point stands off the line of the cut. (Library run 281: 922 faces without area on 166 parts, cut off along an
+    edge that carries several points in a line.)"""
+    a, d = vs[i].co, vs[k].co - vs[i].co
+    length, n = d.length, len(vs)
+    if length < EDGE_FLAT:
+        return False
+    for lo, hi in ((i, k), (k, i)):
+        j = (lo + 1) % n
+        while j != hi and (vs[j].co - a).cross(d).length <= EDGE_FLAT * length:
+            j = (j + 1) % n
+        if j == hi:
+            return False
+    return True
+
+
 def support_edges(me, chosen, width):
     """Support edges in the mesh `me`, in place: every face that reaches from inside the rounding of a chosen edge
     (`chosen`: per edge) to outside it is cut where the rounding ends, `width` from the edge. Returns
@@ -81,36 +101,60 @@ def support_edges(me, chosen, width):
     for i, v in enumerate(first):
         tree.insert(v.co, i)
     tree.balance()
-    added, n_edges = [], 0
+    n_edges = 0
     lo_d, hi_d = EDGE_IN * width, EDGE_ON * width
+    cell, grid = max(1.0, 2.5 * lo_d), {}           # the points made so far, by cell (found again by the later runs)
     for A, B in runs * EDGE_SWEEPS:
         AB = B - A
         L2 = np.maximum((AB * AB).sum(axis=1), 1e-18)
         cache = {}
 
-        def at(co, A=A, AB=AB, L2=L2):
-            c = np.array(co)
-            t = np.clip(((c - A) * AB).sum(axis=1) / L2, 0.0, 1.0)
-            return float(np.sqrt(((A + AB * t[:, None] - c) ** 2).sum(axis=1).min()))
+        def at_many(points, A=A, AB=AB, L2=L2):
+            """Distances of `points` (n x 3) from the run."""
+            out = np.empty(len(points))
+            step = max(1, 2000000 // len(A))
+            for s in range(0, len(points), step):
+                c = points[s:s + step, None, :]
+                t = np.clip(((c - A) * AB).sum(axis=2) / L2, 0.0, 1.0)
+                out[s:s + step] = np.sqrt(((A + AB * t[:, :, None] - c) ** 2).sum(axis=2).min(axis=1))
+            return out
 
-        def dist(v, cache=cache, at=at):
+        def learn(verts, cache=cache, at_many=at_many):
+            new = [v for v in verts if v not in cache]
+            if new:
+                cache.update(zip(new, at_many(np.array([tuple(v.co) for v in new], np.float64)).tolist(), strict=True))
+
+        def dist(v, cache=cache, learn=learn):
             d = cache.get(v)
             if d is None:
-                d = cache[v] = at(v.co)
+                learn((v,))
+                d = cache[v]
             return d
 
         near = set()
         for a, b in zip(A, B, strict=True):
             for _co, i, _d in tree.find_range(Vector(((a + b) / 2).tolist()), float(np.linalg.norm(b - a)) / 2 + lo_d):
                 near.add(first[i])
-        box_lo, box_hi = np.minimum(A, B).min(axis=0) - lo_d, np.maximum(A, B).max(axis=0) + lo_d
-        for v in added:
-            c = v.co
-            if box_lo[0] <= c.x <= box_hi[0] and box_lo[1] <= c.y <= box_hi[1] and box_lo[2] <= c.z <= box_hi[2]:
-                near.add(v)
+        if grid:
+            # along the run a place every `cell`, the cells around it: no point closer than lo_d is missed
+            box_lo, box_hi = (np.minimum(A, B).min(axis=0) - lo_d).tolist(), (np.maximum(A, B).max(axis=0) + lo_d).tolist()
+            cells = set()
+            for a, b in zip(A.tolist(), B.tolist(), strict=True):
+                steps = int(math.dist(a, b) / cell) + 1
+                for k in range(steps + 1):
+                    t = k / steps
+                    cells.add((math.floor((a[0] + (b[0] - a[0]) * t) / cell), math.floor((a[1] + (b[1] - a[1]) * t) / cell),
+                               math.floor((a[2] + (b[2] - a[2]) * t) / cell)))
+            for key in {(x + dx, y + dy, z + dz) for x, y, z in cells for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)}:
+                for v in grid.get(key, ()):
+                    c = v.co
+                    if box_lo[0] <= c.x <= box_hi[0] and box_lo[1] <= c.y <= box_hi[1] and box_lo[2] <= c.z <= box_hi[2]:
+                        near.add(v)
+        near = [v for v in near if v.is_valid]
+        learn(near)
         faces, seen = [], set()
         for v in near:
-            if not v.is_valid or dist(v) >= lo_d:
+            if cache[v] >= lo_d:
                 continue
             for f in v.link_faces:
                 if f not in seen:
@@ -118,27 +162,33 @@ def support_edges(me, chosen, width):
                     faces.append(f)
         if not faces:
             continue
+        learn({v for f in faces for v in f.verts})
         # the edges of those faces that cross the border of the rounding get a point there
         crossing = set()
         for f in faces:
             for e in f.edges:
-                da, db = dist(e.verts[0]), dist(e.verts[1])
+                da, db = cache[e.verts[0]], cache[e.verts[1]]
                 if min(da, db) < lo_d and max(da, db) > hi_d:
                     crossing.add(e)
-        for e in crossing:
-            a, b = e.verts
-            if dist(a) > dist(b):
-                a, b = b, a
-            da, db = dist(a), dist(b)
+        if crossing:
+            crossing = list(crossing)
+            ends = [(e.verts[0], e.verts[1]) if cache[e.verts[0]] <= cache[e.verts[1]] else (e.verts[1], e.verts[0])
+                    for e in crossing]              # the nearer end first
+            pa, pb = (np.array([tuple(pair[k].co) for pair in ends], np.float64) for k in (0, 1))
+            da, db = (np.array([cache[pair[k]] for pair in ends]) for k in (0, 1))
             t = (width - da) / (db - da)
+            live = np.arange(len(t))
             for _again in range(3):                 # the distance from a bent run is not straight along the edge
-                d = at(a.co.lerp(b.co, t))
-                if abs(d - width) < 0.01 * width:
+                d = at_many(pa[live] + (pb[live] - pa[live]) * t[live, None])
+                off = np.abs(d - width) >= 0.01 * width
+                live, d = live[off], d[off]
+                if not len(live):
                     break
-                t = min(0.999, max(0.001, t + (width - d) / max(db - da, 1e-9)))
-            _ne, nv = bmesh.utils.edge_split(e, a, t)
-            cache[nv] = width
-            added.append(nv)
+                t[live] = np.clip(t[live] + (width - d) / np.maximum(db[live] - da[live], 1e-9), 0.001, 0.999)
+            for e, pair, t_e in zip(crossing, ends, t.tolist(), strict=True):
+                _ne, nv = bmesh.utils.edge_split(e, pair[0], t_e)
+                cache[nv] = width
+                grid.setdefault((math.floor(nv.co.x / cell), math.floor(nv.co.y / cell), math.floor(nv.co.z / cell)), []).append(nv)
         # ... and each face is cut from point to point on that border, round every stretch of its outline outside
         work = list(faces)
         while work:
@@ -156,7 +206,8 @@ def support_edges(me, chosen, width):
                     k = (i + 1) % n
                     while cls[k] == 2:
                         k = (k + 1) % n
-                    if cls[i] == 1 and cls[k] == 1 and vs[i] is not vs[k] and bm.edges.get((vs[i], vs[k])) is None:
+                    if (cls[i] == 1 and cls[k] == 1 and vs[i] is not vs[k] and bm.edges.get((vs[i], vs[k])) is None
+                            and _has_area(vs, i, k)):
                         cut = (vs[i], vs[k])
                         break
                     if k <= i:
@@ -210,18 +261,19 @@ def carry_normals(me, before):
     on, oco, ofn, _of, ols, olt = _corner_data(before)
     _n, co, fn, face, _ls, _lt = _corner_data(me)
     out = np.zeros((len(co), 3), np.float64)
-    known = {}
-    kp, kn = np.round(oco, 4), np.round(ofn, 2)
-    for i in range(len(oco)):
-        known.setdefault((kp[i, 0], kp[i, 1], kp[i, 2], kn[i, 0], kn[i, 1], kn[i, 2]), i)
-    kp, kn = np.round(co, 4), np.round(fn, 2)
-    moved = []
-    for i in range(len(co)):
-        j = known.get((kp[i, 0], kp[i, 1], kp[i, 2], kn[i, 0], kn[i, 1], kn[i, 2]))
-        if j is None:
-            moved.append(i)
-        else:
-            out[i] = on[j]
+    # a corner that was there: the same place (to 0.0001) on a face of the same direction (to 0.01)
+    old_key = np.hstack([np.rint(oco * np.float32(1e4)), np.rint(ofn * np.float32(100.0))]).astype(np.int64)
+    new_key = np.hstack([np.rint(co * np.float32(1e4)), np.rint(fn * np.float32(100.0))]).astype(np.int64)
+    mix = np.array([0x9E3779B97F4A7C15, 0xC2B2AE3D27D4EB4F, 0x165667B19E3779F9, 0x27D4EB2F165667C5, 0x85EBCA77C2B2AE63, 0xFF51AFD7ED558CCD],
+                   np.uint64)
+    with np.errstate(over="ignore"):
+        old_hash, new_hash = (old_key.astype(np.uint64) * mix).sum(axis=1), (new_key.astype(np.uint64) * mix).sum(axis=1)
+    uniq, first = np.unique(old_hash, return_index=True)
+    at = np.minimum(np.searchsorted(uniq, new_hash), len(uniq) - 1)
+    j = first[at]
+    same = (uniq[at] == new_hash) & (old_key[j] == new_key).all(axis=1)
+    out[same] = on[j[same]]
+    moved = np.nonzero(~same)[0].tolist()
     if moved:
         verts = np.zeros(len(before.vertices) * 3, np.float32)
         before.vertices.foreach_get("co", verts)
@@ -229,16 +281,43 @@ def carry_normals(me, before):
         centre = np.zeros(len(me.polygons) * 3, np.float32)
         me.polygons.foreach_get("center", centre)
         centre = centre.reshape(-1, 3)
-        for i in moved:
-            p = Vector(co[i].tolist())
-            _loc, _nor, f, _dist = tree.find_nearest(p.lerp(Vector(centre[face[i]].tolist()), 0.05))
+        old_fn = np.zeros(len(before.polygons) * 3, np.float32)
+        before.polygons.foreach_get("normal", old_fn)
+        old_fn = old_fn.reshape(-1, 3)
+        most = int(olt.max())
+        places, toward, own = co[moved].tolist(), centre[face[moved]].tolist(), fn[moved].tolist()
+        outline, got, at_face, weights = {}, [], [], []
+        for m, i in enumerate(moved):
+            p = Vector(places[m])
+            inward = p.lerp(Vector(toward[m]), 0.05)        # a little inside the face: which old face it is
+            _loc, _nor, f, dist = tree.find_nearest(inward)
             if f is None:
                 out[i] = fn[i]
                 continue
-            a, k = ols[f], olt[f]
-            weights = poly_3d_calc([Vector(c.tolist()) for c in oco[a:a + k]], p)
-            v = (np.array(weights)[:, None] * on[a:a + k]).sum(axis=0)
-            out[i] = v if np.linalg.norm(v) > 1e-9 else fn[i]
+            n_own = Vector(own[m])
+            if n_own.dot(Vector(old_fn[f].tolist())) < CARRY_SAME:
+                # the nearest old face is not the one this corner lies on (library run 281: the rail 85977 had 3,585
+                # corners with the normal of a face looking the other way): the one near by that looks its way
+                f = max((hit[2] for hit in tree.find_nearest_range(inward, dist + CARRY_NEAR)),
+                        key=lambda g: n_own.dot(Vector(old_fn[g].tolist())))
+                if n_own.dot(Vector(old_fn[f].tolist())) < CARRY_SAME:
+                    out[i] = fn[i]
+                    continue
+            pts = outline.get(f)
+            if pts is None:
+                a = int(ols[f])
+                pts = outline[f] = [Vector(c) for c in oco[a:a + int(olt[f])].tolist()]
+            w = poly_3d_calc(pts, p)
+            got.append(i)
+            at_face.append(f)
+            weights.append(list(w) + [0.0] * (most - len(w)))
+        if got:
+            got, at_face, weights = np.array(got), np.array(at_face), np.array(weights)
+            corner = np.minimum(ols[at_face][:, None] + np.arange(most)[None, :], len(on) - 1)       # (weight 0 beyond the face)
+            v = (weights[:, :, None] * on[corner]).sum(axis=1)
+            flat = np.linalg.norm(v, axis=1) <= 1e-9
+            v[flat] = fn[got[flat]]
+            out[got] = v
     out /= np.maximum(np.linalg.norm(out, axis=1), 1e-12)[:, None]
     me.normals_split_custom_set(out.tolist())
     me.update()
@@ -255,24 +334,40 @@ def keep_plain(me, lines, width, plain):
     me.corner_normals.foreach_get("vector", n)
     n = n.reshape(-1, 3)
     turned = (n * plain).sum(axis=1) < math.cos(math.radians(0.5))
-    co = np.zeros(len(me.vertices) * 3, np.float32)
+    if not turned.any() or not len(la):
+        return 0
+    nf, nv, reach = len(me.polygons), len(me.vertices), EDGE_REACH * width
+    ls = np.zeros(nf, np.int32)
+    me.polygons.foreach_get("loop_start", ls)
+    lt = np.zeros(nf, np.int32)
+    me.polygons.foreach_get("loop_total", lt)
+    lv = np.zeros(len(me.loops), np.int32)
+    me.loops.foreach_get("vertex_index", lv)
+    co = np.zeros(nv * 3, np.float32)
     me.vertices.foreach_get("co", co)
     co = co.reshape(-1, 3).astype(np.float64)
-    ab = lb - la
-    l2 = np.maximum((ab * ab).sum(axis=1), 1e-18)
-    far, count = {}, 0
-    for p in me.polygons:
-        if not turned[p.loop_start:p.loop_start + p.loop_total].any():
-            continue
-        for vi in p.vertices:
-            if vi not in far:
-                c = co[vi]
-                t = np.clip(((c - la) * ab).sum(axis=1) / l2, 0.0, 1.0)
-                far[vi] = float(np.linalg.norm(la + ab * t[:, None] - c, axis=1).min())
-        if max(far[vi] for vi in p.vertices) > EDGE_REACH * width:
-            n[p.loop_start:p.loop_start + p.loop_total] = plain[p.loop_start:p.loop_start + p.loop_total]
-            count += 1
+    of_turned = np.repeat(np.logical_or.reduceat(turned, ls), lt)           # per corner: its face has a turned corner
+    points = np.unique(lv[of_turned])
+    tree = KDTree(len(points))
+    for i, c in enumerate(co[points].tolist()):
+        tree.insert(c, i)
+    tree.balance()
+    # per point the distance from the nearest rounded edge, as far as `reach` (further counts as far)
+    vi, li = [], []
+    for i, (c, r) in enumerate(zip(((la + lb) / 2).tolist(), (np.linalg.norm(lb - la, axis=1) / 2 + reach).tolist(), strict=True)):
+        found = tree.find_range(Vector(c), r)
+        vi.extend(f[1] for f in found)
+        li.extend([i] * len(found))
+    far = np.full(nv, np.inf)
+    if vi:
+        vi, li = points[np.array(vi, np.int64)], np.array(li, np.int64)
+        ab = lb[li] - la[li]
+        t = np.clip(((co[vi] - la[li]) * ab).sum(axis=1) / np.maximum((ab * ab).sum(axis=1), 1e-18), 0.0, 1.0)
+        np.minimum.at(far, vi, np.linalg.norm(co[vi] - (la[li] + ab * t[:, None]), axis=1))
+    streak = of_turned & np.repeat(np.maximum.reduceat(far[lv], ls) > reach, lt)
+    count = int(np.logical_and.reduceat(streak, ls).sum())
     if count:
+        n[streak] = plain[streak]
         me.normals_split_custom_set(n.tolist())
         me.update()
     return count
