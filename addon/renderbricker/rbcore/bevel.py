@@ -56,6 +56,14 @@ size (run 277). The shader has no such limit - it changes nothing but the normal
 The borders of a chamfer Mecabricks modelled (a narrow face between two shallow edges) are left alone. After the
 bevel, bevel_copy looks for faces that turned over, takes the bevel near them out and bevels again.
 
+Test build of run 281 (maintainer 2026-10-13: "Entweder alle oder nur Bevel Shader." - "0.15 zerstört nicht mehr
+die Stelle. Es gibt lediglich Shading Artefakte." - after the trial of run 280: "Mach erst mal eine Version zum
+testen"): the copy gets no bevel of faces any more. The rounding is in the normals at every chosen edge, and the
+mesh gets support edges where the rounding ends (edgesupport.py), so it has the same size at every edge and cannot
+streak; a net keeps a face plain that a turned normal would still run across. Nothing is moved: the outline of the
+part stays as it was. What the notes above say about faces "as far as there is room" describes the builds before;
+edge_room, strip_normals and turned_faces are still here for the probes of those runs and are not called.
+
 One Radius for both (run 275, maintainer: "Bitte ermittle den passenden Bevelwert zum Bevelshaderwert."): the shader's
 radius and the bevel's width are not the same size. Measured on 3004 - the angle of the shading normal across an
 edge, the Bevel node at radius 0.20, 0.35 and 0.50 against geometric bevels in steps of 0.025 - the bevel that lies
@@ -69,7 +77,7 @@ import math
 import bpy
 import bmesh
 import numpy as np
-from . import config, creases, maps, workscene
+from . import config, creases, edgesupport, maps
 
 EDGES = config.opt("--edges", "shader")                     # "shader" or "bevel"; set by the add-on or the command line
 BEVEL_RADIUS = float(config.opt("--bevel-radius", "0.35"))  # in the units of the mesh (mm); the importer's value
@@ -89,7 +97,7 @@ SAME_SIDE = 30.0                        # a corner lies on the side of an edge w
 TURNED = 0.3                            # a face that was there counts as turned over below this cosine to its old normal
 HARDEN = False                          # True: Blender's Harden Normals, as the first test build did (probe only)
 STRENGTH = "__mod_weightednormals_faceweight"       # the Bevel modifier's face strength: lower on the faces it made
-EDGE_VERSION = 9                        # how a bevelled copy is marked; copies of the first test build (1) are made anew
+EDGE_VERSION = 10                        # how a bevelled copy is marked; copies of the first test build (1) are made anew
 EDGE_FOLDS, EDGE_GAP = "rb_folds", "rb_gap"       # the verdict of the checks, taken before the bevel changed the layout
 EDGE_NODE = "rb_bevel_"                      # names of the switch nodes
 RADIUS_WAS = "rb_bevel_was"                    # on a group node: the importer's Bevel value before the radius was set
@@ -167,8 +175,8 @@ def bevel_width():
     sig = signature()
     if not sig:
         return 0.0
-    radius, segments = sig.split("/")
-    return float(radius) * MATCH.get(int(segments), 0.5)
+    radius, _segments = sig.split("/")
+    return float(radius) * MATCH[1]                 # the rounding in the normals runs like a bevel of one segment
 
 
 def _sides(e, f):
@@ -444,9 +452,10 @@ def turned_faces(me, before):
 
 # ---------------------------------------------------------------- the bevelled copy
 def bevel_copy(cp):
-    """The finished copy `cp` with its weighted edges bevelled: a new mesh with the properties of `cp`, which is
-    removed. Returns the new mesh - `cp` itself when the settings ask for no bevel. A copy without a weighted edge
-    is marked too (it is what these settings make of it)."""
+    """The finished copy `cp` with its chosen edges rounded, in place: support edges where the rounding ends, the
+    rounding in the normals, the net. Returns `cp`. A copy without a chosen edge is marked too (it is what these
+    settings make of it). On the copy afterwards: rb_bevel = 1 (the material reads it), rb_bevel_normals (corners
+    turned), rb_bevel_support (points made), rb_bevel_plain (faces the net kept plain)."""
     sig = signature()
     if not sig:
         return cp
@@ -454,92 +463,27 @@ def bevel_copy(cp):
     w = np.zeros(len(cp.edges), np.float32)
     if at is not None:
         at.data.foreach_get("value", w)
-    segments = int(sig.split("/")[1])
-    width = bevel_width()                           # as wide as the shader's rounding of this radius looks
+        cp.attributes.remove(at)
+    cp[EDGE_MARK] = sig
+    cp["rb_edges_v"] = EDGE_VERSION
     chosen = w > 0.5
     if not chosen.any():
-        if at is not None:
-            cp.attributes.remove(at)
-        cp[EDGE_MARK] = sig
-        cp["rb_edges_v"] = EDGE_VERSION
         return cp
-    lines = edge_lines(cp, chosen)                  # where the edges are, before the bevel takes them away
-    w = edge_room(cp, w, width)
-    at.data.foreach_set("value", w)
-    cp.update()
-    new, taken_out, left_turned = None, 0, 0
-    for attempt in range(TRIES):
-        if not (w > 0.0).any():                     # no edge with room: the rounding is in the normals alone
-            new = None
-            break
-        ob = bpy.data.objects.new(workscene.WORK_NAME + " bevel", cp)
-        workscene.link_work(ob)
-        try:
-            mod = ob.modifiers.new("Bevel", 'BEVEL')
-            mod.limit_method, mod.offset_type = 'WEIGHT', 'OFFSET'
-            mod.width, mod.segments, mod.profile = width, segments, 0.5
-            mod.use_clamp_overlap, mod.harden_normals, mod.loop_slide = False, HARDEN, True     # the limit: mark_edges
-            mod.face_strength_mode = 'FSTR_ALL'         # tells the strips from the faces that were there
-            dg = workscene.depsgraph_of(ob)
-            dg.update()
-            new = bpy.data.meshes.new_from_object(ob.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
-        finally:
-            bpy.data.objects.remove(ob)
-        bad = turned_faces(new, cp)
-        left_turned = len(bad)
-        if not left_turned or attempt == TRIES - 1:
-            break
-        # the bevel near a face that turned over is taken out, the copy bevelled again
-        ev = np.zeros(len(cp.edges) * 2, np.int32)
-        cp.edges.foreach_get("vertices", ev)
-        vco = np.zeros(len(cp.vertices) * 3, np.float32)
-        cp.vertices.foreach_get("co", vco)
-        ea, eb = vco.reshape(-1, 3)[ev.reshape(-1, 2)[:, 0]], vco.reshape(-1, 3)[ev.reshape(-1, 2)[:, 1]]
-        along = eb - ea
-        l2 = np.maximum((along * along).sum(axis=1), 1e-18)
-        near = np.zeros(len(ea), bool)
-        for c in bad:                               # the distance to the edge itself: an edge can be long
-            t = np.clip(((c - ea) * along).sum(axis=1) / l2, 0.0, 1.0)
-            near |= np.linalg.norm(ea + along * t[:, None] - c, axis=1) < 4.0 * width
-        near &= w > 0.0
-        if not near.any():
-            break
-        taken_out += int(near.sum())
-        w = np.where(near, 0.0, w).astype(np.float32)
-        at.data.foreach_set("value", w)
-        cp.update()
-        bpy.data.meshes.remove(new)
-        new = None
-    if new is None:                                 # no faces made
-        cp.attributes.remove(at)
-        cp[EDGE_ATTR], cp["rb_bevel_out"] = 1.0, taken_out
-        cp["rb_bevel_normals"] = round_in_normals(cp, lines, width)
-        cp[EDGE_MARK] = sig
-        cp["rb_edges_v"] = EDGE_VERSION
-        return cp
-    if not HARDEN:
-        strip_normals(new, cp)
-    rounded = round_in_normals(new, lines, width)
-    left = new.attributes.get(STRENGTH)
-    if left is not None:
-        new.attributes.remove(left)
-    for key in cp.keys():
-        new[key] = cp[key]
-    name = cp.name
-    cp.user_remap(new)
-    bpy.data.meshes.remove(cp)
-    new.name = name
-    new.use_fake_user = True
-    left = new.attributes.get(EDGE_WEIGHT)
-    if left is not None:
-        new.attributes.remove(left)
-    new[EDGE_ATTR] = 1.0
-    new["rb_bevel_out"] = taken_out                 # edges whose bevel the check took out again
-    new["rb_bevel_left"] = left_turned              # faces still turned over after the last try (0: clean)
-    new["rb_bevel_normals"] = rounded               # corners turned for the size of the rounding
-    new[EDGE_MARK] = sig
-    new["rb_edges_v"] = EDGE_VERSION
-    return new
+    width = bevel_width()                           # as wide as the shader's rounding of this radius looks
+    lines = edge_lines(cp, chosen)
+    before = cp.copy()
+    try:
+        points, _cuts = edgesupport.support_edges(cp, chosen, width)
+        edgesupport.carry_normals(cp, before)
+    finally:
+        bpy.data.meshes.remove(before)
+    plain = np.zeros(len(cp.loops) * 3, np.float32)
+    cp.corner_normals.foreach_get("vector", plain)
+    turned = round_in_normals(cp, lines, width)
+    kept = edgesupport.keep_plain(cp, lines, width, plain.reshape(-1, 3))
+    cp[EDGE_ATTR] = 1.0
+    cp["rb_bevel_normals"], cp["rb_bevel_support"], cp["rb_bevel_plain"] = turned, points, kept
+    return cp
 
 
 # ---------------------------------------------------------------- the switch in the importer's material

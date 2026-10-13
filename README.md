@@ -15,7 +15,7 @@ Renderbricker is an independent add-on, not an official Mecabricks product, and 
 - **Checks** – the original is verified untouched, folds and seam gaps are measured after every conversion.
 - **Render camera** – a camera, a physical sky and render settings of their own, switched on and off without touching yours: six views around the model, sun sliders, transparent background, sample levels, all views in one go.
 - **Cycles | EEVEE** – either engine in the viewport and for rendering; EEVEE gets a sun lamp that follows the sky and comes close to Cycles.
-- **Edges: Shader or Bevel** – the sharp edges of the parts rounded by the importer's material, or as real geometry in the smooth copies: the same in Cycles and EEVEE, clean in close-ups; one radius for both.
+- **Edges: Shader or Bevel** – the sharp edges of the parts rounded by the importer's material, or in the smooth copies themselves: the same in Cycles and EEVEE, clean in close-ups; one radius for both.
 - **Bevel maps for EEVEE** – an option that bakes the rounded edges of the smooth parts into new maps, so round rims come out clean in EEVEE.
 - **Real size** – models imported at scale 0.001 (the metric real size) work like those at scale 1; the render camera follows scale changes.
 

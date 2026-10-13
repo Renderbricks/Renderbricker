@@ -180,9 +180,7 @@ def draw_edges(L, s):
     sp.label(text="Edges")
     sp.row(align=True).prop(s, "edges", expand=True)
     col = L.column(align=True)
-    col.prop(s, "bevel_radius")
-    if s.edges == 'BEVEL':
-        col.prop(s, "bevel_segments")
+    col.prop(s, "bevel_radius")             # (Segments: not shown - the test build of run 281 makes no bevel of faces)
     if s.edges != 'BEVEL':                  # a bevelled copy has its rounding in the mesh: no maps, no option
         L.prop(s, "smooth_maps")         # (maintainer 2026-10-13: "Sollte bei Bevels einfach weg sein")
 
