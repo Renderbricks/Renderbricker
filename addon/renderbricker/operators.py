@@ -687,7 +687,7 @@ def headless_args(context, out):
             "--shading", "mecabricks" if s.variant == 'A' else "geometric", "--jobs", "auto",
             "--low-memory", s.low_memory.lower(),
             "--smooth-maps", "1" if s.smooth_maps and s.edges != 'BEVEL' else "0",
-            "--edges", "bevel" if s.edges == 'BEVEL' else "shader", "--bevel-radius", f"{s.bevel_radius:.3f}",
+            "--edges", "bevel" if s.edges == 'BEVEL' else "shader", "--edge-radius", f"{s.edge_radius:.3f}",
             "--bevel-segments", str(s.bevel_segments)]
     listing = os.path.splitext(out)[0] + "_objects.json"
     with open(listing, "w", encoding="utf-8") as fh:

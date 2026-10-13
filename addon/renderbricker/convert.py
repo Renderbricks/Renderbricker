@@ -276,7 +276,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         items = list(common.by_mesh(common.targets(context)).items())
         if s.edges == 'SHADER':                 # the Radius reaches the importer's Bevel value at once: no new copies
             for me, _obs in items:
-                core.set_shader_radius(core.original_of(me), s.bevel_radius)
+                core.set_shader_radius(core.original_of(me), core.shader_radius())
         self.scope_items = items
         if self.force:
             return items, []
@@ -406,7 +406,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         opts = ["--view-level", str(s.view_level), "--render-level", str(s.render_level),
                 "--shading", "mecabricks" if s.variant == 'A' else "geometric",
                 "--smooth-maps", "1" if maps_on(s) else "0",
-                "--edges", "bevel" if s.edges == 'BEVEL' else "shader", "--bevel-radius", f"{s.bevel_radius:.3f}",
+                "--edges", "bevel" if s.edges == 'BEVEL' else "shader", "--edge-radius", f"{s.edge_radius:.3f}",
                 "--bevel-segments", str(s.bevel_segments)]
         self.workers = core.Workers(dict(self.items), jobs, opts, [me.name for me, _ in self.items])
         self.jobs, self.merging, self.t_start = jobs, False, time.time()

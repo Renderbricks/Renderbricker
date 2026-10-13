@@ -33,7 +33,7 @@ def _settings(context):
     core.SHADING = "mecabricks" if s.variant == 'A' else "geometric"
     core.SMOOTH_MAPS = bool(s.smooth_maps) and s.edges != 'BEVEL'
     core.EDGES = "bevel" if s.edges == 'BEVEL' else "shader"          # as common.edge_settings (UPDATES #43)
-    core.BEVEL_RADIUS, core.BEVEL_SEGMENTS = s.bevel_radius, s.bevel_segments
+    core.EDGE_RADIUS, core.BEVEL_SEGMENTS = s.edge_radius, s.bevel_segments
 
 
 def on_copy(ob):

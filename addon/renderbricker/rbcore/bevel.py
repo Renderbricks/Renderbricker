@@ -71,6 +71,13 @@ closest to the shader (0.4 to 1.2 degrees apart) is 0.595 times the radius wide 
 0.506 with three, 0.502 with four; the same ratios at all three radii. MATCH holds them: the panel's Radius is the
 shader's, the bevel is made MATCH times as wide and so looks the same size.
 
+The Radius in millimetres (maintainer 2026-10-13: "Ich möchte gerne in mm arbeiten. Das gilt auch für den Bevel
+Shader." - "mm so machen 0.08 bis 0.2"): the panel's Radius is the edge radius, how far the rounding reaches on each
+face from the edge, in millimetres of the real part (the units of the mesh). Edges: Bevel rounds that wide; the
+shader's Bevel value has no unit of its own (it is the reach of an average of normals, Cycles svm/bevel.h) and gets
+the Radius / MATCH[1], the value that looks that size (shader_radius). The importer's 0.35 is an edge radius of
+0.208 mm; the field ends at 0.2.
+
 A live modifier on the objects is not used: thousands of bricks share one baked copy, and the cache file holds it.
 """
 import math
@@ -80,12 +87,12 @@ import numpy as np
 from . import config, creases, edgesupport, maps
 
 EDGES = config.opt("--edges", "shader")                     # "shader" or "bevel"; set by the add-on or the command line
-BEVEL_RADIUS = float(config.opt("--bevel-radius", "0.35"))  # in the units of the mesh (mm); the importer's value
+EDGE_RADIUS = float(config.opt("--edge-radius", "0.2"))     # the edge radius in mm (the units of the mesh)
 BEVEL_SEGMENTS = int(config.opt("--bevel-segments", "1"))
-RADIUS_MAX, SEGMENTS_MAX = 0.5, 4       # maintainer 2026-10-13: "0 bis 0,5" - LEGO edges leave little room
+RADIUS_MIN, RADIUS_MAX, SEGMENTS_MAX = 0.08, 0.2, 4      # maintainer 2026-10-13: "mm so machen 0.08 bis 0.2"
 EDGE_INNER = 85.0                            # an edge inside one island counts from this bend on (the rule W12)
 EDGE_WEIGHT = "bevel_weight_edge"            # edge attribute Blender's Bevel reads
-EDGE_MARK = "rb_edges"                       # property of a copy: the bevel it carries ("0.350/1"), "" without
+EDGE_MARK = "rb_edges"                       # property of a copy: the bevel it carries ("0.200/1"), "" without
 EDGE_ATTR = "rb_bevel"                  # custom property of a bevelled copy: 1.0 (the material reads it)
 MATCH = {1: 0.595, 2: 0.521, 3: 0.506, 4: 0.502}     # bevel width / shader radius that look alike, by segments (run 275)
 ROOM = 0.9                              # share of the room beside an edge the bevel may take (half of it between two)
@@ -97,7 +104,7 @@ SAME_SIDE = 30.0                        # a corner lies on the side of an edge w
 TURNED = 0.3                            # a face that was there counts as turned over below this cosine to its old normal
 HARDEN = False                          # True: Blender's Harden Normals, as the first test build did (probe only)
 STRENGTH = "__mod_weightednormals_faceweight"       # the Bevel modifier's face strength: lower on the faces it made
-EDGE_VERSION = 10                        # how a bevelled copy is marked; copies of the first test build (1) are made anew
+EDGE_VERSION = 11                        # how a bevelled copy is marked; copies of earlier test builds are made anew
 EDGE_FOLDS, EDGE_GAP = "rb_folds", "rb_gap"       # the verdict of the checks, taken before the bevel changed the layout
 EDGE_NODE = "rb_bevel_"                      # names of the switch nodes
 RADIUS_WAS = "rb_bevel_was"                    # on a group node: the importer's Bevel value before the radius was set
@@ -106,9 +113,19 @@ EDGE_FRAME_TEXT = "Renderbricker: no shader rounding on bevelled copies"
 
 def signature():
     """What a copy of the current settings carries in EDGE_MARK: "" for the shader, radius and segments for the bevel."""
-    if EDGES != "bevel" or BEVEL_RADIUS <= 0.0:
+    if EDGES != "bevel":
         return ""
-    return f"{min(BEVEL_RADIUS, RADIUS_MAX):.3f}/{max(1, min(int(BEVEL_SEGMENTS), SEGMENTS_MAX))}"
+    return f"{edge_radius():.3f}/{max(1, min(int(BEVEL_SEGMENTS), SEGMENTS_MAX))}"
+
+
+def edge_radius():
+    """The Radius within its limits: the edge radius in millimetres."""
+    return min(max(float(EDGE_RADIUS), RADIUS_MIN), RADIUS_MAX)
+
+
+def shader_radius():
+    """The importer's Bevel value that looks the size of the Radius (Edges: Shader)."""
+    return edge_radius() / MATCH[1]
 
 
 def is_bevelled(cp):
@@ -176,7 +193,7 @@ def bevel_width():
     if not sig:
         return 0.0
     radius, _segments = sig.split("/")
-    return float(radius) * MATCH[1]                 # the rounding in the normals runs like a bevel of one segment
+    return float(radius)                            # the Radius is the edge radius: the rounding reaches that far
 
 
 def _sides(e, f):

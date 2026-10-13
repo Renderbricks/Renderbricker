@@ -131,7 +131,7 @@ def _parent(users, weight, total_w):
         workers.say(f"Errors in {len(failed)} meshes ({', '.join(failed)}) - left as imported")
     if bevel.EDGES == "shader":             # the Radius of the panel in the importer's materials (UPDATES #43)
         for me in users:
-            bevel.set_shader_radius(copies.original_of(me), bevel.BEVEL_RADIUS)
+            bevel.set_shader_radius(copies.original_of(me), bevel.shader_radius())
     if maps.SMOOTH_MAPS and not bevel.signature():      # bevel maps baked from the render copies (UPDATES #40)
         rep = maps.fit_maps([(me, copies.copy_of(me, "render"), obs[0].matrix_world.copy())
                              for me, obs in users.items() if obs])

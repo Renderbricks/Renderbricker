@@ -180,7 +180,7 @@ def draw_edges(L, s):
     sp.label(text="Edges")
     sp.row(align=True).prop(s, "edges", expand=True)
     col = L.column(align=True)
-    col.prop(s, "bevel_radius")             # (Segments: not shown - the test build of run 281 makes no bevel of faces)
+    col.prop(s, "edge_radius")              # (Segments: not shown - the test build of run 281 makes no bevel of faces)
     if s.edges != 'BEVEL':                  # a bevelled copy has its rounding in the mesh: no maps, no option
         L.prop(s, "smooth_maps")         # (maintainer 2026-10-13: "Sollte bei Bevels einfach weg sein")
 
@@ -290,7 +290,7 @@ def apply_key(context):
         scope += ":" + ",".join(sorted(c.collection.name for c in s.collections if c.collection))
     objs = context.scene.objects
     n = len(objs) - (1 if objs.get(core.CAMERA_NAME) else 0)     # the render camera is not a part
-    edges = f"{s.edges}|{s.bevel_radius:.3f}|{s.bevel_segments if s.edges == 'BEVEL' else 0}"       # UPDATES #43
+    edges = f"{s.edges}|{s.edge_radius:.3f}|{s.bevel_segments if s.edges == 'BEVEL' else 0}"       # UPDATES #43
     return f"{s.variant}|{s.view_level}|{s.render_level}|{scope}|{core.RULES_VERSION}|{len(bpy.data.meshes)}|{n}|{edges}"
 
 

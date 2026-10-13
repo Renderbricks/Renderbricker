@@ -75,7 +75,7 @@ def seam_gaps(me, ev, level):
 def edge_settings(s):
     """The panel's Edges settings in the core (UPDATES #43) - before a run and before a part is edited."""
     core.EDGES = "bevel" if s.edges == 'BEVEL' else "shader"
-    core.BEVEL_RADIUS, core.BEVEL_SEGMENTS = s.bevel_radius, s.bevel_segments
+    core.EDGE_RADIUS, core.BEVEL_SEGMENTS = s.edge_radius, s.bevel_segments
 
 
 # ---------------------------------------------------------------- what Convert headless does
