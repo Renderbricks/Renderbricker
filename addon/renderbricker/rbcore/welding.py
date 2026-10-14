@@ -756,12 +756,13 @@ def _rounding_ends(w):
     for s, wall, ends in found:
         plane = next(f for f in s.link_faces if f is not wall)
         piece = [x[2] if x is not None and n not in hard else None for n, x in zip(s.verts, ends, strict=True)]
-        piece = [p or q for p, q in zip(piece, reversed(piece), strict=True)]   # (a pinned end: the piece of the free one)
+        # (a pinned end: the piece of the free one)
+        piece = [p or q for p, q in zip(piece, reversed(piece), strict=True)]
         pts = [support(plane, s, n, d) for n, d in zip(s.verts, piece, strict=True)]
         if pts[0] is not pts[1] and bm.edges.get(pts) is None:
             remember(plane)
             new_faces.append(bmesh.utils.face_split(plane, pts[0], pts[1])[0])
-    if new_faces:                               # the faces of the import first and in their order, then the cut-off ones
+    if new_faces:                               # the import's faces first and in their order, then the cut-off ones
         after = {f: k for k, f in enumerate(new_faces)}
         bm.faces.sort(key=lambda f: len(bm.faces) + after[f] if f in after else f.index)
     bm.verts.index_update(); bm.edges.index_update(); bm.faces.index_update()
@@ -979,7 +980,7 @@ def t_gaps(wm, cp, tv, level):
     cnt = np.bincount(le, minlength=len(cp.edges))
     lt = np.empty(len(cp.polygons), np.int64); cp.polygons.foreach_get("loop_total", lt)
     lface = np.repeat(np.arange(len(cp.polygons)), lt)
-    owner = np.repeat(np.arange(len(starts) - 1), np.diff(starts))      # (by cage face: the host of a T point is one)
+    owner = np.repeat(np.arange(len(starts) - 1), np.diff(starts))      # (by cage face: a T point's host is one)
     open_loops = cnt[le] == 1
     worst = 0.0
     for vi, host in tv:
