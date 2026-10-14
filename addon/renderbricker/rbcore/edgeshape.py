@@ -58,13 +58,16 @@ def _unit(v):
 def edge_frames(me, chosen):
     """The chosen edges of `me` with the two faces beside them: (start points, end points, normals, ways) - normals[i,
     side, end] is the normal the face on that side of edge i has at that end, ways[i, side, end] the direction on that
-    face away from the edge, square to it."""
+    face away from the edge, square to it; islands[i] the island of edge i (UPDATES #54: a profile moves the points of
+    its own island only)."""
+    from . import meshparts
+    island = meshparts.point_islands(me)
     n = np.zeros(len(me.loops) * 3, np.float32)
     me.corner_normals.foreach_get("vector", n)
     n = n.reshape(-1, 3).astype(np.float64)
     bm = bmesh.new()
     bm.from_mesh(me)
-    a, b, nn, tt = [], [], [], []
+    a, b, nn, tt, isl = [], [], [], [], []
     for e in bm.edges:
         if not chosen[e.index] or len(e.link_faces) != 2:
             continue
@@ -72,6 +75,7 @@ def edge_frames(me, chosen):
         along = np.array(vb.co - va.co)
         if np.linalg.norm(along) < 1e-12:
             continue
+        isl.append(int(island[va.index]))
         along /= np.linalg.norm(along)
         mid = np.array((va.co + vb.co) / 2)
         rn, rt = [], []
@@ -93,7 +97,7 @@ def edge_frames(me, chosen):
     bm.free()
     f64 = np.float64
     return (np.array(a, f64).reshape(-1, 3), np.array(b, f64).reshape(-1, 3),
-            np.array(nn, f64).reshape(-1, 2, 2, 3), np.array(tt, f64).reshape(-1, 2, 2, 3))
+            np.array(nn, f64).reshape(-1, 2, 2, 3), np.array(tt, f64).reshape(-1, 2, 2, 3), np.array(isl, np.int64))
 
 
 def mark_chosen(me, chosen):
@@ -155,8 +159,9 @@ def _face_normals(co, lv, ls, lt):
     return out
 
 
-def _candidates(co, frames, width):
-    """Pairs (point, edge) of the points `co` that lie within reach of a chosen edge: two index arrays."""
+def _candidates(co, frames, width, island=None):
+    """Pairs (point, edge) of the points `co` that lie within reach of a chosen edge: two index arrays. With `island`
+    (per point) only the points of the edge's own island (UPDATES #54)."""
     la, lb = frames[0], frames[1]
     tree = KDTree(len(co))
     for i, c in enumerate(co.tolist()):
@@ -168,7 +173,11 @@ def _candidates(co, frames, width):
         found = tree.find_range(Vector(c), r)
         vi.extend(f[1] for f in found)
         li.extend([i] * len(found))
-    return np.array(vi, np.int64), np.array(li, np.int64)
+    vi, li = np.array(vi, np.int64), np.array(li, np.int64)
+    if island is not None and len(frames) > 4 and len(vi):
+        own = island[vi] == frames[4][li]
+        vi, li = vi[own], li[own]
+    return vi, li
 
 
 def _profile(c, r, a, b, omega, sigma, segments):
@@ -222,7 +231,7 @@ def _field(pos, rid, li, frames, width, segments):
     (the places moved, their moves).
     Where on the circle a place goes: where a ball of the circle's size, rolled along the edge, touches nearest to it
     (the place seen from the circle's centre) - so the circles of edges that meet join the corner's sphere."""
-    la, lb, ln, lw = frames
+    la, lb, ln, lw = frames[:4]
     ab = lb[li] - la[li]
     t = np.clip(((pos - la[li]) * ab).sum(axis=1) / np.maximum((ab * ab).sum(axis=1), 1e-18), 0.0, 1.0)
     q = la[li] + ab * t[:, None]
@@ -297,7 +306,9 @@ def shape_edges(me, frames, width, segments):
     co = np.zeros(nv * 3, np.float32)
     me.vertices.foreach_get("co", co)
     co = co.reshape(-1, 3).astype(np.float64)
-    vi, li = _candidates(co, frames, width)
+    from . import meshparts
+    island = meshparts.point_islands(me)
+    vi, li = _candidates(co, frames, width, island)
     if not len(vi):
         return none
     ids, mv = _field(co[vi], vi, li, frames, width, segments)
@@ -336,13 +347,13 @@ def shape_edges(me, frames, width, segments):
         delta[pts] *= 0.0 if round_ >= SHAPE_BACK - 1 else 0.5
     moved = moved[~back[moved]]
     BACK_PLACES[:] = co[back].tolist()                # for the probes: where points were put back
-    loops, normals = _round_normals(co, lv, ls, lt, face, moved, vi, li, frames, width, delta)
+    loops, normals = _round_normals(co, lv, ls, lt, face, moved, vi, li, frames, width, delta, island)
     me.vertices.foreach_set("co", (co + delta).astype(np.float32).ravel())
     me.update()
     return moved, int(back.sum()), loops, normals
 
 
-def _round_normals(co, lv, ls, lt, face, moved, vi, li, frames, width, delta):
+def _round_normals(co, lv, ls, lt, face, moved, vi, li, frames, width, delta, island=None):
     """The normals of the round surface at the corners of the points `moved`: the points are put on the circle itself
     (not on its straight pieces) and each takes the mean of the faces around it, weighted by their angle there - on
     the circle that is the circle's normal, at the corner of a box the middle of the three. A point whose faces
@@ -368,7 +379,7 @@ def _round_normals(co, lv, ls, lt, face, moved, vi, li, frames, width, delta):
     loops = np.nonzero(on[lv])[0]
     # a face that reaches further than the net's reach from every rounded edge keeps what the net gave it (plain):
     # its normals would run the rounding across all of it (run 285, 18747: streaks from the top corners)
-    vi2, li2 = _candidates(co, frames, edgesupport.EDGE_REACH * width)
+    vi2, li2 = _candidates(co, frames, edgesupport.EDGE_REACH * width, island)
     la, lb = frames[0], frames[1]
     ab = lb[li2] - la[li2]
     t = np.clip(((co[vi2] - la[li2]) * ab).sum(axis=1) / np.maximum((ab * ab).sum(axis=1), 1e-18), 0.0, 1.0)

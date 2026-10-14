@@ -13,6 +13,10 @@ GB_PER_FACE = {config.BAKE_QUALITY: 0.2e-3, config.BAKE_QUALITY_LARGE: 0.085e-3}
 
 
 GB_MARGIN = 1.5
+# A mesh baked in batches (UPDATES #54, run 287) needs the bake of one batch at a time and, over all of them, what
+# stays: the joined copies and the weld of the whole mesh that finds the islands - per import face (calibrated on
+# the baseplates of run 287, see the measurement there).
+GB_PER_FACE_KEPT = 0.012e-3        # 4186 (642,896 faces): 12.3 GB measured, 12.8 estimated; 3857: 4.3 / 6.4
 
 
 class MemoryShortage(Exception):
@@ -20,8 +24,14 @@ class MemoryShortage(Exception):
 
 
 def memory_need_gb(me, level=2):
-    """Measured at level 2; every further level has four times the faces."""
-    return len(me.polygons) * GB_PER_FACE.get(copies.bake_quality(me), 0.2e-3) * 1.05 * 4 ** max(0, level - 2) + GB_MARGIN
+    """Measured at level 2; every further level has four times the faces. A mesh baked in batches: one batch's need
+    and what stays of the whole mesh."""
+    from . import batches
+    faces = len(me.polygons)
+    per_face = GB_PER_FACE.get(copies.bake_quality(me), 0.2e-3) * 1.05 * 4 ** max(0, level - 2)
+    if batches.BATCH_FACES and faces > batches.BATCH_FACES:
+        return batches.BATCH_FACES * per_face + faces * GB_PER_FACE_KEPT * 4 ** max(0, level - 2) + GB_MARGIN
+    return faces * per_face + GB_MARGIN
 
 
 FREE_OVERRIDE = [None]      # tests: a worker told it has no memory (RENDERBRICKER_TEST_SHORT_WORKER)

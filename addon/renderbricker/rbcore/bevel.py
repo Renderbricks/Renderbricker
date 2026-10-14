@@ -261,18 +261,22 @@ def edge_room(cp, weight, width):
 
 
 def edge_lines(cp, chosen):
-    """The chosen edges of the copy `cp` as lines: (start points, end points, normals) - normals[i, side, end] is the
-    normal the face on that side of edge i has at that end."""
+    """The chosen edges of the copy `cp` as lines: (start points, end points, normals, islands) - normals[i, side, end]
+    is the normal the face on that side of edge i has at that end; islands[i] the island of edge i (UPDATES #54: a
+    rounding turns and keeps the corners of its own island only)."""
+    from . import meshparts
+    island = meshparts.point_islands(cp)
     n = np.zeros(len(cp.loops) * 3, np.float32)
     cp.corner_normals.foreach_get("vector", n)
     n = n.reshape(-1, 3)
     bm = bmesh.new()
     bm.from_mesh(cp)
-    a, b, nn = [], [], []
+    a, b, nn, isl = [], [], [], []
     for e in bm.edges:
         if not chosen[e.index] or len(e.link_faces) != 2:
             continue
         va, vb = e.verts
+        isl.append(int(island[va.index]))
         row = []
         for f in e.link_faces:
             at = {lp.vert.index: lp.index for lp in f.loops}
@@ -281,7 +285,8 @@ def edge_lines(cp, chosen):
         b.append(tuple(vb.co))
         nn.append(row)
     bm.free()
-    return np.array(a, np.float64).reshape(-1, 3), np.array(b, np.float64).reshape(-1, 3), np.array(nn, np.float64).reshape(-1, 2, 2, 3)
+    return (np.array(a, np.float64).reshape(-1, 3), np.array(b, np.float64).reshape(-1, 3),
+            np.array(nn, np.float64).reshape(-1, 2, 2, 3), np.array(isl, np.int64))
 
 
 # ---------------------------------------------------------------- the normals of a bevelled copy
@@ -381,7 +386,8 @@ def round_in_normals(me, lines, width):
     the turn of each. Writes custom normals; returns the number of corners turned."""
     from mathutils import Vector
     from mathutils.kdtree import KDTree
-    la, lb, ln = lines
+    from . import meshparts
+    la, lb, ln, lisl = lines
     if not len(la) or width <= 0:
         return 0
     nv, nl = len(me.vertices), len(me.loops)
@@ -400,6 +406,10 @@ def round_in_normals(me, lines, width):
     if not vi:
         return 0
     vi, li = np.array(vi, np.int64), np.array(li, np.int64)
+    own_island = meshparts.point_islands(me)[vi] == lisl[li]        # the edge's own island only (UPDATES #54)
+    vi, li = vi[own_island], li[own_island]
+    if not len(vi):
+        return 0
     ab = lb[li] - la[li]
     t = np.clip(((co[vi] - la[li]) * ab).sum(axis=1) / np.maximum((ab * ab).sum(axis=1), 1e-18), 0.0, 1.0)
     d = np.linalg.norm(co[vi] - (la[li] + ab * t[:, None]), axis=1)

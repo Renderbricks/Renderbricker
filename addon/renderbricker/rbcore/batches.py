@@ -13,6 +13,8 @@ from . import bevel, checks, config, copies, meshparts, reparam, welding
 
 BATCH_FACES = int(config.opt("--batch-faces", "40000"))     # faces of the import per batch; 0: never in batches
 ACTIVE = [False]               # a batch is being baked: no batches inside a batch
+BEVEL_COUNTS = ("rb_bevel_normals", "rb_bevel_support", "rb_bevel_plain", "rb_bevel_moved", "rb_bevel_back",
+                "rb_bevel_flat")   # counts bevel.bevel_copy leaves on a copy: added over the batches
 
 
 def wanted(orig):
@@ -59,6 +61,21 @@ def bake(orig, levels):
     """The copies of `orig` for `levels` and the report, as welding._bake_weld gives them - baked batch by batch."""
     batches, flat = island_batches(orig)
     quality = copies.bake_quality(orig)
+    # the memory guard counted on batches of BATCH_FACES; one island can be larger (run 287: 4186 with the importer's
+    # Clean Stud Bases welds into one island of most of the plate - the run crashed at 56 GB): the largest batch is
+    # checked against the free memory now, so that Apply stops cleanly instead (memory.check_memory, run 49)
+    largest = max(len(b) for b in batches)
+    if largest > BATCH_FACES:
+        from . import memory
+        level = max(levels)
+        need = largest * memory.GB_PER_FACE.get(quality, 0.2e-3) * 1.05 * 4 ** max(0, level - 2) \
+            + len(orig.polygons) * memory.GB_PER_FACE_KEPT * 4 ** max(0, level - 2) + memory.GB_MARGIN
+        free = memory.free_memory_gb()
+        if free is not None and need > free:
+            raise memory.MemoryShortage(
+                f"not enough free memory for {orig.name} ({len(orig.polygons):,} faces, one piece of "
+                f"{largest:,} faces that cannot be split): needs about {need:.0f} GB, {free:.0f} GB free - close "
+                f"other programs and apply again")
     parts, reports = [], []
     ACTIVE[0] = True
     copies.QUALITY_PIN[0], welding.FLAT_SHARE_PIN[0], reparam.SIZE_PIN[0] = quality, flat, reparam.part_size(orig)
@@ -134,6 +151,9 @@ def join_copies(orig, parts, level):
         joined[bevel.EDGE_FOLDS] = ",".join(str(i) for i in sorted(set(folds)))
     if gaps:
         joined[bevel.EDGE_GAP] = max(gaps)
+    for key in BEVEL_COUNTS:                        # what bevel_copy counted, over all batches
+        if key in joined:
+            joined[key] = sum(int(cp.get(key, 0)) for _f, _s, cp in parts)
     joined.use_fake_user = True
     if copies._COPY_INDEX[0] is not None:
         copies._COPY_INDEX[0].setdefault(orig.name, []).append(joined)

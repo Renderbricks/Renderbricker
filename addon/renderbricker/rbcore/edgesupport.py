@@ -36,6 +36,7 @@ from mathutils.bvhtree import BVHTree
 from mathutils.interpolate import poly_3d_calc
 from mathutils.kdtree import KDTree
 
+ISLAND_TMP = "rb_island_tmp"            # vertex layer while the cuts are made: the island of each point (UPDATES #54)
 EDGE_TMP = "rb_edge_rounded"            # edge layer while the cuts are made: the chosen edges, also after a split
 EDGE_IN, EDGE_ON = 0.93, 1.25           # inside the rounding below EDGE_IN x width, on its border up to EDGE_ON x width
 EDGE_BEND = 50.0                        # a run ends where the line of chosen edges bends by more than this (a corner;
@@ -48,6 +49,7 @@ EDGE_LONG = 2.0                         # an edge longer than this x width that 
 #                                         its length: it may leave the rounding before its end
 CARRY_SAME = 0.5                        # carry_normals: the old face of a corner looks its face's way within 60 degrees
 CARRY_NEAR = 0.01                       # ... and is looked for this far (mm) beyond the nearest one
+CARRY_TIE = 1e-4                        # ... of those, the ones looking its way within this count as equal
 
 
 def edge_runs(bm, mark):
@@ -104,14 +106,19 @@ def support_edges(me, chosen, width):
     """Support edges in the mesh `me`, in place: every face that reaches from inside the rounding of a chosen edge
     (`chosen`: per edge) to outside it is cut where the rounding ends, `width` from the edge. Returns
     (points made, edges made). Custom normals do not survive this - carry_normals sets them again."""
+    from . import meshparts
+    island = meshparts.point_islands(me)            # a rounding cuts the faces of its own island only (UPDATES #54)
     bm = bmesh.new()
     bm.from_mesh(me)
     mark = bm.edges.layers.float.new(EDGE_TMP)      # (a new layer makes earlier references to edges stale: first)
+    il = bm.verts.layers.int.new(ISLAND_TMP)
+    for v in bm.verts:
+        v[il] = int(island[v.index])
     for e in bm.edges:
         if chosen[e.index] and len(e.link_faces) == 2:
             e[mark] = 1.0
-    runs = [(np.array([tuple(e.verts[0].co) for e in run]), np.array([tuple(e.verts[1].co) for e in run]))
-            for run in edge_runs(bm, mark)]
+    runs = [(np.array([tuple(e.verts[0].co) for e in run]), np.array([tuple(e.verts[1].co) for e in run]),
+             run[0].verts[0][il]) for run in edge_runs(bm, mark)]
     first = list(bm.verts)
     tree = KDTree(len(first))
     for i, v in enumerate(first):
@@ -120,7 +127,7 @@ def support_edges(me, chosen, width):
     n_edges = 0
     lo_d, hi_d = EDGE_IN * width, EDGE_ON * width
     cell, grid = max(1.0, 2.5 * lo_d), {}           # the points made so far, by cell (found again by the later runs)
-    for A, B in runs * EDGE_SWEEPS:
+    for A, B, own in runs * EDGE_SWEEPS:
         AB = B - A
         L2 = np.maximum((AB * AB).sum(axis=1), 1e-18)
         cache = {}
@@ -167,7 +174,9 @@ def support_edges(me, chosen, width):
                 for v in grid.get(key, ()):
                     if all(box_lo[k] <= v.co[k] <= box_hi[k] for k in range(3)):
                         near.add(v)
-        near = [v for v in near if v.is_valid]
+        # only the points of the run's own island: a neighbouring shell closer than the rounding (a stud at the edge
+        # of a plate) is no part of it - and in a batch of islands it may be missing (run 287)
+        near = [v for v in near if v.is_valid and v[il] == own]
         learn(near)
         faces, seen = [], set()
         for v in near:
@@ -233,6 +242,7 @@ def support_edges(me, chosen, width):
                 t[live] = np.clip(np.where(between, step, 0.5 * (t_in[live] + t_out[live])), 0.001, 0.999)
             for e, pair, t_e in zip(crossing, ends, (t * part).tolist(), strict=True):
                 _ne, nv = bmesh.utils.edge_split(e, pair[0], t_e)
+                nv[il] = pair[0][il]
                 cache[nv] = width
                 grid.setdefault(_cell(nv.co, cell), []).append(nv)
         # ... and each face is cut from point to point on that border, round every stretch of its outline outside
@@ -275,6 +285,7 @@ def support_edges(me, chosen, width):
             work.append(new_face)
     n_points = len(bm.verts) - len(me.vertices)
     bm.edges.layers.float.remove(mark)
+    bm.verts.layers.int.remove(il)
     bm.to_mesh(me)
     bm.free()
     me.update()
@@ -307,11 +318,22 @@ def carry_normals(me, before):
     on, oco, ofn, _of, ols, olt = _corner_data(before)
     _n, co, fn, face, _ls, _lt = _corner_data(me)
     out = np.zeros((len(co), 3), np.float64)
-    # a corner that was there: the same place (to 0.0001) on a face of the same direction (to 0.01)
-    old_key = np.hstack([np.rint(oco * np.float32(1e4)), np.rint(ofn * np.float32(100.0))]).astype(np.int64)
-    new_key = np.hstack([np.rint(co * np.float32(1e4)), np.rint(fn * np.float32(100.0))]).astype(np.int64)
+    # the island of every corner, old and new (UPDATES #54): a corner takes its normal from its own island only - a
+    # shell lying on another (a stud on a plate) has corners at the same place with the same face direction, and a
+    # batch of islands may not have the other one. The labels are the smallest point of an island: the points made
+    # by support_edges come after the old ones, so old and new labels agree.
+    from . import meshparts
+    lv_old = np.zeros(len(before.loops), np.int64)
+    before.loops.foreach_get("vertex_index", lv_old)
+    lv_new = np.zeros(len(me.loops), np.int64)
+    me.loops.foreach_get("vertex_index", lv_new)
+    pisl_old = meshparts.point_islands(before)
+    oisl, nisl = pisl_old[lv_old], meshparts.point_islands(me)[lv_new]
+    # a corner that was there: the same place (to 0.0001) on a face of the same direction (to 0.01), same island
+    old_key = np.hstack([np.rint(oco * np.float32(1e4)), np.rint(ofn * np.float32(100.0)), oisl[:, None]]).astype(np.int64)
+    new_key = np.hstack([np.rint(co * np.float32(1e4)), np.rint(fn * np.float32(100.0)), nisl[:, None]]).astype(np.int64)
     mix = np.array([0x9E3779B97F4A7C15, 0xC2B2AE3D27D4EB4F, 0x165667B19E3779F9,
-                    0x27D4EB2F165667C5, 0x85EBCA77C2B2AE63, 0xFF51AFD7ED558CCD], np.uint64)
+                    0x27D4EB2F165667C5, 0x85EBCA77C2B2AE63, 0xFF51AFD7ED558CCD, 0x94D049BB133111EB], np.uint64)
     with np.errstate(over="ignore"):                # one number per corner; what it finds is compared in full below
         old_hash = (old_key.astype(np.uint64) * mix).sum(axis=1)
         new_hash = (new_key.astype(np.uint64) * mix).sum(axis=1)
@@ -324,7 +346,25 @@ def carry_normals(me, before):
     if moved:
         verts = np.zeros(len(before.vertices) * 3, np.float32)
         before.vertices.foreach_get("co", verts)
-        tree = BVHTree.FromPolygons(verts.reshape(-1, 3).tolist(), [tuple(p.vertices) for p in before.polygons])
+        verts = verts.reshape(-1, 3)
+        # one tree per island of the old faces, made when a corner of it needs one
+        polys = [tuple(p.vertices) for p in before.polygons]
+        fisl = pisl_old[lv_old[ols]]
+        by = np.argsort(fisl, kind="stable")
+        keys, starts = np.unique(fisl[by], return_index=True)
+        island_faces = dict(zip(keys.tolist(), np.split(by, starts[1:]), strict=True))
+        trees = {}
+
+        def tree_of(k):
+            if k not in trees:
+                sel = island_faces.get(k)
+                if sel is None:
+                    trees[k] = None
+                else:
+                    vs, local = np.unique(np.concatenate([polys[f] for f in sel]), return_inverse=True)
+                    cut = np.cumsum([len(polys[f]) for f in sel])[:-1]
+                    trees[k] = (BVHTree.FromPolygons(verts[vs].tolist(), [x.tolist() for x in np.split(local, cut)]), sel)
+            return trees[k]
         centre = np.zeros(len(me.polygons) * 3, np.float32)
         me.polygons.foreach_get("center", centre)
         centre = centre.reshape(-1, 3)
@@ -337,16 +377,20 @@ def carry_normals(me, before):
         for m, i in enumerate(moved):
             p = Vector(places[m])
             inward = p.lerp(Vector(toward[m]), 0.05)        # a little inside the face: which old face it is
-            _loc, _nor, f, dist = tree.find_nearest(inward)
+            t = tree_of(int(nisl[i]))
+            _loc, _nor, f, dist = t[0].find_nearest(inward) if t is not None else (None, None, None, None)
             if f is None:
                 out[i] = fn[i]
                 continue
+            f = int(t[1][f])
             n_own = Vector(own[m])
             if n_own.dot(Vector(old_fn[f].tolist())) < CARRY_SAME:
                 # the nearest old face is not the one this corner lies on (library run 281: the rail 85977 had 3,585
                 # corners with the normal of a face looking the other way): the one near by that looks its way
-                f = max((hit[2] for hit in tree.find_nearest_range(inward, dist + CARRY_NEAR)),
-                        key=lambda g: n_own.dot(Vector(old_fn[g].tolist())))
+                cand = sorted(int(t[1][hit[2]]) for hit in t[0].find_nearest_range(inward, dist + CARRY_NEAR))
+                look = [n_own.dot(Vector(old_fn[g].tolist())) for g in cand]
+                # the best within CARRY_TIE, then the first in the order of the faces (the same in a batch, run 287)
+                f = next(g for g, d in zip(cand, look, strict=True) if d >= max(look) - CARRY_TIE)
                 if n_own.dot(Vector(old_fn[f].tolist())) < CARRY_SAME:
                     out[i] = fn[i]
                     continue
@@ -410,6 +454,11 @@ def keep_plain(me, lines, width, plain):
     far = np.full(nv, np.inf)
     if vi:
         vi, li = points[np.array(vi, np.int64)], np.array(li, np.int64)
+        if len(lines) > 3:                          # the edges of a point's own island only (UPDATES #54)
+            from . import meshparts
+            own = meshparts.point_islands(me)[vi] == lines[3][li]
+            vi, li = vi[own], li[own]
+    if len(vi):
         ab = lb[li] - la[li]
         t = np.clip(((co[vi] - la[li]) * ab).sum(axis=1) / np.maximum((ab * ab).sum(axis=1), 1e-18), 0.0, 1.0)
         np.minimum.at(far, vi, np.linalg.norm(co[vi] - (la[li] + ab * t[:, None]), axis=1))
