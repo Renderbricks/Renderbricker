@@ -528,7 +528,7 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         default='SHADER',
         description="How the sharp edges of the parts are rounded. Changing it makes Apply convert the parts again")
     edge_radius: bpy.props.FloatProperty(
-        name="Radius (mm)", default=0.1, min=0.08, max=0.2, step=1, precision=2,
+        name="Radius (mm)", default=0.1, min=0.001, max=10.0, step=1, precision=3,   # open for the test (2026-10-14)
         description="Radius of the rounded edges in millimetres of the real part: how far the rounding reaches on "
                     "each face from the edge. The same for the shader and for the bevel. 0.2 is close to the size "
                     "the importer shows; smaller values give finer edges")
