@@ -533,9 +533,9 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
                     "each face from the edge. The same for the shader and for the bevel. 0.2 is close to the size "
                     "the importer shows; smaller values give finer edges")
     bevel_segments: bpy.props.IntProperty(
-        name="Segments", default=1, min=1, max=4,
-        description="Rows of faces across a bevelled edge. One is enough: its shading is round; more rows also "
-                    "round the outline in extreme close-ups and cost faces")
+        name="Segments", default=3, min=1, max=3,
+        description="Facets of the bevel across an edge: 1 is a flat chamfer, 3 rounds the outline. The shading "
+                    "is round with any number")
     smooth_maps: bpy.props.BoolProperty(
         name="Bevel maps for EEVEE", default=False,
         description="EEVEE has no bevel shader; the importer shows a small baked map there, made for the coarse "
