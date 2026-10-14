@@ -9,6 +9,7 @@
     maps      bevel maps for EEVEE: baked from the smooth copies, switched in the importer's material (UPDATES #40)
     edgesupport  support edges: the points a rounding in the normals needs, and the net below (UPDATES #43)
     edgeshape the real bevel: points inside the band of a chosen edge moved onto its profile (UPDATES #50)
+    shrink    shrink compensation: round surfaces keep their size through the subdivision (UPDATES #51)
     bevel     edges: shader or bevel - rounded edges in the copies themselves, the material's rounding off (UPDATES #43)
     copies    the subdivided copies of a part and the links that use them
     welding   the conversion of one part: weld, creases, repair, bake (process), further levels
@@ -21,7 +22,7 @@
     headless  the run without a window (run.py)
 
 The modules of the conversion import only modules listed above them (config - workscene, reparam - checks -
-creases - shading - maps - edgesupport - edgeshape - bevel - copies - welding): no import circle there, each can be read on its own.
+creases - shading - maps - edgesupport - edgeshape - bevel - shrink - copies - welding): no import circle there, each can be read on its own.
 
 The package reads and writes like one module: rbcore.NAME finds NAME in the module that holds it, and
 rbcore.NAME = value sets it there (the add-on sets the levels and the shading before a run).
@@ -29,9 +30,9 @@ Without a window: blender -b scene.blend --python rbcore/run.py -- result.blend 
 """
 import importlib, sys, types as _types
 
-from . import config, workscene, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, copies, welding, memory, cache, workers, camera, engine, renderfile, headless
+from . import config, workscene, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, shrink, copies, welding, memory, cache, workers, camera, engine, renderfile, headless
 
-MODULES = (config, workscene, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, copies, welding, memory, cache, workers, camera, engine, renderfile, headless,)
+MODULES = (config, workscene, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, shrink, copies, welding, memory, cache, workers, camera, engine, renderfile, headless,)
 
 def _owners(modules):
     """name -> module that defines it: everything a module binds itself (functions and classes defined

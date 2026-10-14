@@ -4,7 +4,7 @@ import bpy, bmesh, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
-from . import bevel, checks, config, copies, creases, shading, workscene
+from . import bevel, checks, config, copies, creases, shading, shrink, workscene
 
 
 # ================================================================ rules 3.0: weld (runs 48-50)
@@ -156,7 +156,10 @@ def weld(orig):
     _rounding_ends(w)
     _t_vertices(w)
     arc_released = release_arc_corners(w.E, w.V, w.kind_of, w.isl)
+    w.bm.verts.index_update()
+    free = sorted(v.index for v in w.rounded_points)     # W17 points: left free by the shrink compensation
     wm, tv, rep = _work_mesh(w, arc_released)
+    rep[shrink.SHRINK_FREE] = free
     rep["rounding_freed"] = w.rounded           # W17: middle points of coarse roundings left free
     rep["rounding_ends"], rep["support_points"] = len(w.soft), w.supports      # W18
     return wm, tv, rep
@@ -1145,11 +1148,18 @@ def baked_folds(orig, cp, level):
         config.LEVELS = keep
 
 
+def _fit(work, wm, rep):
+    """The shrink compensation of the cage (UPDATES #51), its numbers into the report."""
+    free = rep.pop(shrink.SHRINK_FREE, [])
+    rep["shrink_points"], rep["shrink_max"], rep["shrink_left"] = shrink.compensate_shrink(work, wm, free)
+
+
 def _bake_weld(orig, levels, method_rep=None):
     # run 59 tried baking first and checking folds on the copy: 306 of Ratatouille's 667
     # meshes need the repair anyway and were then baked twice - slower (349 -> 396 s)
     work, wm, tv, rep = weld_work(orig)
     try:
+        _fit(work, wm, rep)
         if bevel.signature():                   # Edges: Bevel - the part's own sharp edges, as bevel weight on
             rep["bevel_edges"] = bevel.mark_edges(orig, wm)      # the cage; the subdivision carries it along
         made = _bake_work(orig, work, levels, tv)
@@ -1159,6 +1169,13 @@ def _bake_weld(orig, levels, method_rep=None):
         # quality and the copies baked again (1 of 1,372 parts in the library; doing every check at the bake
         # quality cost 2.5-3.6x the repair time).
         lv = config.RENDER_LEVEL if config.RENDER_LEVEL in made else max(made)
+        if rep.get("shrink_points") and baked_folds(orig, made[lv], lv):
+            # the compensation must not cost a fold: the cage goes back to the import's places, baked again
+            shrink.undo_shrink(work, wm)
+            rep["shrink_dropped"], rep["shrink_points"] = 1, 0
+            for cp in made.values():
+                copies.discard_copy(orig, cp)
+            made = _bake_work(orig, work, levels, tv)
         if rep.get("rounding_ends") and baked_folds(orig, made[lv], lv):
             # W18 must not cost a fold (library, run 283: con1 folded on two faces with it, on none without): this
             # part is welded again as rules 3.7 make it
@@ -1171,6 +1188,7 @@ def _bake_weld(orig, levels, method_rep=None):
             finally:
                 NO_ENDS[0] = False
             rep["rounding_ends_dropped"] = 1
+            _fit(work, wm, rep)
             if bevel.signature():
                 rep["bevel_edges"] = bevel.mark_edges(orig, wm)
             made = _bake_work(orig, work, levels, tv)
