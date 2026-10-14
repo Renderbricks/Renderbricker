@@ -1,6 +1,6 @@
 # Mecabricks → Subdivision Surface: Rule Set
 
-Version 3.8 · 2026-10-14 (3.1: W15, 3.2: W5b, 3.3: W16, 3.4: W14 Keep Corners, W10b, 3.5: W14b texture-aware UVs, 3.6: W14c reparametrised copies replace W14b, 3.7: W17 coarse roundings, 3.8: W18 their ends) · implemented in `addon/renderbricker/rbcore/` (`creases.py`, `welding.py`: `process`, weld; the island rules up to 2.4 remain as `process_24`, `--method rules24`), checked by `scripts/core/verify_part.py` and `scripts/core/verify_generic.py`
+Version 3.9 · 2026-10-14 (3.1: W15, 3.2: W5b, 3.3: W16, 3.4: W14 Keep Corners, W10b, 3.5: W14b texture-aware UVs, 3.6: W14c reparametrised copies replace W14b, 3.7: W17 coarse roundings, 3.8: W18 their ends, 3.9: W17 on the outline of flat faces) · implemented in `addon/renderbricker/rbcore/` (`creases.py`, `welding.py`: `process`, weld; the island rules up to 2.4 remain as `process_24`, `--method rules24`), checked by `scripts/core/verify_part.py` and `scripts/core/verify_generic.py`
 Every rule names the part and the development run in which it was found; the run records are kept with the project, not in this repository.
 
 The rules make imported Mecabricks parts subdividable (Catmull-Clark) without cracks, folds or lost detail. Each rule comes from a concrete finding; the column *Origin* names the part and run where it was found.
