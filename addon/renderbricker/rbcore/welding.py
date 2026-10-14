@@ -1292,10 +1292,26 @@ def process(me, obs):
     """Rules 3.0 (weld, run 48-50): the original stays untouched (no attributes either); a
     temporary welded copy gets the creases and is subdivided into the copies for viewport
     and render, which every link uses. `me` may already be a copy: its original is processed."""
+    gen = process_steps(me, obs)
+    while True:
+        try:
+            next(gen)
+        except StopIteration as e:
+            return e.value
+
+
+def process_steps(me, obs):
+    """process as a step generator: a mesh baked in batches (batches.py, UPDATES #54) yields (fraction, text) after
+    each batch, so that Apply's progress bar moves within a large part; returns the report."""
+    from . import batches
     if config.METHOD != "weld":
         return process_24(me, obs)
     orig = prepare(me, obs)
-    made, rep = _bake_weld(orig, bake_levels_wanted())
+    levels = bake_levels_wanted()
+    if batches.wanted(orig):
+        made, rep = yield from batches.bake_steps(orig, levels)
+    else:
+        made, rep = _bake_weld(orig, levels)
     return finish(orig, obs, made, rep)
 
 

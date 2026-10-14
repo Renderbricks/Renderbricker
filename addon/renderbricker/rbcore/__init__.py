@@ -30,9 +30,9 @@ Without a window: blender -b scene.blend --python rbcore/run.py -- result.blend 
 """
 import importlib, sys, types as _types
 
-from . import config, workscene, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, shrink, copies, welding, memory, cache, workers, camera, engine, renderfile, headless
+from . import config, workscene, meshparts, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, shrink, copies, welding, batches, memory, cache, workers, camera, engine, renderfile, headless
 
-MODULES = (config, workscene, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, shrink, copies, welding, memory, cache, workers, camera, engine, renderfile, headless,)
+MODULES = (config, workscene, meshparts, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, shrink, copies, welding, batches, memory, cache, workers, camera, engine, renderfile, headless,)
 
 def _owners(modules):
     """name -> module that defines it: everything a module binds itself (functions and classes defined

@@ -144,6 +144,7 @@ class _Stepped:
     def modal(self, context, event):
         if event.type == 'ESC':
             self.cancelled = True
+            self._close_part()
             return self._end(context)
         if event.type != 'TIMER':
             return {'RUNNING_MODAL'}                  # block other input while working
@@ -152,13 +153,26 @@ class _Stepped:
         try:
             budget = work_budget(self)       # adaptive: the pause between ticks stays <= ~10 % (run 69)
             while self.i < n and time.time() - t < budget:
-                self.step(context, self.i)
+                gen = getattr(self, "part_gen", None)
+                if gen is None:
+                    r = self.step(context, self.i)
+                    if hasattr(r, "__next__"):        # a large part: steps of its own, over several ticks (#54)
+                        self.part_gen, self.part_step = r, (0.0, "")
+                        continue
+                else:
+                    finished, st = step_gen(gen, max(0.05, budget - (time.time() - t)))
+                    if not finished:
+                        self.part_step = st
+                        break
+                    self.part_gen = None
+                self.part_step = None
                 self.i += 1
         except Exception as e:
             # an exception inside modal() ends the operator but left the timer running and
             # the panel locked, Esc no longer reached it (run 39) - end cleanly instead
             import traceback
             traceback.print_exc()
+            self._close_part()
             if isinstance(e, core.MemoryShortage):
                 self.error = str(e)
             else:
@@ -166,19 +180,32 @@ class _Stepped:
             return self._end(context)
         s = context.scene.mecsub
         done, total = self.cum[self.i], self.cum[-1]
+        part = getattr(self, "part_step", None)
+        if part is not None and self.i < n:           # within a large part: its share of the bar (#54)
+            done += part[0] * (self.cum[self.i + 1] - self.cum[self.i])
         s.progress = done / total if total else 1.0
         name = self.item_name(self.i - 1) if self.i else ""
+        if part is not None and self.i < n:
+            name = f"{self.item_name(self.i)}: {part[1]}" if part[1] else self.item_name(self.i)
         elapsed = time.time() - self.t_start
         left = (elapsed / done * (total - done) if done and elapsed > 10.0 and done >= 0.03 * total
                 else None)                   # no wild guesses from the first meshes (run 69)
         eta = "" if left is None else f"   about {fmt_time(left)} left"
         tick_done(self)
-        s.progress_text = f"{self.i} / {n}{eta}"
+        piece = f"   {part[1]}" if part is not None and self.i < n and part[1] else ""
+        s.progress_text = f"{self.i} / {n}{piece}{eta}"
         context.workspace.status_text_set(f"Renderbricker {self.label}: {self.i} / {n}   {name}{eta}   (Esc: cancel)")
         redraw(context)
         if self.i >= n:
             return self._tail(context)
         return {'RUNNING_MODAL'}
+
+    def _close_part(self):
+        """End the steps of a large part that is under way (its clean-up runs: batches.bake_steps)."""
+        gen = getattr(self, "part_gen", None)
+        if gen is not None:
+            self.part_gen, self.part_step = None, None
+            gen.close()
 
     def _tail(self, context):
         """Phases after the steps (cache file ...): each is announced in the panel and the status
@@ -508,7 +535,16 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         core.check_memory(me, max(self.levels))   # stop cleanly instead of crashing (run 49)
         for ob in obs:
             ob.pop("rb_off", None)
-        rep = core.process(me, obs)
+        if core.batches.wanted(core.original_of(me)):     # a large part: piece by piece, with its own progress (#54)
+            return self._step_steps(context, me, obs)
+        self._done_part(context, obs, core.process(me, obs))
+
+    def _step_steps(self, context, me, obs):
+        rep = yield from core.process_steps(me, obs)
+        self._done_part(context, obs, rep)
+
+    def _done_part(self, context, obs, rep):
+        s = context.scene.mecsub
         self.fans += rep.get("t_fans_creased", 0)
         self.unresolved += rep.get("t_fans_unresolved", 0)
         self.tpoints = getattr(self, "tpoints", 0) + rep.get("t_verts", 0)

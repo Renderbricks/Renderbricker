@@ -11,22 +11,33 @@ _KEY = {'FLOAT': 'value', 'INT': 'value', 'INT8': 'value', 'BOOLEAN': 'value', '
         'QUATERNION': 'value', 'FLOAT4X4': 'value'}
 _WIDTH = {'FLOAT': 1, 'INT': 1, 'INT8': 1, 'BOOLEAN': 1, 'FLOAT_VECTOR': 3, 'FLOAT2': 2, 'INT16_2D': 2,
           'INT32_2D': 2, 'FLOAT_COLOR': 4, 'BYTE_COLOR': 4, 'QUATERNION': 4, 'FLOAT4X4': 16}
-_DTYPE = {'FLOAT': np.float32, 'INT': np.int32, 'INT8': np.int32, 'BOOLEAN': bool, 'FLOAT_VECTOR': np.float32,
-          'FLOAT2': np.float32, 'INT16_2D': np.int32, 'INT32_2D': np.int32, 'FLOAT_COLOR': np.float32,
+# (the exact C types: foreach_get / foreach_set copy a buffer of the attribute's own type at once and go value by
+# value otherwise - run 287, a copy of 10.3 M faces: custom normals 2.4 s as int32, 0.009 s as int16)
+_DTYPE = {'FLOAT': np.float32, 'INT': np.int32, 'INT8': np.int8, 'BOOLEAN': bool, 'FLOAT_VECTOR': np.float32,
+          'FLOAT2': np.float32, 'INT16_2D': np.int16, 'INT32_2D': np.int32, 'FLOAT_COLOR': np.float32,
           'BYTE_COLOR': np.float32, 'QUATERNION': np.float32, 'FLOAT4X4': np.float32}
-# topology and positions are written through vertices / edges / loops / polygons
+# topology and positions are read and written as these attributes (positions: 0.011 s against 1.3 s through
+# vertices.co for 10.3 M faces)
 _TOPOLOGY = {'position', '.edge_verts', '.corner_vert', '.corner_edge'}
+
+
+def _read(me, name, n, width, dtype):
+    v = np.empty(n * width, dtype)
+    if n:
+        me.attributes[name].data.foreach_get("vector" if name == "position" else "value", v)
+    return v
 
 
 def topology(me):
     """Positions, edge vertices, corner vertices and edges, face starts and sizes as arrays."""
-    co = np.empty(len(me.vertices) * 3, np.float32); me.vertices.foreach_get("co", co)
-    ev = np.empty(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", ev)
-    lv = np.empty(len(me.loops), np.int64); me.loops.foreach_get("vertex_index", lv)
-    le = np.empty(len(me.loops), np.int64); me.loops.foreach_get("edge_index", le)
-    ls = np.empty(len(me.polygons), np.int64); me.polygons.foreach_get("loop_start", ls)
-    lt = np.empty(len(me.polygons), np.int64); me.polygons.foreach_get("loop_total", lt)
-    return co.reshape(-1, 3), ev.reshape(-1, 2), lv, le, ls, lt
+    nv, ne, nl, nf = len(me.vertices), len(me.edges), len(me.loops), len(me.polygons)
+    co = _read(me, "position", nv, 3, np.float32)
+    ev = _read(me, ".edge_verts", ne, 2, np.int32).astype(np.int64)
+    lv = _read(me, ".corner_vert", nl, 1, np.int32).astype(np.int64)
+    le = _read(me, ".corner_edge", nl, 1, np.int32).astype(np.int64)
+    ls = np.empty(nf, np.int32); me.polygons.foreach_get("loop_start", ls)
+    lt = np.empty(nf, np.int32); me.polygons.foreach_get("loop_total", lt)
+    return co.reshape(-1, 3), ev.reshape(-1, 2), lv, le, ls.astype(np.int64), lt.astype(np.int64)
 
 
 def point_islands(me, links=None):
@@ -83,10 +94,13 @@ def _build(name, co, ev, lv, le, lt, source, values, attrs=None, into=None):
     that mesh gets the geometry instead (its own materials and custom properties stay)."""
     me = into if into is not None else bpy.data.meshes.new(name)
     me.vertices.add(len(co)); me.edges.add(len(ev)); me.loops.add(len(lv)); me.polygons.add(len(lt))
-    me.vertices.foreach_set("co", np.ascontiguousarray(co, np.float32).ravel())
-    me.edges.foreach_set("vertices", np.ascontiguousarray(ev, np.int32).ravel())
-    me.loops.foreach_set("vertex_index", np.ascontiguousarray(lv, np.int32))
-    me.loops.foreach_set("edge_index", np.ascontiguousarray(le, np.int32))
+    if len(co):
+        me.attributes["position"].data.foreach_set("vector", np.ascontiguousarray(co, np.float32).ravel())
+    if len(ev):
+        me.attributes[".edge_verts"].data.foreach_set("value", np.ascontiguousarray(ev, np.int32).ravel())
+    if len(lv):
+        me.attributes[".corner_vert"].data.foreach_set("value", np.ascontiguousarray(lv, np.int32))
+        me.attributes[".corner_edge"].data.foreach_set("value", np.ascontiguousarray(le, np.int32))
     me.polygons.foreach_set("loop_start", np.concatenate(([0], np.cumsum(lt)[:-1])).astype(np.int32))
     me.polygons.foreach_set("loop_total", np.ascontiguousarray(lt, np.int32))
     for aname, domain, dtype in (attrs if attrs is not None else _attributes(source)):
@@ -123,46 +137,75 @@ def assign(dst, src):
     _build(dst.name, co, ev, lv, le, lt, src, values, attrs, into=dst)
 
 
+def mesh_arrays(me):
+    """A mesh as arrays: {"co", "ev", "lv", "le", "lt"; "attrs": {name: (domain, type, values)}} - what join_arrays
+    builds a mesh of again."""
+    co, ev, lv, le, _ls, lt = topology(me)
+    return {"co": co, "ev": ev, "lv": lv, "le": le, "lt": lt,
+            "attrs": {n: (d, t, attribute_values(me, n)) for n, d, t in _attributes(me)}}
+
+
+def select_arrays(arr, faces):
+    """The arrays of some faces of `arr` (indices, any order: they keep their order), with their vertices, edges and
+    corners in the order of `arr`. Also returns (vertices, edges, faces) - the indices in `arr`."""
+    lt = arr["lt"]
+    ls = np.concatenate(([0], np.cumsum(lt)[:-1]))
+    faces = np.unique(np.asarray(faces, np.int64))
+    loops = face_loops(ls, lt, faces)
+    verts, edges = np.unique(arr["lv"][loops]), np.unique(arr["le"][loops])
+    vmap = np.full(len(arr["co"]), -1, np.int64); vmap[verts] = np.arange(len(verts))
+    emap = np.full(len(arr["ev"]), -1, np.int64); emap[edges] = np.arange(len(edges))
+    pick = {'POINT': verts, 'EDGE': edges, 'CORNER': loops, 'FACE': faces}
+    out = {"co": arr["co"][verts], "ev": vmap[arr["ev"][edges]], "lv": vmap[arr["lv"][loops]],
+           "le": emap[arr["le"][loops]], "lt": lt[faces],
+           "attrs": {n: (d, t, v[pick[d]]) for n, (d, t, v) in arr["attrs"].items()}}
+    return out, verts, edges, faces
+
+
+def join_arrays(parts, name, source, face_order=None, drop=()):
+    """One mesh of the array parts (mesh_arrays): vertices and edges part after part, the faces in `face_order`
+    (indices into the faces of all parts one after another; default: as they come). Every attribute any part has
+    (but those in `drop`); where a part lacks one (a batch without a bevelled edge has no selection layer of the
+    bevel), its elements get zeros. UV roles, materials and custom properties from the mesh `source`.
+    Returns (mesh, vertex offset of each part)."""
+    nv = [len(p["co"]) for p in parts]
+    voff = np.concatenate(([0], np.cumsum(nv)[:-1])).astype(np.int64)
+    eoff = np.concatenate(([0], np.cumsum([len(p["ev"]) for p in parts])[:-1])).astype(np.int64)
+    co = np.concatenate([p["co"] for p in parts])
+    ev = np.concatenate([p["ev"] + o for p, o in zip(parts, voff)])
+    lv = np.concatenate([p["lv"] + o for p, o in zip(parts, voff)])
+    le = np.concatenate([p["le"] + o for p, o in zip(parts, eoff)])
+    lt = np.concatenate([p["lt"] for p in parts])
+    ls = np.concatenate(([0], np.cumsum(lt)[:-1]))
+    order = np.arange(len(lt)) if face_order is None else np.asarray(face_order, np.int64)
+    loops = face_loops(ls, lt, order)
+    attrs = []
+    for p in parts:
+        attrs += [(n, d, t) for n, (d, t, _v) in p["attrs"].items() if n not in drop and n not in {x[0] for x in attrs}]
+    values = {}
+    for n, d, dtype in attrs:
+        size = {'POINT': "co", 'EDGE': "ev", 'CORNER': "lv", 'FACE': "lt"}[d]
+        v = np.concatenate([p["attrs"][n][2] if n in p["attrs"] else np.zeros((len(p[size]), _WIDTH[dtype]), _DTYPE[dtype])
+                            for p in parts])
+        values[n] = v[loops] if d == 'CORNER' else v[order] if d == 'FACE' else v
+    return _build(name, co, ev, lv[loops], le[loops], lt[order], source, values, attrs), voff
+
+
+def build_arrays(arr, name, source):
+    """A new mesh of the arrays `arr` (UV roles, materials and custom properties from the mesh `source`)."""
+    return _build(name, arr["co"], arr["ev"], arr["lv"], arr["le"], arr["lt"], source,
+                  {n: v for n, (_d, _t, v) in arr["attrs"].items()}, [(n, d, t) for n, (d, t, _v) in arr["attrs"].items()])
+
+
 def sub_mesh(me, faces, name):
     """A mesh of the given faces of `me` (indices, any order: they keep the order of `me`), with their vertices, edges
     and corners in the order of `me`. Returns (mesh, vertices, edges, faces) - the indices in `me`."""
-    co, ev, lv, le, ls, lt = topology(me)
-    faces = np.unique(np.asarray(faces, np.int64))
-    loops = face_loops(ls, lt, faces)
-    verts, edges = np.unique(lv[loops]), np.unique(le[loops])
-    vmap = np.full(len(co), -1, np.int64); vmap[verts] = np.arange(len(verts))
-    emap = np.full(len(ev), -1, np.int64); emap[edges] = np.arange(len(edges))
-    pick = {'POINT': verts, 'EDGE': edges, 'CORNER': loops, 'FACE': faces}
-    values = {n: attribute_values(me, n)[pick[d]] for n, d, _ in _attributes(me)}
-    sub = _build(name, co[verts], vmap[ev[edges]], vmap[lv[loops]], emap[le[loops]], lt[faces], me, values)
+    arr, verts, edges, faces = select_arrays(mesh_arrays(me), faces)
+    sub = _build(name, arr["co"], arr["ev"], arr["lv"], arr["le"], arr["lt"], me,
+                 {n: v for n, (_d, _t, v) in arr["attrs"].items()})
     return sub, verts, edges, faces
 
 
 def join(meshes, name, face_order=None):
-    """One mesh of `meshes`: vertices and edges mesh after mesh, the faces in `face_order` (indices into the faces of
-    all meshes one after another; default: as they come). Every attribute any of them has; where one lacks it (a
-    batch without a bevelled edge has no selection layer of the bevel), its elements get zeros.
-    Returns (mesh, vertex offset of each mesh)."""
-    tops = [topology(m) for m in meshes]
-    voff = np.concatenate(([0], np.cumsum([len(t[0]) for t in tops])[:-1]))
-    eoff = np.concatenate(([0], np.cumsum([len(t[1]) for t in tops])[:-1]))
-    co = np.concatenate([t[0] for t in tops])
-    ev = np.concatenate([t[1] + o for t, o in zip(tops, voff)])
-    lv = np.concatenate([t[2] + o for t, o in zip(tops, voff)])
-    le = np.concatenate([t[3] + o for t, o in zip(tops, eoff)])
-    loff = np.concatenate(([0], np.cumsum([len(t[2]) for t in tops])[:-1]))
-    ls = np.concatenate([t[4] + o for t, o in zip(tops, loff)])
-    lt = np.concatenate([t[5] for t in tops])
-    order = np.arange(len(lt)) if face_order is None else np.asarray(face_order, np.int64)
-    loops = face_loops(ls, lt, order)
-    attrs = []
-    for m in meshes:
-        attrs += [a for a in _attributes(m) if a[0] not in {x[0] for x in attrs}]
-    sizes = [{'POINT': len(t[0]), 'EDGE': len(t[1]), 'CORNER': len(t[2]), 'FACE': len(t[5])} for t in tops]
-    values = {}
-    for n, d, dtype in attrs:
-        parts = [attribute_values(m, n) if n in m.attributes else np.zeros((s[d], _WIDTH[dtype]), _DTYPE[dtype])
-                 for m, s in zip(meshes, sizes)]
-        v = np.concatenate(parts)
-        values[n] = v[loops] if d == 'CORNER' else v[order] if d == 'FACE' else v
-    return _build(name, co, ev, lv[loops], le[loops], lt[order], meshes[0], values, attrs), voff
+    """One mesh of `meshes` (see join_arrays). Returns (mesh, vertex offset of each mesh)."""
+    return join_arrays([mesh_arrays(m) for m in meshes], name, meshes[0], face_order)
