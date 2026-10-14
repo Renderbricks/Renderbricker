@@ -646,11 +646,11 @@ def _rounding_ends(w):
     W17 has freed (the rim's next point is its middle point): just these three creased edges, the rim of the rounding
     on one face and the rim going on on the other, bending on gently, the end giving way by no more than
     ROUNDING_DEPTH. Only W17's roundings: the same pattern at a point of a polygonised arc (18747: the outline of the
-    body, bends of 27 and 33 degrees, where it meets this very seam) is no rounded corner. (On 18747 both faces lie in one curved island - the band round the
-    plate; the import has the edge split.) The seam's other end, if it is not one too (18747: there the rim turns
-    by 65 degrees into the outline of the body), is pinned and stays a corner - moved by what the free end gives
-    way (18747: 0.019 mm down), so that the seam stays level: left where it was, it stood out above the lowered rim
-    as a peak in the outline (seen from the back)."""
+    body, bends of 27 and 33 degrees, where it meets this very seam) is no rounded corner. (On 18747 both faces
+    of the seam lie in one curved island - the band round the plate; the import has the edge split.) The seam's
+    other end, if it is not one too (18747: there the rim turns by 65 degrees into the outline of the body), is
+    pinned and stays a corner - moved by what the free end gives way (18747: 0.019 mm down), so that the seam stays
+    level: left where it was, it stood out above the lowered rim as a peak in the outline (seen from the back)."""
     bm, E, V = w.bm, w.E, w.V
     w.soft, w.supports, w.new_points, w.corners_before = [], 0, set(), {}
     if not (ROUND_ENDS and COARSE_ROUNDING) or NO_ENDS[0]:
@@ -680,8 +680,11 @@ def _rounding_ends(w):
             return "no rounding W17 has freed"
         back, on = m.co - n.co, r.other_vert(n).co - n.co
         le, lr = back.length, on.length
-        if le < 1e-9 or lr < 1e-9 or not ARC_RELEASE_TURN < (t := 180.0 - math.degrees(back.angle(on))) < config.SHARP_TURN:
-            return "the rim bends on by %.1f" % (t if le >= 1e-9 and lr >= 1e-9 else 0.0)
+        if le < 1e-9 or lr < 1e-9:
+            return "a rim without length"
+        turn = 180.0 - math.degrees(back.angle(on))
+        if not ARC_RELEASE_TURN < turn < config.SHARP_TURN:
+            return "the rim bends on by %.1f" % turn
         far = on * (le / lr) if lr > ROUNDING_RATIO * le else on
         if (back + far).length / 6.0 > ROUNDING_DEPTH:
             return "gives way by %.3f" % ((back + far).length / 6.0)
@@ -753,12 +756,12 @@ def _rounding_ends(w):
     for s, wall, ends in found:
         plane = next(f for f in s.link_faces if f is not wall)
         piece = [x[2] if x is not None and n not in hard else None for n, x in zip(s.verts, ends, strict=True)]
-        piece = [p or q for p, q in zip(piece, reversed(piece), strict=True)]       # a pinned end: the piece of the free one
+        piece = [p or q for p, q in zip(piece, reversed(piece), strict=True)]   # (a pinned end: the piece of the free one)
         pts = [support(plane, s, n, d) for n, d in zip(s.verts, piece, strict=True)]
         if pts[0] is not pts[1] and bm.edges.get(pts) is None:
             remember(plane)
             new_faces.append(bmesh.utils.face_split(plane, pts[0], pts[1])[0])
-    if new_faces:                               # the faces of the import first and in their order, the cut-off ones after
+    if new_faces:                               # the faces of the import first and in their order, then the cut-off ones
         after = {f: k for k, f in enumerate(new_faces)}
         bm.faces.sort(key=lambda f: len(bm.faces) + after[f] if f in after else f.index)
     bm.verts.index_update(); bm.edges.index_update(); bm.faces.index_update()
