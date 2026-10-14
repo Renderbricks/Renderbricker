@@ -1151,7 +1151,7 @@ def baked_folds(orig, cp, level):
 def _fit(work, wm, rep):
     """The shrink compensation of the cage (UPDATES #51), its numbers into the report."""
     free = rep.pop(shrink.SHRINK_FREE, [])
-    rep["shrink_points"], rep["shrink_max"], rep["shrink_left"] = shrink.compensate_shrink(work, wm, free)
+    rep["shrink_points"], rep["shrink_max"], rep["shrink_left"], rep["shrink_cylinders"] = shrink.compensate_shrink(work, wm, free)
 
 
 def _bake_weld(orig, levels, method_rep=None):
