@@ -513,8 +513,9 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         description="How the Blender processes share the parts: all at once (fastest) or in small segments "
                     "that need less memory")
     # Edges (UPDATES #43, maintainer 2026-10-13): the Radius in millimetres, the limits are his - "mm so machen 0.08
-    # bis 0.2"; the start is close to the importer's look (its 0.35 is an edge radius of 0.208 mm, so the shader gets
-    # 0.336 - asked whether the field should end at 0.21, 2026-10-14: "Radius-Feld bleibt bei 0,2 mm")
+    # bis 0.2" (asked whether the field should end at 0.21, the importer's own 0.35 being an edge radius of
+    # 0.208 mm, 2026-10-14: "Radius-Feld bleibt bei 0,2 mm"); the start is the size he found right on the model -
+    # 2026-10-14: "Die Standardeinstellung für Bevel ist 0.15 mm" (the shader then gets 0.252)
     edges: EnumProperty(
         name="Edges",
         items=[('SHADER', "Shader", "The importer's material rounds the edges, as before: a Bevel node in Cycles, "
@@ -526,10 +527,10 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         default='SHADER',
         description="How the sharp edges of the parts are rounded. Changing it makes Apply convert the parts again")
     edge_radius: bpy.props.FloatProperty(
-        name="Radius (mm)", default=0.2, min=0.08, max=0.2, step=1, precision=2,
+        name="Radius (mm)", default=0.15, min=0.08, max=0.2, step=1, precision=2,
         description="Radius of the rounded edges in millimetres of the real part: how far the rounding reaches on "
-                    "each face from the edge. The same for the shader and for the bevel. 0.2 is the size the "
-                    "importer shows; smaller values give finer edges")
+                    "each face from the edge. The same for the shader and for the bevel. 0.2 is close to the size "
+                    "the importer shows; smaller values give finer edges")
     bevel_segments: bpy.props.IntProperty(
         name="Segments", default=1, min=1, max=4,
         description="Rows of faces across a bevelled edge. One is enough: its shading is round; more rows also "

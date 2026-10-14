@@ -21,7 +21,7 @@ Measures (run 221): 7052 L2/L3 line and corner like the import in Cycles and EEV
 import bpy
 import numpy as np
 from mathutils.bvhtree import BVHTree
-from . import config
+from . import checks, config
 
 SHARP_DEG = 30.0      # a nearest point on a face turned further than this lies across a sharp edge: stay
 MIN_SLIDE = float(config.opt("--reparam-min", "2e-3"))   # relative to the part size: smaller slides stay - about one texel of the part's own texture
@@ -142,8 +142,8 @@ def fixed_uvs(orig, cp, level, verts, P):
     """Surface-fixed UVs for the corners of `verts` (a vertex that could not slide to its import place, wholly or
     partly): the UV the import carries at the point nearest to the vertex's position P, within the UV island of the
     corner's original face - the texture stays at its import place there although the face did not get back."""
-    lt0 = _arr(orig.polygons, "loop_total", len(orig.polygons), 1, np.int64)
-    owner = np.repeat(np.arange(len(orig.polygons)), lt0 * 4 ** (level - 1))
+    lt0, own_face = checks.cage_faces(orig, cp)
+    owner = np.repeat(own_face, lt0 * 4 ** (level - 1))
     lv = _arr(cp.loops, "vertex_index", len(cp.loops), 1, np.int64)
     L = np.where(verts[lv])[0]
     if not len(L) or len(owner) * 4 != len(cp.loops):
@@ -266,10 +266,10 @@ def slide(cp, Pl, lv, orig=None, level=None):
     sn = vn.copy(); sn[todo] = (Wl[:, :, None] * vn[tri[hit]]).sum(1)
     on = None
     if orig is not None and level:
-        lt0 = _arr(orig.polygons, "loop_total", len(orig.polygons), 1, np.int64)
+        lt0, own_face = checks.cage_faces(orig, cp)
         ofn = _arr(orig.polygons, "normal", len(orig.polygons), 3)
         if int((lt0 * 4 ** (level - 1)).sum()) == nf:
-            on = ofn[np.repeat(np.arange(len(lt0)), lt0 * 4 ** (level - 1))]
+            on = ofn[np.repeat(own_face, lt0 * 4 ** (level - 1))]
     for step in range(FOLD_STEPS + 1):
         q = new[quads]
         qn = np.cross(q[:, 2] - q[:, 0], q[:, 3] - q[:, 1])

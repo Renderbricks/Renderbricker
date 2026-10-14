@@ -34,6 +34,9 @@ COARSE_ROUNDING = config.opt("--coarse-rounding", "1") == "1"   # W17 (run 282);
 ROUNDING_TOTAL = 100.0   # W17: the three bends of a coarse rounding make no more than this ...
 ROUNDING_RATIO = 2.0     # ... its two pieces are about the same length ...
 ROUNDING_DEPTH = 0.06    # ... and the free point gives way by no more than this (mm): a corner radius up to about 0.6
+ROUND_ENDS = config.opt("--round-ends", "1") == "1"   # W18 (run 283); "0": rules 3.7, for comparisons
+ENDS_LOG = None          # a list: (mesh, middle of the seam, why not / "released") of every seam W18 looks at (scans)
+NO_ENDS = [False]        # True while a part whose copy folded with W18 is welded again without it (_bake_weld)
 
 
 DESIGN_TURN = 20.0       # W15 (run 73): designed corner - long crease edge into a short one ...
@@ -134,6 +137,9 @@ def weld(orig):
       7 _relief_tips      the tips of low relief steps are released
       8 _pinned_corners   corners on the crease chains: brick and organic thresholds, designed corners (W15),
                           coarse roundings stay free (W17)
+        _rounding_ends    a coarse rounding runs out softly where it ends in a seam: the seam is released, the
+                          next wall gets the support edge the import does not have (W18) - the cage then has
+                          other faces than the import there (checks.LAYOUT on the copies)
       9 _t_vertices       T vertices and open points that stay apart are pinned
         release_arc_corners   coarse arcs across a flat island (W16)
      10 _work_mesh        the mesh with crease_edge, crease_vert, sharp_edge and normals; the report"""
@@ -147,10 +153,12 @@ def weld(orig):
     _island_creases(w)
     _relief_tips(w)
     _pinned_corners(w)
+    _rounding_ends(w)
     _t_vertices(w)
     arc_released = release_arc_corners(w.E, w.V, w.kind_of, w.isl)
     wm, tv, rep = _work_mesh(w, arc_released)
     rep["rounding_freed"] = w.rounded           # W17: middle points of coarse roundings left free
+    rep["rounding_ends"], rep["support_points"] = len(w.soft), w.supports      # W18
     return wm, tv, rep
 
 
@@ -612,7 +620,150 @@ def _pinned_corners(w):
           and v not in ringv and v not in tipv and not groove_end(v) and v not in rounded
           and sum(1 for e in v.link_edges if e in E) < 3}
     V |= degen_v
-    w.V, w.rounded = V, len(rounded - V)
+    w.V, w.rounded, w.rounded_points = V, len(rounded - V), rounded - V        # (the points: for W18)
+
+
+def _rounding_ends(w):
+    """Stage 8b, W18 (run 283, maintainer 2026-10-14 on 18747: "Nur die untere Seite wird unterteilt, nicht die
+    obere"). Reads bm, E, V, seams, rounded_points. Adds soft (the seams released: edge, the face of the rounding's
+    wall), supports (points made), new_points, corners_before (the corners of every face it changes, as they were);
+    takes the seams out of E and the ends of roundings out of V, splits edges of the cage and cuts faces.
+
+    A coarse rounding (W17) is the wall between two rims. Where that wall meets the next wall the import can
+    have a hard edge - a seam across the wall. Its two ends then carry three creased edges each (the rim of the
+    rounding, the rim going on, the seam): corners for the subdivision, and the outline keeps a kink there at every
+    level (18747: 21.8 degrees where the rounding meets the top; at the side, where the import has no such edge and
+    a point 0.29 mm on, the rounding runs out softly). Taking the crease off the seam alone moves the kink instead
+    of removing it: the rim then goes on for 2 mm without a point and the end slides along it. And a point on the
+    rim alone leaves the seam itself to the middle of the next wall: the surface gives way most between the rims
+    (library, run 283: by 0.15 mm on walls 6 to 9 mm wide; two parts folded). The side has what it takes - an edge
+    across the next wall, one piece from the rounding. So
+      the seam is released (no crease, no hard edge; the wall takes the next wall's normal along it), and
+      the next wall gets that edge: a point one piece from the seam on each of its two edges there (the next
+      point of the edge if it is no further than ROUNDING_RATIO pieces), the face cut from one to the other.
+    The next wall has to be a convex face for that.
+    A seam counts when its two faces bend by less than SHARP_TURN and one of its ends is such an end of a rounding
+    W17 has freed (the rim's next point is its middle point): just these three creased edges, the rim of the rounding
+    on one face and the rim going on on the other, bending on gently, the end giving way by no more than
+    ROUNDING_DEPTH. Only W17's roundings: the same pattern at a point of a polygonised arc (18747: the outline of the
+    body, bends of 27 and 33 degrees, where it meets this very seam) is no rounded corner. (On 18747 both faces lie in one curved island - the band round the
+    plate; the import has the edge split.) The seam's other end, if it is not one too (18747: there the rim turns
+    by 65 degrees into the outline of the body), is pinned and stays a corner - moved by what the free end gives
+    way (18747: 0.019 mm down), so that the seam stays level: left where it was, it stood out above the lowered rim
+    as a peak in the outline (seen from the back)."""
+    bm, E, V = w.bm, w.E, w.V
+    w.soft, w.supports, w.new_points, w.corners_before = [], 0, set(), {}
+    if not (ROUND_ENDS and COARSE_ROUNDING) or NO_ENDS[0]:
+        return
+    fi = bm.faces.layers.int.get("rb_fi")
+
+    def creased(v):
+        return [e for e in v.link_edges if e in E or len(e.link_faces) == 1]
+
+    def convex(f):
+        n, vs = f.normal, [v.co for v in f.verts]
+        k = len(vs)
+        return all((vs[(i + 1) % k] - vs[i]).cross(vs[(i + 2) % k] - vs[(i + 1) % k]).dot(n) > -1e-9 for i in range(k))
+
+    def end(s, n, wall, plane):
+        """(rim piece of the rounding, its other point, piece length, what the end gives way) at the end `n` of the
+        seam `s`, or the reason why `n` is no end of a rounding."""
+        others = [e for e in creased(n) if e is not s]
+        if len(others) != 2 or n in w.degen_v:
+            return f"{len(others) + 1} creased edges"
+        e = next((x for x in others if x in wall.edges), None)
+        r = others[1] if e is others[0] else others[0]
+        if e is None or r not in plane.edges or r in wall.edges:
+            return "the rims are not one on the wall and one on the face beyond"
+        m = e.other_vert(n)
+        if m not in w.rounded_points or m in V:
+            return "no rounding W17 has freed"
+        back, on = m.co - n.co, r.other_vert(n).co - n.co
+        le, lr = back.length, on.length
+        if le < 1e-9 or lr < 1e-9 or not ARC_RELEASE_TURN < (t := 180.0 - math.degrees(back.angle(on))) < config.SHARP_TURN:
+            return "the rim bends on by %.1f" % (t if le >= 1e-9 and lr >= 1e-9 else 0.0)
+        far = on * (le / lr) if lr > ROUNDING_RATIO * le else on
+        if (back + far).length / 6.0 > ROUNDING_DEPTH:
+            return "gives way by %.3f" % ((back + far).length / 6.0)
+        return e, m, le, (back + far) / 6.0
+
+    found = []
+    for s in sorted((e for e in E if len(e.link_faces) == 2), key=lambda e: e.index):
+        fa, fb = s.link_faces
+        if not ARC_RELEASE_TURN < math.degrees(fa.normal.angle(fb.normal, 0.0)) < config.SHARP_TURN:
+            continue
+        for wall, plane in ((fa, fb), (fb, fa)):            # which of the two faces is the wall of the rounding
+            ends = [end(s, n, wall, plane) for n in s.verts]
+            if not convex(plane):
+                ends = ["the face beyond is not convex"] * 2
+            if ENDS_LOG is not None:
+                ENDS_LOG.append((w.orig.name, tuple(round(c, 3) for c in (s.verts[0].co + s.verts[1].co) / 2),
+                                 [x if isinstance(x, str) else "end of a rounding" for x in ends]))
+            ends = [None if isinstance(x, str) else x for x in ends]
+            if ends[0] is not None or ends[1] is not None:
+                found.append((s, wall, ends))
+                break
+    # a point that is the end of a rounding on one seam and not on another stays a corner; a seam left without a
+    # free end is not released
+    while True:
+        hard = {n for s, _wall, ends in found for n, x in zip(s.verts, ends, strict=True) if x is None}
+        keep = [(s, wall, ends) for s, wall, ends in found
+                if any(x is not None and n not in hard for n, x in zip(s.verts, ends, strict=True))]
+        if len(keep) == len(found):
+            break
+        found = keep
+    if not found:
+        return
+    for s, wall, _ends in found:
+        E.discard(s)
+        w.soft.append((s, wall))
+        V.difference_update(s.verts)
+    V |= hard                                   # the end of a rounding is free, any other end stays a corner
+    moved = set()
+    for s, _wall, ends in found:
+        for n, x in zip(s.verts, ends, strict=True):
+            other = s.other_vert(n)
+            if x is not None and n not in hard and other in hard and other not in moved and not other.is_boundary:
+                other.co += x[3]                # ... level with the free end
+                moved.add(other)
+
+    def remember(f):
+        if f[fi] not in w.corners_before:       # (the first time: as the import has them)
+            w.corners_before[f[fi]] = list(f.verts)
+
+    def support(plane, s, n, d):
+        """The point of the next wall's outline `d` from the seam's end `n`: the next point of that edge if it is
+        near enough, else a new one on it."""
+        t = next(x for x in plane.edges if n in x.verts and x is not s)
+        length = t.calc_length()
+        if length <= ROUNDING_RATIO * d:
+            return t.other_vert(n)
+        for f in t.link_faces:
+            remember(f)
+        new_edge, new_vert = bmesh.utils.edge_split(t, n, d / length)
+        for group in (E, w.seams, w.ring, w.rung):
+            if t in group:
+                group.add(new_edge)
+        w.new_points.add(new_vert)
+        w.supports += 1
+        return new_vert
+
+    bm.faces.index_update()
+    new_faces = []
+    for s, wall, ends in found:
+        plane = next(f for f in s.link_faces if f is not wall)
+        piece = [x[2] if x is not None and n not in hard else None for n, x in zip(s.verts, ends, strict=True)]
+        piece = [p or q for p, q in zip(piece, reversed(piece), strict=True)]       # a pinned end: the piece of the free one
+        pts = [support(plane, s, n, d) for n, d in zip(s.verts, piece, strict=True)]
+        if pts[0] is not pts[1] and bm.edges.get(pts) is None:
+            remember(plane)
+            new_faces.append(bmesh.utils.face_split(plane, pts[0], pts[1])[0])
+    if new_faces:                               # the faces of the import first and in their order, the cut-off ones after
+        after = {f: k for k, f in enumerate(new_faces)}
+        bm.faces.sort(key=lambda f: len(bm.faces) + after[f] if f in after else f.index)
+    bm.verts.index_update(); bm.edges.index_update(); bm.faces.index_update()
+    bm.verts.ensure_lookup_table(); bm.edges.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+    bm.normal_update()
 
 
 def _t_vertices(w):
@@ -664,6 +815,42 @@ def _t_vertices(w):
     w.tv = tv
 
 
+def _cage_corners(w, wm):
+    """For the normals of the cage `wm`: per corner of the cage the corner of the import it is (welding keeps faces
+    and corners in order; -1 for the corner of a point W18 made), for each such new corner a corner of the import
+    whose normal it takes (pairs: corner of the cage, corner of the import - one of its own face where it has one:
+    a face cut off between two support edges has only new points), and the corners along the released seams as
+    pairs (corner of the rounding's wall, corner of the face beyond at the same point)."""
+    nl, nf = len(wm.loops), len(wm.polygons)
+    lt_w = np.empty(nf, np.int64); wm.polygons.foreach_get("loop_total", lt_w)
+    ls_w = np.cumsum(lt_w) - lt_w
+    lt_o = np.empty(len(w.orig.polygons), np.int64); w.orig.polygons.foreach_get("loop_total", lt_o)
+    ls_o = np.cumsum(lt_o) - lt_o
+    own = np.arange(nf, dtype=np.int32)
+    if wm.attributes.get("rb_fi") is not None:
+        wm.attributes["rb_fi"].data.foreach_get("value", own)
+    src = np.repeat(ls_o[own] - ls_w, lt_w) + np.arange(nl)         # right for every face W18 left alone
+    fill, softened = [], []
+    if not w.soft:
+        return src, fill, softened
+    lv = np.empty(nl, np.int64); wm.loops.foreach_get("vertex_index", lv)
+    made = {v.index for v in w.new_points}
+    for f in np.nonzero(np.isin(own, list(w.corners_before)))[0].tolist():
+        was = {v.index: k for k, v in enumerate(w.corners_before[int(own[f])])}
+        corners = range(int(ls_w[f]), int(ls_w[f] + lt_w[f]))
+        for j in corners:
+            k = was.get(int(lv[j]))
+            src[j] = -1 if k is None or int(lv[j]) in made else ls_o[own[f]] + k
+        old = next((int(src[j]) for j in corners if src[j] >= 0), int(ls_o[own[f]]))
+        fill.extend((j, old) for j in corners if src[j] < 0)
+    for s, wall in w.soft:
+        plane = next(f for f in s.link_faces if f is not wall)
+        for v in s.verts:
+            at = [next(j for j in wm.polygons[f.index].loop_indices if lv[j] == v.index) for f in (wall, plane)]
+            softened.append((at[0], at[1]))
+    return src, fill, softened
+
+
 def _work_mesh(w, arc_released):
     """Stage 10. Reads everything; frees bm. Returns (work mesh, T vertices, report) - the result of weld()."""
     orig, bm, E, V, seams, ring, rung = w.orig, w.bm, w.E, w.V, w.seams, w.ring, w.rung
@@ -689,11 +876,18 @@ def _work_mesh(w, arc_released):
     old = [False] * len(wm.edges)
     if sharp:
         sharp.data.foreach_get("value", old)
-    attr("sharp_edge", 'BOOLEAN', 'EDGE', [e.index for e in seams - ring - rung] + [i for i, x in enumerate(old) if x], True)
+    soft_edges = {s.index for s, _wall in w.soft}       # W18: a released seam is no hard edge any more
+    attr("sharp_edge", 'BOOLEAN', 'EDGE', [e.index for e in seams - ring - rung if e.index not in soft_edges]
+         + [i for i, x in enumerate(old) if x and i not in soft_edges], True)
     ndiff, zero = 0.0, 0
     if orig.has_custom_normals:
         n0 = np.empty(len(orig.loops) * 3); orig.corner_normals.foreach_get("vector", n0)
-        nn = n0.reshape(-1, 3).copy()
+        src, fill, softened = _cage_corners(w, wm)      # corner of the cage -> corner of the import (-1: W18's)
+        nn = n0.reshape(-1, 3)[np.maximum(src, 0)]
+        for j, k in fill:                       # a point W18 made: the normal of a corner the import's face has
+            nn[j] = n0.reshape(-1, 3)[k]
+        for j, k in softened:                   # the wall takes the next wall's normal along a released seam
+            nn[j] = nn[k]
         smooth_faces = ring_faces       # relief tips keep the imported normals (run 48e: smooth ones darkened the tips)
         if smooth_faces:
             sf = wm.attributes.get("sharp_face")
@@ -704,14 +898,16 @@ def _work_mesh(w, arc_released):
                     sf.data[i].value = False
         wm.normals_split_custom_set(nn.tolist())
         n1 = np.empty(len(wm.loops) * 3); wm.corner_normals.foreach_get("vector", n1)
-        a0, a1 = n0.reshape(-1, 3), n1.reshape(-1, 3)
+        a0, a1 = n0.reshape(-1, 3)[np.maximum(src, 0)], n1.reshape(-1, 3)
         ok = (np.linalg.norm(a0, axis=1) > 0.5) & (np.linalg.norm(a1, axis=1) > 0.5)   # zero normals of slivers
         for i in ring_faces:
             p = wm.polygons[i]
             ok[p.loop_start:p.loop_start + p.loop_total] = False                     # smoothed on purpose
+        zero = int((~ok).sum())
+        ok[src < 0] = False                                                          # W18: made or softened on purpose
+        ok[[j for j, _k in softened]] = False
         dots = np.clip((a0 * a1).sum(1)[ok], -1, 1)
         ndiff = float(np.degrees(np.arccos(dots.min()))) if len(dots) else 0.0
-        zero = int((~ok).sum())
     rungs_out = [((e.verts[0].co + e.verts[1].co) / 2, e.calc_length()) for e in rung]
     rep = dict(welded=len(tm), seams=len(seams), creased_seams=len(seams & E), ring_edges=len(ring),
                corners=len(V), relief_tips=len(rung), t_verts=len(tv), normals_diff=round(ndiff, 3),
@@ -773,14 +969,14 @@ def t_gaps(wm, cp, tv, level):
         return 0.0
     pass
     config.LEVELS = level
-    starts = checks.sub_offsets(wm)
+    starts = checks.sub_offsets(wm, cp)
     co = np.empty(len(cp.vertices) * 3); cp.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
     ev = np.empty(len(cp.edges) * 2, np.int64); cp.edges.foreach_get("vertices", ev); ev = ev.reshape(-1, 2)
     le = np.empty(len(cp.loops), np.int64); cp.loops.foreach_get("edge_index", le)
     cnt = np.bincount(le, minlength=len(cp.edges))
     lt = np.empty(len(cp.polygons), np.int64); cp.polygons.foreach_get("loop_total", lt)
     lface = np.repeat(np.arange(len(cp.polygons)), lt)
-    owner = np.repeat(np.arange(len(wm.polygons)), np.diff(starts))
+    owner = np.repeat(np.arange(len(starts) - 1), np.diff(starts))      # (by cage face: the host of a T point is one)
     open_loops = cnt[le] == 1
     worst = 0.0
     for vi, host in tv:
@@ -930,6 +1126,21 @@ def _bake_weld(orig, levels, method_rep=None):
         # quality and the copies baked again (1 of 1,372 parts in the library; doing every check at the bake
         # quality cost 2.5-3.6x the repair time).
         lv = config.RENDER_LEVEL if config.RENDER_LEVEL in made else max(made)
+        if rep.get("rounding_ends") and baked_folds(orig, made[lv], lv):
+            # W18 must not cost a fold (library, run 283: con1 folded on two faces with it, on none without): this
+            # part is welded again as rules 3.7 make it
+            for cp in made.values():
+                copies.discard_copy(orig, cp)
+            bpy.data.objects.remove(work); bpy.data.meshes.remove(wm)
+            NO_ENDS[0] = True
+            try:
+                work, wm, tv, rep = weld_work(orig)
+            finally:
+                NO_ENDS[0] = False
+            rep["rounding_ends_dropped"] = 1
+            if bevel.signature():
+                rep["bevel_edges"] = bevel.mark_edges(orig, wm)
+            made = _bake_work(orig, work, levels, tv)
         if baked_folds(orig, made[lv], lv):
             work.modifiers["Subdivision"].quality = copies.bake_quality(orig)
             rep["repair_bake_quality"] = repair_folds(work, wm)

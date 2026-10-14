@@ -87,7 +87,7 @@ import numpy as np
 from . import config, creases, edgesupport, maps
 
 EDGES = config.opt("--edges", "shader")                     # "shader" or "bevel"; set by the add-on or the command line
-EDGE_RADIUS = float(config.opt("--edge-radius", "0.2"))     # the edge radius in mm (the units of the mesh)
+EDGE_RADIUS = float(config.opt("--edge-radius", "0.15"))    # the edge radius in mm (the units of the mesh)
 BEVEL_SEGMENTS = int(config.opt("--bevel-segments", "1"))
 RADIUS_MIN, RADIUS_MAX, SEGMENTS_MAX = 0.08, 0.2, 4      # maintainer 2026-10-13: "mm so machen 0.08 bis 0.2"
 EDGE_INNER = 85.0                            # an edge inside one island counts from this bend on (the rule W12)
@@ -145,7 +145,10 @@ def mark_edges(orig, wm):
     weights when the welded mesh does not have the faces of the import one to one. Of the edges chosen, the borders
     of a modelled chamfer ("chamfer") are taken out again; "bevelled" is what remains."""
     n = {"full": 0, "bevel": 0, "logo": 0, "modelled": 0, "chamfer": 0, "bevelled": 0}
-    if len(wm.polygons) != len(orig.polygons):
+    own = np.arange(len(wm.polygons), dtype=np.int32)      # the import's face of every cage face (W18 cuts some in two)
+    if wm.attributes.get("rb_fi") is not None:
+        wm.attributes["rb_fi"].data.foreach_get("value", own)
+    if len(wm.polygons) < len(orig.polygons) or (len(own) and int(own.max()) >= len(orig.polygons)):
         return n
     bm = bmesh.new()
     bm.from_mesh(orig)
@@ -165,7 +168,7 @@ def mark_edges(orig, wm):
             if e[cl] < 0.99 or len(e.link_faces) != 2:
                 continue
             n["full"] += 1
-            a, b = isl[e.link_faces[0].index], isl[e.link_faces[1].index]
+            a, b = isl[own[e.link_faces[0].index]], isl[own[e.link_faces[1].index]]
             if a in logos or b in logos:
                 n["logo"] += 1
             elif a != b or math.degrees(e.calc_face_angle(0.0)) >= EDGE_INNER:

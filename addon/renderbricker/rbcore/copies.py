@@ -1,7 +1,7 @@
 """The subdivided copies of a part: baking a level, UVs, links pointing to the copy of a level, masters."""
 import bpy
 import numpy as np
-from . import bevel, config, creases, maps, reparam, workscene
+from . import bevel, checks, config, creases, maps, reparam, workscene
 
 
 def original_of(me):
@@ -90,6 +90,9 @@ def bake_copy(orig, work, level):
         dg = workscene.depsgraph_of(work)
         oe = work.evaluated_get(dg)
         cp = bpy.data.meshes.new_from_object(oe, preserve_all_data_layers=True, depsgraph=dg)
+        lay = checks.layout_of(orig, work.data)     # W18: a cage whose faces are not the import's one to one
+        if lay:
+            cp[checks.LAYOUT] = lay
         if mod and config.REPARAM:
             try:
                 par = reparam.param_positions(cp)
@@ -101,6 +104,8 @@ def bake_copy(orig, work, level):
                 mod.uv_smooth = config.UV_SMOOTH
                 dg = workscene.depsgraph_of(work); dg.update()
                 cp = bpy.data.meshes.new_from_object(work.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
+                if lay:
+                    cp[checks.LAYOUT] = lay
     finally:
         config.LEVELS = keep
     cp.name = f"{orig.name} L{level}"
@@ -174,11 +179,11 @@ def project_uvs(orig, cp, level):
     oc = np.empty(len(orig.vertices) * 3); orig.vertices.foreach_get("co", oc); oc = oc.reshape(-1, 3)
     A, B, C = oc[lv[tl[:, 0]]], oc[lv[tl[:, 1]]], oc[lv[tl[:, 2]]]
     # child faces -> original face (blocks of loop_total * 4^(level-1) faces)
-    sizes = np.empty(npoly, np.int64); orig.polygons.foreach_get("loop_total", sizes)
+    sizes, own_face = checks.cage_faces(orig, cp)
     per = sizes * 4 ** (level - 1)
     if per.sum() != len(cp.polygons):
         return                                  # not a plain subdivision of this original
-    owner_f = np.repeat(np.arange(npoly), per)
+    owner_f = np.repeat(own_face, per)
     ctot = np.empty(len(cp.polygons), np.int64); cp.polygons.foreach_get("loop_total", ctot)
     owner = np.repeat(owner_f, ctot)            # per loop of the copy
     cl = np.empty(len(cp.loops), np.int64); cp.loops.foreach_get("vertex_index", cl)
