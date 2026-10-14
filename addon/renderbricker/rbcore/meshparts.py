@@ -77,10 +77,11 @@ def _attributes(me):
             if a.name not in _TOPOLOGY and a.data_type in _KEY and a.domain in ('POINT', 'EDGE', 'CORNER', 'FACE')]
 
 
-def _build(name, co, ev, lv, le, lt, source, values, attrs=None):
+def _build(name, co, ev, lv, le, lt, source, values, attrs=None, into=None):
     """A new mesh from arrays; `values` {attribute name: array per element} for `attrs` [(name, domain, type)]
-    (default: the attributes of `source`); UV roles, materials and custom properties from `source`."""
-    me = bpy.data.meshes.new(name)
+    (default: the attributes of `source`); UV roles, materials and custom properties from `source`. With `into`:
+    that mesh gets the geometry instead (its own materials and custom properties stay)."""
+    me = into if into is not None else bpy.data.meshes.new(name)
     me.vertices.add(len(co)); me.edges.add(len(ev)); me.loops.add(len(lv)); me.polygons.add(len(lt))
     me.vertices.foreach_set("co", np.ascontiguousarray(co, np.float32).ravel())
     me.edges.foreach_set("vertices", np.ascontiguousarray(ev, np.int32).ravel())
@@ -98,12 +99,28 @@ def _build(name, co, ev, lv, le, lt, source, values, attrs=None):
             me.uv_layers.active_index = i
         if uv.active_render and i < len(me.uv_layers):
             me.uv_layers[i].active_render = True
-    for m in source.materials:
-        me.materials.append(m)
-    for k in source.keys():
-        me[k] = source[k]
+    if into is None:
+        for m in source.materials:
+            me.materials.append(m)
+        for k in source.keys():
+            me[k] = source[k]
     me.update()
     return me
+
+
+def assign(dst, src):
+    """The geometry of `src` - vertices, edges, faces, corners, every attribute - in the mesh `dst`, which keeps its
+    name, users, materials and custom properties (bevel.bevel_copy works in place)."""
+    co, ev, lv, le, ls, lt = topology(src)
+    attrs = _attributes(src)
+    values = {n: attribute_values(src, n) for n, _d, _t in attrs}
+    dst.clear_geometry()
+    for a in [a.name for a in dst.attributes if a.name not in _TOPOLOGY and not a.is_required]:
+        try:
+            dst.attributes.remove(dst.attributes[a])
+        except (RuntimeError, KeyError):
+            pass
+    _build(dst.name, co, ev, lv, le, lt, src, values, attrs, into=dst)
 
 
 def sub_mesh(me, faces, name):

@@ -438,10 +438,10 @@ def round_in_normals(me, lines, width):
         & (np.linalg.norm(towards, axis=1) > 1e-9)
     if not ok.any():
         return 0
-    loop, more, n_other, towards = loop[ok], more[ok], n_other[ok], _unit(towards[ok])
+    loop, more, n_other, towards, li = loop[ok], more[ok], n_other[ok], _unit(towards[ok]), li[ok]
     tilt = towards * np.tan(np.minimum(more, 1.4))[:, None]
     # per corner: the strongest turn of each side - the same side reached from the next edge of a run counts once
-    rest = np.lexsort((-more, loop))
+    rest = np.lexsort((li, -np.round(more, 9), loop))    # ties by the order of the edges (run 287)
     total, same = np.zeros((nl, 3)), math.cos(math.radians(SAME_SIDE))
     for _pass in range(4):
         if not len(rest):
@@ -514,33 +514,56 @@ def bevel_copy(cp):
     chosen = w > 0.5
     if not chosen.any():
         return cp
+    # only the islands with a chosen edge go through the steps; the others stay as they were baked, bit for bit
+    # (UPDATES #54, run 287: setting the normals of the whole copy again moved those of the other islands by up to
+    # 0.27 degrees, and a batch of islands without a chosen edge was left as it was - so batches differed)
+    from . import meshparts
+    island = meshparts.point_islands(cp)
+    ev = np.zeros(len(cp.edges) * 2, np.int64)
+    cp.edges.foreach_get("vertices", ev)
+    lv0 = np.zeros(len(cp.loops), np.int64)
+    cp.loops.foreach_get("vertex_index", lv0)
+    ls0 = np.zeros(len(cp.polygons), np.int64)
+    cp.polygons.foreach_get("loop_start", ls0)
+    with_edge = np.isin(island[lv0[ls0]], island[ev.reshape(-1, 2)[chosen, 0]])
+    rest = None
+    me = cp
+    if not with_edge.all():
+        me, _v, edges, _f = meshparts.sub_mesh(cp, np.nonzero(with_edge)[0], cp.name + "~bevel")
+        rest, *_ = meshparts.sub_mesh(cp, np.nonzero(~with_edge)[0], cp.name + "~plain")
+        chosen = chosen[edges]
     width = bevel_width()                           # the Radius: the bevel reaches that far on each face
     segments = int(sig.split("/")[1])
-    lines = edge_lines(cp, chosen)
-    frames = edgeshape.edge_frames(cp, chosen)
-    before = cp.copy()
+    lines = edge_lines(me, chosen)
+    frames = edgeshape.edge_frames(me, chosen)
+    before = me.copy()
     try:
-        edgeshape.mark_chosen(cp, chosen)
-        points, _cuts = edgesupport.support_edges(cp, chosen, width)
+        edgeshape.mark_chosen(me, chosen)
+        points, _cuts = edgesupport.support_edges(me, chosen, width)
         if segments == 3:                           # the corners of the middle facet
-            more, _cuts = edgesupport.support_edges(cp, edgeshape.chosen_again(cp), width * edgeshape.SHAPE_ROW3)
+            more, _cuts = edgesupport.support_edges(me, edgeshape.chosen_again(me), width * edgeshape.SHAPE_ROW3)
             points += more
-        edgeshape.chosen_again(cp, drop=True)
-        edgesupport.carry_normals(cp, before)
+        edgeshape.chosen_again(me, drop=True)
+        edgesupport.carry_normals(me, before)
     finally:
         bpy.data.meshes.remove(before)
-    plain = np.zeros(len(cp.loops) * 3, np.float32)
-    cp.corner_normals.foreach_get("vector", plain)
-    turned = round_in_normals(cp, lines, width)
-    kept = edgesupport.keep_plain(cp, lines, width, plain.reshape(-1, 3))
-    normals = np.zeros(len(cp.loops) * 3, np.float32)
-    cp.corner_normals.foreach_get("vector", normals)
+    plain = np.zeros(len(me.loops) * 3, np.float32)
+    me.corner_normals.foreach_get("vector", plain)
+    turned = round_in_normals(me, lines, width)
+    kept = edgesupport.keep_plain(me, lines, width, plain.reshape(-1, 3))
+    normals = np.zeros(len(me.loops) * 3, np.float32)
+    me.corner_normals.foreach_get("vector", normals)
     normals = normals.reshape(-1, 3).astype(np.float64)
-    moved, back, loops, round_normals = edgeshape.shape_edges(cp, frames, width, segments)
+    moved, back, loops, round_normals = edgeshape.shape_edges(me, frames, width, segments)
     normals[loops] = round_normals                  # the normals of the round surface where it was moved
-    flat = edgeshape.plain_where_off(normals, cp)
-    cp.normals_split_custom_set(normals)     # the shading of the rounding, on the new shape
-    cp.update()
+    flat = edgeshape.plain_where_off(normals, me)
+    me.normals_split_custom_set(normals)     # the shading of the rounding, on the new shape
+    me.update()
+    if rest is not None:                            # the bevelled islands and the others in one copy again
+        joined, _off = meshparts.join([me, rest], cp.name + "~joined")
+        meshparts.assign(cp, joined)
+        for m in (me, rest, joined):
+            bpy.data.meshes.remove(m)
     cp[EDGE_ATTR] = 0.0 if SHADER_TOO else 1.0     # the material's rounding: off, or on top for the test (SHADER_TOO)
     cp["rb_bevel_normals"], cp["rb_bevel_support"], cp["rb_bevel_plain"] = turned, points, kept
     cp["rb_bevel_moved"], cp["rb_bevel_back"], cp["rb_bevel_flat"] = len(moved), back, flat

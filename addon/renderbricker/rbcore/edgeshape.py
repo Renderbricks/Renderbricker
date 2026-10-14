@@ -264,7 +264,9 @@ def _field(pos, rid, li, frames, width, segments):
     move = target - (q + np.where(side_b[:, None], wb, wa) * dd[:, None])
     # per place: the nearest edge of each direction (pieces of one run ask the same: once)
     feature = _unit(wa + wb)
-    rest = np.lexsort((d, rid))
+    # (ties - a place on the point between two edges of a run is as near to both - go by the order of the edges, the
+    # same in a batch of islands; the order the search found them in was not, run 287)
+    rest = np.lexsort((li, np.round(d, 7), rid))
     same = math.cos(math.radians(SHAPE_SAME))
     picked = []
     for _pass in range(3):

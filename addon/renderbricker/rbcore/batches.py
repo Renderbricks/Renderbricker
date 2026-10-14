@@ -151,9 +151,11 @@ def join_copies(orig, parts, level):
         joined[bevel.EDGE_FOLDS] = ",".join(str(i) for i in sorted(set(folds)))
     if gaps:
         joined[bevel.EDGE_GAP] = max(gaps)
-    for key in BEVEL_COUNTS:                        # what bevel_copy counted, over all batches
-        if key in joined:
+    for key in BEVEL_COUNTS:                        # what bevel_copy counted, over all batches (a batch without a
+        if any(key in cp for _f, _s, cp in parts):  # chosen edge has no counts)
             joined[key] = sum(int(cp.get(key, 0)) for _f, _s, cp in parts)
+    if any(bevel.EDGE_ATTR in cp for _f, _s, cp in parts):
+        joined[bevel.EDGE_ATTR] = next(cp[bevel.EDGE_ATTR] for _f, _s, cp in parts if bevel.EDGE_ATTR in cp)
     joined.use_fake_user = True
     if copies._COPY_INDEX[0] is not None:
         copies._COPY_INDEX[0].setdefault(orig.name, []).append(joined)
