@@ -26,7 +26,7 @@ import math
 
 import numpy as np
 
-from . import workscene
+from . import meshparts, workscene
 
 SHRINK_ROUNDS = 6           # subdivide, measure, correct - at most; a round that leaves more than the one before ends it
 SHRINK_STEP = 0.7           # share of the measured shrink corrected per round (the full step overshot on 3839v2)
@@ -151,23 +151,34 @@ def compensate_shrink(work, wm, free=()):
     radial /= np.maximum(np.linalg.norm(radial, axis=1), 1e-12)[:, None]
     normals = np.zeros(len(wm.loops) * 3, np.float32)
     wm.corner_normals.foreach_get("vector", normals)
-    co, best, best_left, reach = target.copy(), target.copy(), np.inf, None
+    # every island of the cage goes its own rounds (UPDATES #54): its shrink left is its own mean, its best round is
+    # kept and it stops on its own - the rounds of one stud do not depend on the other studs of a baseplate, so a
+    # large mesh can be converted in batches of islands with the same result
+    _ids, isl = np.unique(meshparts.point_islands(wm), return_inverse=True)
+    k = len(_ids)
+    co, best, best_left, reach = target.copy(), target.copy(), np.full(k, np.inf), None
+    active = np.ones(k, bool)
     for round_ in range(SHRINK_ROUNDS + 1):
         out = ((target - _limit_points(work, n)) * radial).sum(axis=1)     # > 0: the surface lies nearer the axis
         if reach is None:                           # who takes part, and how far: decided on the first measure
             on &= out > SHRINK_MIN
             reach = np.minimum(SHRINK_GROW * np.maximum(out, 0.0), SHRINK_MAX)
+            active &= np.bincount(isl[on], minlength=k) > 0
         out = np.where(on, np.maximum(out, 0.0), 0.0)       # only shrink is corrected
-        left = float(out[on].mean()) if on.any() else 0.0
-        if left < best_left:
-            best, best_left = co.copy(), left
-        elif round_:
+        count = np.bincount(isl[on], minlength=k)
+        left = np.bincount(isl[on], weights=out[on], minlength=k) / np.maximum(count, 1)
+        better = active & (left < best_left)
+        take = better[isl]
+        best[take], best_left[better] = co[take], left[better]
+        if round_:
+            active &= better                        # a round that leaves more than the one before ends the island
+        active &= ~((round_ == SHRINK_ROUNDS) | (left < SHRINK_MIN))
+        if not active.any():
             break
-        if round_ == SHRINK_ROUNDS or left < SHRINK_MIN:
-            break
-        co = co + radial * (SHRINK_STEP * out)[:, None]
+        step = active[isl]
+        co[step] = co[step] + radial[step] * (SHRINK_STEP * out[step])[:, None]
         far = ((co - target) * radial).sum(axis=1)
-        over = far > reach
+        over = step & (far > reach)
         co[over] = target[over] + radial[over] * reach[over, None]
         wm.vertices.foreach_set("co", co.astype(np.float32).ravel())
         wm.update()
@@ -184,16 +195,30 @@ def compensate_shrink(work, wm, free=()):
             round(float(rest.max()) if len(rest) else 0.0, 5), found)
 
 
-def undo_shrink(work, wm):
-    """Put the points of `wm` back where they were before compensate_shrink. Returns True if there was something."""
-    was = WAS.pop(wm.name, None)
+def undo_shrink(work, wm, faces=None):
+    """Put the points of `wm` back where they were before compensate_shrink - all, or (UPDATES #54) those of the
+    islands of `faces`. Returns the number of points moved back."""
+    was = WAS.get(wm.name)
     if was is None or len(was[0]) != len(wm.vertices):
-        return False
-    wm.vertices.foreach_set("co", was[0].astype(np.float32).ravel())
+        return 0
+    co = np.zeros(len(wm.vertices) * 3, np.float64)
+    wm.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    pick = np.ones(len(co), bool)
+    if faces is not None:
+        lab = meshparts.point_islands(wm)
+        lv = np.empty(len(wm.loops), np.int64); wm.loops.foreach_get("vertex_index", lv)
+        ls = np.empty(len(wm.polygons), np.int64); wm.polygons.foreach_get("loop_start", ls)
+        pick = np.isin(lab, lab[lv[ls[np.asarray(sorted(faces), np.int64)]]])
+    back = pick & (np.abs(co - was[0]).max(axis=1) > 0)
+    if faces is None or back.all() or pick.all():
+        WAS.pop(wm.name, None)
+    co[pick] = was[0][pick]
+    wm.vertices.foreach_set("co", co.astype(np.float32).ravel())
     wm.update()
     wm.normals_split_custom_set(was[1].reshape(-1, 3))
     workscene.depsgraph_of(work).update()
-    return True
+    return int(back.sum())
 
 
 WAS = {}                    # cage name -> (the places, the corner normals) before the compensation (undo_shrink)

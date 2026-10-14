@@ -53,7 +53,16 @@ PHONG = float(config.opt("--reparam-phong", "0"))   # Phong lift of slid points 
 CURVE_DEG = float(config.opt("--reparam-curve", "8"))   # no slide onto a facet whose vertex normals spread more (run 224)
 FREE_NORMALS = False  # see slide: compact fan-space normals by default
 SHELL = "rb_shell"    # point attribute: the connected shell of each vertex (a stud on a plate is its own shell)
+SIZE_PIN = [None]     # the part size of the whole mesh while it is converted in batches (batches.py, UPDATES #54)
+TIE = 1e-5           # mm: nearest points this close count as the same distance (canonical, run 287)
+TIE_COS = 1e-4       # facing and flatness of tied triangles this close count as equal (canonical, run 287)
 EDGE = "rb_rim"       # point attribute: 1 on the import's boundary vertices (open rims, seams between shells)
+
+
+def part_size(me):
+    """The largest side of the bounding box of `me` - the scale of MIN_SLIDE."""
+    co = _arr(me.vertices, "co", len(me.vertices), 3)
+    return float(np.ptp(co, 0).max()) or 1.0
 
 
 def mark(work):
@@ -167,7 +176,19 @@ def fixed_uvs(orig, cp, level, verts, P):
             tris = np.where(isl[tf] == kk)[0]
             bvh = BVHTree.FromPolygons(vco.tolist(), tv[tris].tolist())
             j = np.where(k == kk)[0]
-            res = [bvh.find_nearest(x) for x in X[j].tolist()]
+            cen = np.round(vco[tv[tris]].mean(1), 6)
+
+            def nearest(x, face):
+                """Of triangles at the same distance (within TIE): the one of the corner's own face, then the first
+                by position - whatever the tree (UPDATES #54, run 287: 3484 in batches took another triangle)."""
+                r = bvh.find_nearest(x)
+                if r[2] is None:
+                    return r
+                near = bvh.find_nearest_range(x, r[3] + TIE)
+                if len(near) < 2:
+                    return r
+                return min(near, key=lambda q: (tf[tris[q[2]]] != face, tuple(cen[q[2]])))
+            res = [nearest(x, f) for x, f in zip(X[j].tolist(), cf[j].tolist())]
             got = np.array([r[2] is not None for r in res])
             if not got.any():
                 continue
@@ -206,10 +227,21 @@ def slide(cp, Pl, lv, orig=None, level=None):
     # average counted the inward pull at edges as a slide and queried 6.8x as many points, run 222)
     d = Pl - Ps
     dt = d - (d * vn).sum(1)[:, None] * vn
-    size = float(np.ptp(Ps, 0).max()) or 1.0
+    # the part size: the import's (UPDATES #54 - the copy's own box before; in batches the whole mesh's)
+    if SIZE_PIN[0]:
+        size = SIZE_PIN[0]
+    elif orig is not None and len(orig.vertices):
+        size = part_size(orig)
+    else:
+        size = float(np.ptp(Ps, 0).max()) or 1.0
     todo = np.where(~fixed & (np.linalg.norm(dt, axis=1) > MIN_SLIDE * size))[0]
     if not len(todo):
-        return {"moved": 0, "kept": int(fixed.sum()), "max_slide": 0.0}
+        # nothing slides - the vertices that stay (boundary) still get surface-fixed UVs where they should have slid
+        # (run 287: this return skipped them, so a part whose only far vertices are boundary ones kept smoothed UVs
+        # there - in a batch of 3484 while the whole copy, with something to slide elsewhere, fixed them)
+        need = np.linalg.norm(dt, axis=1) > MIN_SLIDE * size
+        nfix = fixed_uvs(orig, cp, level, need, Ps) if (orig is not None and level and need.any()) else 0
+        return {"moved": 0, "kept": int(fixed.sum()), "uv_fixed_corners": int(nfix), "max_slide": 0.0}
 
     if nl == 4 * nf:
         # a subdivided copy is all quads: its triangles straight from the corners, no triangulation and no reads
@@ -223,9 +255,63 @@ def slide(cp, Pl, lv, orig=None, level=None):
         return {"skipped": "not all quads"}           # a subdivided copy always is; nothing else is slid
     fn = _arr(cp.polygons, "normal", nf, 3)
     cn = _arr(cp.corner_normals, "vector", nl, 3)
-    bvh = BVHTree.FromPolygons(Ps.tolist(), tri.tolist())
-    find = bvh.find_nearest
-    res = [find(p) for p in Pl[todo].tolist()]                     # the only per-point Python work
+    tri_shell = shell[tri[:, 0]] if shell is not None else None
+    # one tree per shell (UPDATES #54): a vertex looks for its nearest point on its own shell only - the tree of the
+    # whole copy also held the other shells, and what it answered at their edges depended on which shells were in
+    # it (a batch has fewer); without shells (no rb_shell) the one tree of the copy
+    bvh = BVHTree.FromPolygons(Ps.tolist(), tri.tolist()) if tri_shell is None else None
+    if tri_shell is not None:
+        by_shell = np.argsort(tri_shell, kind="stable")
+        keys, first = np.unique(tri_shell[by_shell], return_index=True)
+        shell_tris = dict(zip(keys.tolist(), np.split(by_shell, first[1:])))
+    tri_n = fn[tf]
+    tri_c = np.round(Ps[tri].mean(1), 6)
+    tv_ = vn[tri]                                                   # how curved each triangle is (as `spread` below)
+    tri_flat = np.minimum(np.minimum((tv_[:, 0] * tv_[:, 1]).sum(1), (tv_[:, 1] * tv_[:, 2]).sum(1)), (tv_[:, 0] * tv_[:, 2]).sum(1))
+    del tv_
+    own_trees = {}
+
+    def canonical(tree, ids, p, v):
+        """The nearest point of `tree` to `p` - of several triangles at the same distance (a point on an edge) the one
+        whose face turns most to the vertex's normal, then the least curved, then the first by position: the same
+        answer whatever the tree (UPDATES #54 - the tree of a batch broke such ties otherwise than the tree of the
+        whole copy; run 287, 3815: a point on the edge of two coplanar quads). `ids`: the triangle numbers of the
+        tree's triangles (None: the same). Same distance: within TIE mm - the float noise of the copy's points."""
+        r = tree.find_nearest(p)
+        if r[2] is None:
+            return r
+        near = tree.find_nearest_range(p, r[3] + TIE)                  # mathutils_bvhtree.cc 476
+        if len(near) > 1:
+            cand = [(q, int(ids[q[2]]) if ids is not None else q[2]) for q in near]
+            # within TIE_COS counts as equal: the normals of a copy carry float noise of their own summation
+            # order (run 287, 32013: 0.998338 / 0.998337 in the whole copy, 0.998336 / 0.998336 in its batch)
+            facing = np.array([float(tri_n[c[1]] @ vn[v]) for c in cand])
+            cand = [c for c, f in zip(cand, facing) if f >= facing.max() - TIE_COS]
+            flat = np.array([float(tri_flat[c[1]]) for c in cand])
+            cand = [c for c, f in zip(cand, flat) if f >= flat.max() - TIE_COS]
+            best = min(cand, key=lambda c: tuple(tri_c[c[1]]))
+            return best[0][0], best[0][1], best[1], best[0][3]
+        return r[0], r[1], int(ids[r[2]]) if ids is not None else r[2], r[3]
+
+    def find_own(points, who):
+        """Nearest points on the vertices' own shells (UPDATES #54: the nearest of the whole copy could lie on another
+        shell - the vertex then stayed - and the answer depended on the shells in the tree)."""
+        if tri_shell is None:
+            return [canonical(bvh, None, p, who[j]) for j, p in enumerate(points)]
+        out = []
+        for j, p in enumerate(points):
+            s = int(shell[who[j]])
+            if s not in own_trees:
+                sel = shell_tris.get(s)
+                if sel is None or not len(sel):
+                    own_trees[s] = None
+                else:
+                    vs, local = np.unique(tri[sel], return_inverse=True)
+                    own_trees[s] = (BVHTree.FromPolygons(Ps[vs].tolist(), local.reshape(-1, 3).tolist()), sel)
+            t = own_trees[s]
+            out.append(canonical(t[0], t[1], p, who[j]) if t is not None else (None, None, None, None))
+        return out
+    res = find_own(Pl[todo].tolist(), todo)                         # the only per-point Python work
     found = np.array([r[2] is not None for r in res])              # no hit (4856, catalog 1.2.5): the point stays
     loc = np.array([r[0] if r[2] is not None else (0.0, 0.0, 0.0) for r in res], np.float64).reshape(-1, 3)
     hit = np.array([r[2] if r[2] is not None else 0 for r in res], np.int64)
@@ -237,7 +323,7 @@ def slide(cp, Pl, lv, orig=None, level=None):
         nq = (Wq[:, :, None] * vn[tri[hit]]).sum(1)
         nq /= np.maximum(np.linalg.norm(nq, axis=1), 1e-12)[:, None]
         tgt = Pl[todo] - ((Pl[todo] - loc) * nq).sum(1)[:, None] * nq
-        res = [find(p) for p in tgt.tolist()]
+        res = find_own(tgt.tolist(), todo)
         got = np.array([r[2] is not None for r in res])
         loc = np.where(got[:, None], np.array([r[0] if r[2] is not None else (0.0, 0.0, 0.0) for r in res], np.float64).reshape(-1, 3), loc)
         hit = np.where(got, np.array([r[2] if r[2] is not None else 0 for r in res], np.int64), hit)
@@ -289,7 +375,7 @@ def slide(cp, Pl, lv, orig=None, level=None):
     todo, hit = todo[keep_], hit[keep_]
     pulled = np.abs(new[todo] - loc[keep_]).max(1) > 0
     if pulled.any():                                     # back on the surface, and its triangle for the normals
-        res = [find(p) for p in new[todo[pulled]].tolist()]
+        res = find_own(new[todo[pulled]].tolist(), todo[pulled])
         idx = todo[pulled]
         for j, r in enumerate(res):
             if r[2] is not None:

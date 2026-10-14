@@ -271,7 +271,12 @@ def drop_copies(orig, keep=()):
             bpy.data.meshes.remove(m)
 
 
+QUALITY_PIN = [None]           # a batch of a large mesh is baked at the quality of the whole mesh (batches.py)
+
+
 def bake_quality(me):
+    if QUALITY_PIN[0] is not None:
+        return QUALITY_PIN[0]
     return config.BAKE_QUALITY if len(me.polygons) <= config.QUALITY_FACE_LIMIT else config.BAKE_QUALITY_LARGE
 
 

@@ -4,7 +4,7 @@ import bpy, bmesh, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
-from . import bevel, checks, config, copies, creases, shading, shrink, workscene
+from . import bevel, checks, config, copies, creases, meshparts, shading, shrink, workscene
 
 
 # ================================================================ rules 3.0: weld (runs 48-50)
@@ -36,7 +36,7 @@ ROUNDING_RATIO = 2.0     # ... its two pieces are about the same length ...
 ROUNDING_DEPTH = 0.06    # ... and the free point gives way by no more than this (mm): a corner radius up to about 0.6
 ROUND_ENDS = config.opt("--round-ends", "1") == "1"   # W18 (run 283); "0": rules 3.7, for comparisons
 ENDS_LOG = None          # a list: (mesh, middle of the seam, why not / "released") of every seam W18 looks at (scans)
-NO_ENDS = [False]        # True while a part whose copy folded with W18 is welded again without it (_bake_weld)
+NO_ENDS = [None]         # the import's faces where W18 is left out: the islands whose copy folded with it (_bake_weld)
 
 
 DESIGN_TURN = 20.0       # W15 (run 73): designed corner - long crease edge into a short one ...
@@ -52,6 +52,7 @@ MECH_FLAT = 0.12         # W15 on organic spots only on parts with at least this
 
 
 LAST_FLAT_SHARE = [0.0]  # area share of the not curved islands of the last welded mesh
+FLAT_SHARE_PIN = [None]  # a batch of a large mesh takes the share of the whole mesh (batches.py, UPDATES #54)
 
 
 DESIGN_LOG = None        # a list: (mesh, position, turn) of every designed corner (scans, run 73)
@@ -183,6 +184,8 @@ def _islands(w):
     # (tire 2515: hub, side wall) against an organic one (hair: almost all curved), W15 (run 73)
     area_all = sum(f.calc_area() for f in bm.faces) or 1.0
     flat_share = sum(f.calc_area() for f in bm.faces if kind_of[f[isl]] != "curved") / area_all
+    if FLAT_SHARE_PIN[0] is not None:
+        flat_share = FLAT_SHARE_PIN[0]
     LAST_FLAT_SHARE[0] = flat_share
     w.bm, w.isl, w.kind_of, w.flat_share = bm, isl, kind_of, flat_share
 
@@ -685,9 +688,13 @@ def _rounding_ends(w):
     level: left where it was, it stood out above the lowered rim as a peak in the outline (seen from the back)."""
     bm, E, V = w.bm, w.E, w.V
     w.soft, w.supports, w.new_points, w.corners_before = [], 0, set(), {}
-    if not (ROUND_ENDS and COARSE_ROUNDING) or NO_ENDS[0]:
+    if not (ROUND_ENDS and COARSE_ROUNDING):
         return
     fi = bm.faces.layers.int.get("rb_fi")
+    off = NO_ENDS[0] or ()
+
+    def left_out(f):
+        return (f[fi] if fi is not None else f.index) in off
 
     def creased(v):
         return [e for e in v.link_edges if e in E or len(e.link_faces) == 1]
@@ -725,6 +732,8 @@ def _rounding_ends(w):
     found = []
     for s in sorted((e for e in E if len(e.link_faces) == 2), key=lambda e: e.index):
         fa, fb = s.link_faces
+        if off and (left_out(fa) or left_out(fb)):
+            continue
         if not ARC_RELEASE_TURN < math.degrees(fa.normal.angle(fb.normal, 0.0)) < config.SHARP_TURN:
             continue
         for wall, plane in ((fa, fb), (fb, fa)):            # which of the two faces is the wall of the rounding
@@ -1155,6 +1164,9 @@ def _fit(work, wm, rep):
 
 
 def _bake_weld(orig, levels, method_rep=None):
+    from . import batches
+    if batches.wanted(orig):                    # a large mesh: batch by batch of islands (UPDATES #54, run 287)
+        return batches.bake(orig, levels)
     # run 59 tried baking first and checking folds on the copy: 306 of Ratatouille's 667
     # meshes need the repair anyway and were then baked twice - slower (349 -> 396 s)
     work, wm, tv, rep = weld_work(orig)
@@ -1169,24 +1181,32 @@ def _bake_weld(orig, levels, method_rep=None):
         # quality and the copies baked again (1 of 1,372 parts in the library; doing every check at the bake
         # quality cost 2.5-3.6x the repair time).
         lv = config.RENDER_LEVEL if config.RENDER_LEVEL in made else max(made)
-        if rep.get("shrink_points") and baked_folds(orig, made[lv], lv):
-            # the compensation must not cost a fold: the cage goes back to the import's places, baked again
-            shrink.undo_shrink(work, wm)
-            rep["shrink_dropped"], rep["shrink_points"] = 1, 0
+        folded = baked_folds(orig, made[lv], lv) if rep.get("shrink_points") else ()
+        if folded:
+            # the compensation must not cost a fold: the islands that fold go back to the import's places, baked
+            # again (per island since UPDATES #54 - before, one fold took it back on the whole mesh)
+            back = shrink.undo_shrink(work, wm, folded)
+            rep["shrink_dropped"], rep["shrink_points"] = 1, max(0, rep["shrink_points"] - back)
             for cp in made.values():
                 copies.discard_copy(orig, cp)
             made = _bake_work(orig, work, levels, tv)
-        if rep.get("rounding_ends") and baked_folds(orig, made[lv], lv):
-            # W18 must not cost a fold (library, run 283: con1 folded on two faces with it, on none without): this
-            # part is welded again as rules 3.7 make it
+        folded = baked_folds(orig, made[lv], lv) if rep.get("rounding_ends") else ()
+        if folded:
+            # W18 must not cost a fold (library, run 283: con1 folded on two faces with it, on none without): the
+            # islands that fold are welded again as rules 3.7 make them (per island since UPDATES #54)
+            own = np.arange(len(wm.polygons))
+            at = wm.attributes.get("rb_fi")
+            if at is not None:
+                at.data.foreach_get("value", own)
+            off = set(own[meshparts.island_faces(wm, folded)].tolist())
             for cp in made.values():
                 copies.discard_copy(orig, cp)
             bpy.data.objects.remove(work); bpy.data.meshes.remove(wm)
-            NO_ENDS[0] = True
+            NO_ENDS[0] = off
             try:
                 work, wm, tv, rep = weld_work(orig)
             finally:
-                NO_ENDS[0] = False
+                NO_ENDS[0] = None
             rep["rounding_ends_dropped"] = 1
             _fit(work, wm, rep)
             if bevel.signature():
