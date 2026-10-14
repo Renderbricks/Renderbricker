@@ -361,7 +361,7 @@ def strip_normals(me, before):
     vn = np.where(has[:, None], beside, inside)
     out[of_strip] = vn[lv[of_strip]]
     out /= np.maximum(np.linalg.norm(out, axis=1), 1e-12)[:, None]
-    me.normals_split_custom_set(out.tolist())
+    me.normals_split_custom_set(out)
     me.update()
     return int(strip.sum())
 
@@ -443,7 +443,7 @@ def round_in_normals(me, lines, width):
     limit = math.tan(math.radians(TURN_MAX))
     total[touched] *= np.minimum(1.0, limit / np.maximum(size, 1e-12))[:, None]
     normals[touched] = _unit(normals[touched] + total[touched])
-    me.normals_split_custom_set(normals.tolist())
+    me.normals_split_custom_set(normals)
     me.update()
     return int(len(touched))
 
@@ -526,7 +526,7 @@ def bevel_copy(cp):
     moved, back, loops, round_normals = edgeshape.shape_edges(cp, frames, width, segments)
     normals[loops] = round_normals                  # the normals of the round surface where it was moved
     flat = edgeshape.plain_where_off(normals, cp)
-    cp.normals_split_custom_set(normals.tolist())     # the shading of the rounding, on the new shape
+    cp.normals_split_custom_set(normals)     # the shading of the rounding, on the new shape
     cp.update()
     cp[EDGE_ATTR] = 1.0
     cp["rb_bevel_normals"], cp["rb_bevel_support"], cp["rb_bevel_plain"] = turned, points, kept

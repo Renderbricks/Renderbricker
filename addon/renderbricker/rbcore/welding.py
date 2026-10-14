@@ -932,7 +932,7 @@ def _work_mesh(w, arc_released):
                 nn[p.loop_start:p.loop_start + p.loop_total] = 0.0     # zero = Blender's smooth normal
                 if sf:
                     sf.data[i].value = False
-        wm.normals_split_custom_set(nn.tolist())
+        wm.normals_split_custom_set(nn)
         n1 = np.empty(len(wm.loops) * 3); wm.corner_normals.foreach_get("vector", n1)
         a0, a1 = n0.reshape(-1, 3)[np.maximum(src, 0)], n1.reshape(-1, 3)
         ok = (np.linalg.norm(a0, axis=1) > 0.5) & (np.linalg.norm(a1, axis=1) > 0.5)   # zero normals of slivers

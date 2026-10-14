@@ -367,7 +367,7 @@ def carry_normals(me, before):
             v[flat] = fn[got[flat]]
             out[got] = v
     out /= np.maximum(np.linalg.norm(out, axis=1), 1e-12)[:, None]
-    me.normals_split_custom_set(out.tolist())
+    me.normals_split_custom_set(out)
     me.update()
     return len(moved)
 
@@ -417,6 +417,6 @@ def keep_plain(me, lines, width, plain):
     count = int(np.logical_and.reduceat(streak, ls).sum())
     if count:
         n[streak] = plain[streak]
-        me.normals_split_custom_set(n.tolist())
+        me.normals_split_custom_set(n)
         me.update()
     return count

@@ -174,7 +174,7 @@ def compensate_shrink(work, wm, free=()):
     co = best
     wm.vertices.foreach_set("co", co.astype(np.float32).ravel())
     wm.update()
-    wm.normals_split_custom_set(normals.reshape(-1, 3).tolist())       # the normals as they were, on the new places
+    wm.normals_split_custom_set(normals.reshape(-1, 3))       # the normals as they were, on the new places
     moved = np.linalg.norm(co - target, axis=1)
     if not (moved > SHRINK_MIN).any():
         return 0, 0.0, 0.0, found
@@ -191,7 +191,7 @@ def undo_shrink(work, wm):
         return False
     wm.vertices.foreach_set("co", was[0].astype(np.float32).ravel())
     wm.update()
-    wm.normals_split_custom_set(was[1].reshape(-1, 3).tolist())
+    wm.normals_split_custom_set(was[1].reshape(-1, 3))
     workscene.depsgraph_of(work).update()
     return True
 

@@ -351,7 +351,7 @@ def slide(cp, Pl, lv, orig=None, level=None):
         cp.update()
     else:
         cp.update()
-        cp.normals_split_custom_set(ln.tolist())
+        cp.normals_split_custom_set(ln)
     mv = np.linalg.norm(new - Ps, axis=1)
     return {"moved": int(len(todo)), "kept": int((~ok).sum() + fixed.sum()), "uv_fixed_corners": int(nfix),
             "max_slide": float(mv.max()) if n else 0.0}
