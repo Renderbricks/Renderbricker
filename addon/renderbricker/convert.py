@@ -274,9 +274,10 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         core.SMOOTH_MAPS = maps_on(s)
         common.edge_settings(s)
         items = list(common.by_mesh(common.targets(context)).items())
-        if s.edges == 'SHADER':                 # the Radius reaches the importer's Bevel value at once: no new copies
+        if s.edges == 'SHADER' or core.SHADER_TOO:     # the Radius reaches the importer's Bevel value at once: no new copies
             for me, _obs in items:
                 core.set_shader_radius(core.original_of(me), core.shader_radius())
+        common.shader_too(context)              # copies made before take the test switch Bevel shader too (#52)
         self.scope_items = items
         if self.force:
             return items, []
@@ -407,7 +408,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                 "--shading", "mecabricks" if s.variant == 'A' else "geometric",
                 "--smooth-maps", "1" if maps_on(s) else "0",
                 "--edges", "bevel" if s.edges == 'BEVEL' else "shader", "--edge-radius", f"{s.edge_radius:.3f}",
-                "--bevel-segments", str(s.bevel_segments)]
+                "--bevel-segments", str(s.bevel_segments), "--bevel-shader", "1" if core.SHADER_TOO else "0"]
         self.workers = core.Workers(dict(self.items), jobs, opts, [me.name for me, _ in self.items])
         self.jobs, self.merging, self.t_start = jobs, False, time.time()
         s.running, s.progress, s.progress_text = True, 0.0, f"0 / {len(self.items)}   starting {jobs} Blenders"

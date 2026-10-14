@@ -96,6 +96,9 @@ from . import config, creases, edgeshape, edgesupport, maps
 EDGES = config.opt("--edges", "shader")                     # "shader" or "bevel"; set by the add-on or the command line
 EDGE_RADIUS = float(config.opt("--edge-radius", "0.1"))     # the edge radius in mm (the units of the mesh)
 BEVEL_SEGMENTS = int(config.opt("--bevel-segments", "2"))
+# Edges: Bevel with the shader's rounding on top (maintainer 2026-10-14: "ich möchte gerne mal testen, wie der Bevel
+# modus mit und ohne zusätzlichen Bevel Shader aussieht"): the copies read 0 instead of 1, the switch keeps the shader
+SHADER_TOO = config.opt("--bevel-shader", "0") == "1"
 # open for the test (maintainer 2026-10-14: "für den nächsten Test grenzen wir erst einmal das Eingabefenster nicht
 # mehr ein"); before: 0.08 to 0.2 ("mm so machen 0.08 bis 0.2")
 RADIUS_MIN, RADIUS_MAX, SEGMENTS_MAX = 0.001, 10.0, 3     # segments: "maximal 3 Facetten" (UPDATES #50)
@@ -528,7 +531,7 @@ def bevel_copy(cp):
     flat = edgeshape.plain_where_off(normals, cp)
     cp.normals_split_custom_set(normals)     # the shading of the rounding, on the new shape
     cp.update()
-    cp[EDGE_ATTR] = 1.0
+    cp[EDGE_ATTR] = 0.0 if SHADER_TOO else 1.0     # the material's rounding: off, or on top for the test (SHADER_TOO)
     cp["rb_bevel_normals"], cp["rb_bevel_support"], cp["rb_bevel_plain"] = turned, points, kept
     cp["rb_bevel_moved"], cp["rb_bevel_back"], cp["rb_bevel_flat"] = len(moved), back, flat
     return cp

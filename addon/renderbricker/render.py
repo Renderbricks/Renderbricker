@@ -45,6 +45,29 @@ def _swap_back():
 def _render_pre(scene, *args):
     if _main_thread() and not _RENDER_OP[0]:
         _swap_to_render(scene)
+        _edges_warning()
+
+
+def _edges_warning():
+    """F12 while the Edges settings ask for Apply (UPDATES #52): a line in the status bar for a while - the render
+    shows the old edges. The render goes on."""
+    from . import widgets
+    try:
+        if widgets.edges_pending(bpy.context) != "convert":
+            return
+    except Exception:
+        return
+    text = "Renderbricker: Edges changed since the last Apply - this render shows the old edges. Apply converts the parts."
+
+    def show(on=True):
+        for ws in bpy.data.workspaces:
+            try:
+                ws.status_text_set(text if on else None)
+            except Exception:
+                pass
+        return None
+    bpy.app.timers.register(lambda: show(True), first_interval=0.1)
+    bpy.app.timers.register(lambda: show(False), first_interval=15.0)
 
 
 @persistent

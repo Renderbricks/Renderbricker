@@ -6,6 +6,11 @@ from . import collection_list, common
 
 
 # ---------------------------------------------------------------- properties
+def _shader_too(context):
+    from . import common                    # (props is read before common)
+    common.shader_too(context)
+
+
 class MECSUB_Problem(bpy.types.PropertyGroup):
     obj: StringProperty()
     info: StringProperty()
@@ -536,6 +541,11 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         name="Segments", default=2, min=1, max=3,      # maintainer 2026-10-14: "Standard für Segments auf 2 setzen."
         description="Facets of the bevel across an edge: 1 is a flat chamfer, 3 rounds the outline. The shading "
                     "is round with any number")
+    edge_shader_too: bpy.props.BoolProperty(
+        name="Bevel shader too", default=False,
+        update=lambda self, context: _shader_too(context),
+        description="For a test: the importer's bevel shader rounds the edges on top of the real bevel (Cycles: "
+                    "Bevel node, EEVEE: its map), at the Radius. Takes effect at once, no Apply")
     smooth_maps: bpy.props.BoolProperty(
         name="Bevel maps for EEVEE", default=False,
         description="EEVEE has no bevel shader; the importer shows a small baked map there, made for the coarse "

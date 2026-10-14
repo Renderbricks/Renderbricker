@@ -129,7 +129,7 @@ def _parent(users, weight, total_w):
         workers.say(f"SKIPPED for memory: {len(skipped)} meshes ({', '.join(skipped[:5])}) - close other programs and run again")
     if failed:
         workers.say(f"Errors in {len(failed)} meshes ({', '.join(failed)}) - left as imported")
-    if bevel.EDGES == "shader":             # the Radius of the panel in the importer's materials (UPDATES #43)
+    if bevel.EDGES == "shader" or bevel.SHADER_TOO:     # the Radius of the panel in the importer's materials (#43, #52)
         for me in users:
             bevel.set_shader_radius(copies.original_of(me), bevel.shader_radius())
     if maps.SMOOTH_MAPS and not bevel.signature():      # bevel maps baked from the render copies (UPDATES #40)

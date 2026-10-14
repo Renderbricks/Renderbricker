@@ -76,6 +76,33 @@ def edge_settings(s):
     """The panel's Edges settings in the core (UPDATES #43) - before a run and before a part is edited."""
     core.EDGES = "bevel" if s.edges == 'BEVEL' else "shader"
     core.EDGE_RADIUS, core.BEVEL_SEGMENTS = s.edge_radius, s.bevel_segments
+    core.SHADER_TOO = s.edges == 'BEVEL' and s.edge_shader_too
+
+
+def shader_too(context):
+    """Bevel shader too (a test switch, UPDATES #52): every bevelled copy tells the material to keep its own rounding
+    (0) or to leave it off (1); with it on, the importer's Bevel value of these parts is the Radius, as with Shader.
+    At once, no Apply. Returns the number of copies set."""
+    s = context.scene.mecsub
+    edge_settings(s)
+    keep = 0.0 if core.SHADER_TOO else 1.0
+    changed, origs = 0, set()
+    for m in bpy.data.meshes:
+        if m.get(core.EDGE_MARK):
+            if m.get(core.EDGE_ATTR) != keep:
+                m[core.EDGE_ATTR] = keep
+                changed += 1
+            orig = core.original_of(m)
+            if orig is not None:
+                origs.add(orig)
+    if core.SHADER_TOO:
+        for orig in origs:
+            core.set_shader_radius(orig, core.shader_radius())
+    if changed:
+        for ob in context.scene.objects:
+            if ob.type == 'MESH' and ob.data is not None and ob.data.get(core.EDGE_MARK):
+                ob.update_tag()
+    return changed
 
 
 # ---------------------------------------------------------------- what Convert headless does

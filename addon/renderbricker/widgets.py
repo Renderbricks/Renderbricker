@@ -183,6 +183,13 @@ def draw_edges(L, s):
     col.prop(s, "edge_radius")
     if s.edges == 'BEVEL':                  # a real bevel: its facets (UPDATES #50, "maximal 3 Facetten")
         col.prop(s, "bevel_segments")
+        L.prop(s, "edge_shader_too")
+    pending = edges_pending(bpy.context)
+    if pending:                             # UPDATES #52: "Das muss der User erfahren und ausführen."
+        box = L.box()
+        box.alert = True
+        for k, line in enumerate(EDGES_NOTE[pending]):
+            box.label(text=line, icon='ERROR' if k == 0 else 'BLANK1')
     if s.edges != 'BEVEL':                  # a bevelled copy has its rounding in the mesh: no maps, no option
         L.prop(s, "smooth_maps")         # (maintainer 2026-10-13: "Sollte bei Bevels einfach weg sein")
 
@@ -296,10 +303,41 @@ def apply_key(context):
     return f"{s.variant}|{s.view_level}|{s.render_level}|{scope}|{core.RULES_VERSION}|{len(bpy.data.meshes)}|{n}|{edges}"
 
 
+EDGES_NOTE = {
+    "convert": ("Edges changed: the parts still show the old edges.", "Apply converts them again."),
+    "radius": ("Radius changed: Apply sets it in the materials.",),
+}
+
+
+def _edges_of(key):
+    """Edges, Radius and Segments at the end of an apply_key."""
+    return tuple(key.split("|")[-3:]) if key else None
+
+
+def edges_pending(context):
+    """What the Edges settings ask of the next Apply (UPDATES #52): "convert" - Shader and Bevel swapped, or Radius or
+    Segments changed with Bevel: the copies are made again; "radius" - Radius changed with Shader: only the materials;
+    None - as the last Apply made it, or nothing applied yet."""
+    applied = _edges_of(context.scene.get(APPLIED_KEY))
+    if not applied or len(applied) != 3:
+        return None
+    now = _edges_of(apply_key(context))
+    if now == applied:
+        return None
+    if now[0] != applied[0] or now[0] == 'BEVEL':
+        return "convert"
+    return "radius" if now[1] != applied[1] else None
+
+
 def apply_button(L, context, **kw):
-    """Apply, or "Apply: up to date" when the last Apply covered the same (user, 2026-09-29)."""
+    """Apply, or "Apply: up to date" when the last Apply covered the same (user, 2026-09-29); red with "edges changed"
+    when the Edges settings ask for it (UPDATES #52)."""
     sc = context.scene
     s = sc.mecsub
     if sc.get(APPLIED_KEY) == apply_key(context) and (sc.get(APPLIED_MAPS) or not s.smooth_maps):
         return L.operator("mecsub.apply", text="Apply: up to date", icon='CHECKMARK', **kw)
+    if edges_pending(context):
+        row = L.row()
+        row.alert = True
+        return row.operator("mecsub.apply", text="Apply \u2013 edges changed", icon='ERROR', **kw)
     return L.operator("mecsub.apply", icon='MOD_SUBSURF', **kw)

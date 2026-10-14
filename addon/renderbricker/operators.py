@@ -430,7 +430,9 @@ class MECSUB_OT_render_scene(bpy.types.Operator):
         size = os.path.getsize(st[1]) / 1e9 if st is not None and st[3] else 0
         msg = (f"Write {os.path.basename(out)} with all parts at the render level inside"
                + (f" (about {size:.1f} GB)" if size >= 0.1 else "") + "? It renders without Renderbricker; this "
-               "scene stays as it is" + (". The existing file is replaced" if os.path.exists(out) else ""))
+               "scene stays as it is" + (". The existing file is replaced" if os.path.exists(out) else "")
+               + (". Edges changed since the last Apply: the file would show the old edges - Apply first"
+                  if widgets.edges_pending(context) == "convert" else ""))
         return context.window_manager.invoke_confirm(self, event, title="Render scene", message=msg)
 
     @staticmethod
@@ -688,7 +690,8 @@ def headless_args(context, out):
             "--low-memory", s.low_memory.lower(),
             "--smooth-maps", "1" if s.smooth_maps and s.edges != 'BEVEL' else "0",
             "--edges", "bevel" if s.edges == 'BEVEL' else "shader", "--edge-radius", f"{s.edge_radius:.3f}",
-            "--bevel-segments", str(s.bevel_segments)]
+            "--bevel-segments", str(s.bevel_segments),
+            "--bevel-shader", "1" if s.edges == 'BEVEL' and s.edge_shader_too else "0"]
     listing = os.path.splitext(out)[0] + "_objects.json"
     with open(listing, "w", encoding="utf-8") as fh:
         json.dump(sorted(o.name for o in common.targets(context)), fh, ensure_ascii=False)
