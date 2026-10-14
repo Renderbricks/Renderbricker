@@ -170,7 +170,8 @@ def cell_classes(arr, cores, fulls, corners, ids, passive):
     def centres(f, corner):
         sizes = lt[f]
         starts = np.concatenate(([0], np.cumsum(sizes)[:-1]))
-        return np.add.reduceat(co[lv[meshparts.face_loops(ls, lt, f)]].astype(np.float64) - corner, starts) / sizes[:, None]
+        pts = co[lv[meshparts.face_loops(ls, lt, f)]].astype(np.float64) - corner
+        return np.add.reduceat(pts, starts) / sizes[:, None]
 
     def described(f, corner, islands=False):
         lc = meshparts.face_loops(ls, lt, f)
@@ -276,9 +277,9 @@ def grid_origin(arr, unit):
     return origin
 
 
-CELL = 8.0      # mm: the cells a unit too large for a batch is cut into - the LEGO module, from the corner of the part
-CELL_FACES = int(config.opt("--cell-faces", "100000"))   # a unit above this is baked in cells (about 9 GB at the large
-                                                          # parts' quality) - smaller ones whole, in a batch of their own
+CELL = 8.0      # mm: the cells a unit too large for a batch is cut into - the LEGO module (grid_origin)
+CELL_FACES = int(config.opt("--cell-faces", "100000"))   # a unit above this is baked in cells (about 9 GB at the
+                                                          # large parts' quality) - smaller ones whole, in a batch
 HALO = 3        # rings of faces around a cell's core that are baked with it and left out of the copy
 
 
@@ -346,7 +347,8 @@ def cells(arr, unit, origin):
 
 def pack(islands, ids):
     """The islands `ids` in batches of up to BATCH_FACES faces, in the order of their first face (cells too: baked
-    each alone, a cell of a plate came out further from the direct bake - 0.031 mm against 0.0065 at 99.9 %, run 287)."""
+    each alone, a cell of a plate came out further from the direct bake - 0.031 mm against 0.0065 at 99.9 %,
+    run 287)."""
     out, cur, size = [], [], 0
     for i in ids:
         if cur and size + len(islands[i]) > BATCH_FACES:
@@ -549,7 +551,7 @@ def join_copies(orig, arr, islands, moves, parts, level, passive):
                 m = _moved(arr, piece, moves[k], passive)
                 if not bevelled:
                     starts = offset + np.concatenate(([0], np.cumsum(count)[:-1]))
-                    blocks += list(zip(faces_k.tolist(), starts.tolist(), count.tolist()))
+                    blocks += list(zip(faces_k.tolist(), starts.tolist(), count.tolist(), strict=True))
                 offset += len(m["lt"])
                 pieces.append(m)
                 tvs.append([])
@@ -597,8 +599,8 @@ def join_copies(orig, arr, islands, moves, parts, level, passive):
 
 def _moved(arr, piece, move, passive):
     """The copy `piece` of a baked piece at the place of another of its shape - `move` = (that piece, the other's core
-    faces in the order of its core, the offset, per UV map the shift of each core face): moved, UVs shifted, the passive face
-    attributes (the importer's stud numbers) its own, through the face each child comes from."""
+    faces in the order of its core, the offset, per UV map the shift of each core face): moved, UVs shifted, the passive
+    face attributes (the importer's stud numbers) its own, through the face each child comes from."""
     _rep, faces, offset, uv_shift = move
     isf = piece["attrs"][ISLAND_FACE][2][:, 0]
     m = dict(piece)
