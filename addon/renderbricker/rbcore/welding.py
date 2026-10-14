@@ -564,12 +564,28 @@ def _pinned_corners(w):
     # Only small roundings: the free point gives way by |a + b - 2v| / 6 (the limit of a creased line), 0.040 on
     # 18747; above ROUNDING_DEPTH the corner stays (library, run 282: the larger ones are corners of organic
     # shapes with pieces of 1.3 to 3.3 mm - the tip of the mudguard 31582 would lose 0.29).
+    #
+    # The same rounding on the outline of a flat face (maintainer 2026-10-14, 18747 again: "Prüfst Du beide
+    # Seiten?" - the back of the plate was round, the stud side kept two straight pieces at both lower corners):
+    # there "flat stays flat" (W3) creases the edges inside the face, they end in the points of the rounding and
+    # make each of them a corner of three creased edges. So the rounding is read along the rim - the creased edges
+    # that are no such inner edges - and where it is one, the inner edges are released at its three points (as W16
+    # does at a gentle arc; the face stays planar, its outline stays creased).
+    def inner_flat(e):
+        return (len(e.link_faces) == 2 and e.link_faces[0][isl] == e.link_faces[1][isl]
+                and kind_of[e.link_faces[0][isl]] == "flat")
+
+    def rim(v):
+        return [e for e in chain(v) if not inner_flat(e)]
+
     def coarse_rounding(v, t):
         if not COARSE_ROUNDING or not config.SHARP_TURN < t <= ORGANIC_CORNER:
             return False
         if not any(kind_of[f[isl]] == "curved" for f in v.link_faces):
             return False
-        a, b = chain(v)
+        if len(rim(v)) != 2:
+            return False
+        a, b = rim(v)
         la, lb = a.calc_length(), b.calc_length()
         if min(la, lb) < 1e-9 or max(la, lb) > ROUNDING_RATIO * min(la, lb):
             return False
@@ -583,7 +599,7 @@ def _pinned_corners(w):
         for e in (a, b):
             n = e.other_vert(v)
             back, best = (v.co - n.co).normalized(), None
-            for x in chain(n):                  # the line goes on along the creased edge that turns least
+            for x in rim(n):                    # the line goes on along the creased edge that turns least
                 on = x.other_vert(n).co - n.co
                 if x is e or on.length < 1e-9:
                     continue
@@ -595,6 +611,11 @@ def _pinned_corners(w):
                 return False
             total += best[0]
         return total <= ROUNDING_TOTAL
+
+    def rim_turn(v):
+        a, b = rim(v)
+        p, q = a.other_vert(v).co - v.co, b.other_vert(v).co - v.co
+        return None if p.length < 1e-9 or q.length < 1e-9 else 180.0 - math.degrees(p.angle(q))
     g = vars(creases)                   # the crease rules read these two functions
     keep = g["boundary_neighbours"], g["_turn"]
     g["boundary_neighbours"], g["_turn"] = nb, tturn
@@ -604,6 +625,14 @@ def _pinned_corners(w):
              and not creases._is_round(v) and not groove_end(v)}
         rounded = {v for v in V if not designed(v, t := tturn(v)) and coarse_rounding(v, t)}
         V -= rounded
+        # ... and on the outline of a flat face: a point with inner edges of the face besides its two rim edges
+        on_flat = {v for v in bm.verts if len(chain(v)) > 2 and v not in ringv and v not in tipv and v not in degen_v
+                   and len(rim(v)) == 2 and (t := rim_turn(v)) is not None and coarse_rounding(v, t)}
+        for v in on_flat:
+            for u in [v] + [e.other_vert(v) for e in rim(v)]:
+                if u not in V:
+                    E.difference_update([e for e in u.link_edges if e in E and inner_flat(e)])
+        rounded |= on_flat
     finally:
         g["boundary_neighbours"], g["_turn"] = keep
     # W15b: a bend (>= DESIGN_TURN) between two corners, one of them a designed corner, is
