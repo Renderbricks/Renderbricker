@@ -533,7 +533,7 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
                     "each face from the edge. The same for the shader and for the bevel. 0.2 is close to the size "
                     "the importer shows; smaller values give finer edges")
     bevel_segments: bpy.props.IntProperty(
-        name="Segments", default=3, min=1, max=3,
+        name="Segments", default=2, min=1, max=3,      # maintainer 2026-10-14: "Standard für Segments auf 2 setzen."
         description="Facets of the bevel across an edge: 1 is a flat chamfer, 3 rounds the outline. The shading "
                     "is round with any number")
     smooth_maps: bpy.props.BoolProperty(

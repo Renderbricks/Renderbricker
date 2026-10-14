@@ -95,7 +95,7 @@ from . import config, creases, edgeshape, edgesupport, maps
 
 EDGES = config.opt("--edges", "shader")                     # "shader" or "bevel"; set by the add-on or the command line
 EDGE_RADIUS = float(config.opt("--edge-radius", "0.1"))     # the edge radius in mm (the units of the mesh)
-BEVEL_SEGMENTS = int(config.opt("--bevel-segments", "3"))
+BEVEL_SEGMENTS = int(config.opt("--bevel-segments", "2"))
 # open for the test (maintainer 2026-10-14: "für den nächsten Test grenzen wir erst einmal das Eingabefenster nicht
 # mehr ein"); before: 0.08 to 0.2 ("mm so machen 0.08 bis 0.2")
 RADIUS_MIN, RADIUS_MAX, SEGMENTS_MAX = 0.001, 10.0, 3     # segments: "maximal 3 Facetten" (UPDATES #50)
