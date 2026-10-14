@@ -395,7 +395,7 @@ Parts outside the choice stay as imported; Apply con­verts only what is not up 
 
 ### Edges: Shader or Bevel
 
-The importer rounds the sharp edges of a part in its mate­rial: with a Bevel node in Cycles and a baked map in EEVEE. That is **Edges: Shader**, the default. With **Edges: Bevel**, Apply rounds these edges in the smooth copies themselves. The edges then look the same in Cycles and EEVEE, also on parts without a map, and a close-up shows a clean line of light along the edge. **Radius (mm)** sets the round­ing for both, in mil­lime­tres of the real part: 0.08 to 0.2, start 0.15 – a little finer than the importer shows by itself (about 0.2). Studs, logos and the chamfers Mecabricks modelled keep their own round­ing. Chang­ing the switch makes Apply convert the parts again; a bevelled copy has about a fifth more faces.
+The importer rounds the sharp edges of a part in its mate­rial: with a Bevel node in Cycles and a baked map in EEVEE. That is **Edges: Shader**, the default. With **Edges: Bevel**, Apply rounds these edges in the smooth copies themselves. The edges then look the same in Cycles and EEVEE, also on parts without a map, and a close-up shows a clean line of light along the edge. **Radius (mm)** sets the round­ing for both, in mil­lime­tres of the real part: 0.08 to 0.2, start 0.1 – finer than the importer shows by itself (about 0.2). Studs, logos and the chamfers Mecabricks modelled keep their own round­ing. Chang­ing the switch makes Apply convert the parts again; a bevelled copy has about a fifth more faces.
 
 ### Bevel maps for EEVEE
 

@@ -515,7 +515,8 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
     # Edges (UPDATES #43, maintainer 2026-10-13): the Radius in millimetres, the limits are his - "mm so machen 0.08
     # bis 0.2" (asked whether the field should end at 0.21, the importer's own 0.35 being an edge radius of
     # 0.208 mm, 2026-10-14: "Radius-Feld bleibt bei 0,2 mm"); the start is the size he found right on the model -
-    # 2026-10-14: "Die Standardeinstellung für Bevel ist 0.15 mm" (the shader then gets 0.252)
+    # 2026-10-14: "Die Standardeinstellung für Bevel ist 0.15 mm", "0,15 gilt für beide, Shader und Bevel", then,
+    # looking at the rounded corners of 18747: "Bevel Radius kannst Du Standard 0.1 setzen." (the shader gets 0.168)
     edges: EnumProperty(
         name="Edges",
         items=[('SHADER', "Shader", "The importer's material rounds the edges, as before: a Bevel node in Cycles, "
@@ -527,7 +528,7 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         default='SHADER',
         description="How the sharp edges of the parts are rounded. Changing it makes Apply convert the parts again")
     edge_radius: bpy.props.FloatProperty(
-        name="Radius (mm)", default=0.15, min=0.08, max=0.2, step=1, precision=2,
+        name="Radius (mm)", default=0.1, min=0.08, max=0.2, step=1, precision=2,
         description="Radius of the rounded edges in millimetres of the real part: how far the rounding reaches on "
                     "each face from the edge. The same for the shader and for the bevel. 0.2 is close to the size "
                     "the importer shows; smaller values give finer edges")

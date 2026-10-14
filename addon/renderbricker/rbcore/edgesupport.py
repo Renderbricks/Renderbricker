@@ -13,6 +13,14 @@ Runs are done one after the other, twice round: where the borders of two runs cr
 finds the first as edges of the mesh and crosses them like any other edge. Nothing is moved - every new point lies
 on an edge that was there, so nothing can fold or tear.
 
+Beside a rounded corner of the outline (maintainer 2026-10-14, 18747 with Edges: Bevel: "Rundung klappt. Bevel
+nicht." - wedges along the edge from each corner) the faces can be long slivers that fan from the rim to one far
+point which itself lies just on the border. No edge of them crossed the border by its ends, so none was cut, and
+the rounding ran out to 0.26 mm instead of 0.1 between them. Two things for that: a long edge from inside the
+rounding to a point on the border is looked at along its length and gets its point where it first leaves; and a
+face is cut wherever three or more of its points in a row lie on or beyond the border - the part beyond becomes a
+face of its own, with plain normals.
+
 Below it a net (keep_plain): a face a turned normal would still run across gets its plain normals back.
 
 Tried first and dropped (run 280, support.py): going edge by edge - split the two edges that leave a rounded edge,
@@ -35,6 +43,9 @@ EDGE_BEND = 50.0                        # a run ends where the line of chosen ed
 EDGE_REACH = 1.5                        # the net: a face with a turned corner may reach this x width from the edges
 EDGE_SWEEPS = 2                         # a point a later run makes can lie inside the rounding of an earlier one
 EDGE_FLAT = 1e-4                        # a cut needs a point this far (mm) off its line on either side
+EDGE_STEPS = 24                         # rounds at most to find the place on an edge where the rounding ends
+EDGE_LONG = 2.0                         # an edge longer than this x width that ends on the border is looked at along
+#                                         its length: it may leave the rounding before its end
 CARRY_SAME = 0.5                        # carry_normals: the old face of a corner looks its face's way within 60 degrees
 CARRY_NEAR = 0.01                       # ... and is looked for this far (mm) beyond the nearest one
 
@@ -170,28 +181,57 @@ def support_edges(me, chosen, width):
             continue
         learn({v for f in faces for v in f.verts})
         # the edges of those faces that cross the border of the rounding get a point there
-        crossing = set()
+        crossing, maybe = set(), set()
         for f in faces:
             for e in f.edges:
                 da, db = cache[e.verts[0]], cache[e.verts[1]]
                 if min(da, db) < lo_d and max(da, db) > hi_d:
                     crossing.add(e)
+                elif min(da, db) < lo_d <= max(da, db) and e.calc_length() > EDGE_LONG * width:
+                    maybe.add(e)                    # ends on the border: does it leave the rounding before?
+        span = {}                                   # per such edge: the part of it (from the near end) looked at
+        if maybe:
+            maybe = list(maybe)
+            near = [(e.verts[0], e.verts[1]) if cache[e.verts[0]] <= cache[e.verts[1]] else (e.verts[1], e.verts[0])
+                    for e in maybe]
+            p0, p1 = (np.array([tuple(pair[k].co) for pair in near], np.float64) for k in (0, 1))
+            for part in (0.25, 0.5, 0.75):
+                d_part = at_many(p0 + (p1 - p0) * part)
+                for e, d in zip(maybe, d_part.tolist(), strict=True):
+                    if d > hi_d and e not in span:
+                        span[e] = (part, d)
+            crossing.update(span)
         if crossing:
             crossing = list(crossing)
             ends = [(e.verts[0], e.verts[1]) if cache[e.verts[0]] <= cache[e.verts[1]] else (e.verts[1], e.verts[0])
                     for e in crossing]              # the nearer end first
+            part = np.array([span[e][0] if e in span else 1.0 for e in crossing])
             pa, pb = (np.array([tuple(pair[k].co) for pair in ends], np.float64) for k in (0, 1))
-            da, db = (np.array([cache[pair[k]] for pair in ends]) for k in (0, 1))
+            pb = pa + (pb - pa) * part[:, None]     # (an edge that leaves before its end: up to where it is outside)
+            da = np.array([cache[pair[0]] for pair in ends])
+            db = np.array([span[e][1] if e in span else cache[pair[1]] for e, pair in zip(crossing, ends, strict=True)])
             t = (width - da) / (db - da)
             live = np.arange(len(t))
-            for _again in range(3):                 # the distance from a bent run is not straight along the edge
+            # the distance from a bent run is not straight along the edge: the step is taken as if it were, but only
+            # inside what is known - the near end lies inside the rounding, the far end outside. (Maintainer
+            # 2026-10-14, 18747 with Edges: Bevel, dark wedges at the rounded corners: an edge that leaves the rim
+            # beside a corner is nearest to the other rim further on; the plain step jumped back and forth between
+            # the end of the edge and the first guess, and after three rounds the point sat 0.002 mm from the rim -
+            # no support edge there, 22 faces of the viewport copy still reached from inside the rounding to outside.)
+            t_in, t_out = np.zeros(len(t)), np.ones(len(t))
+            for _again in range(EDGE_STEPS):
                 d = at_many(pa[live] + (pb[live] - pa[live]) * t[live, None])
                 off = np.abs(d - width) >= 0.01 * width
                 live, d = live[off], d[off]
                 if not len(live):
                     break
-                t[live] = np.clip(t[live] + (width - d) / np.maximum(db[live] - da[live], 1e-9), 0.001, 0.999)
-            for e, pair, t_e in zip(crossing, ends, t.tolist(), strict=True):
+                inside = d < width
+                t_in[live] = np.where(inside, t[live], t_in[live])
+                t_out[live] = np.where(inside, t_out[live], t[live])
+                step = t[live] + (width - d) / np.maximum(db[live] - da[live], 1e-9)
+                between = (step > t_in[live]) & (step < t_out[live])
+                t[live] = np.clip(np.where(between, step, 0.5 * (t_in[live] + t_out[live])), 0.001, 0.999)
+            for e, pair, t_e in zip(crossing, ends, (t * part).tolist(), strict=True):
                 _ne, nv = bmesh.utils.edge_split(e, pair[0], t_e)
                 cache[nv] = width
                 grid.setdefault(_cell(nv.co, cell), []).append(nv)
@@ -204,25 +244,24 @@ def support_edges(me, chosen, width):
             vs = list(f.verts)
             n = len(vs)
             cls = [0 if dist(v) < lo_d else 2 if dist(v) > hi_d else 1 for v in vs]
-            if 0 not in cls or 2 not in cls:
+            if 0 not in cls or (2 not in cls and cls.count(1) < 3):
                 continue
-            cut, i = None, 0
-            for _turn in range(n):                  # each stretch outside: from the point before it to the point after
-                if cls[i] != 2 and cls[(i + 1) % n] == 2:
-                    k = (i + 1) % n
-                    while cls[k] == 2:
-                        k = (k + 1) % n
-                    if (cls[i] == 1 and cls[k] == 1 and vs[i] is not vs[k] and bm.edges.get((vs[i], vs[k])) is None
-                            and _has_area(vs, i, k)):
-                        cut = (vs[i], vs[k])
-                        break
-                    if k <= i:
-                        break
-                    i = k
-                else:
+            # each stretch of the outline on or beyond the border, between two points inside: from its first point
+            # to its last - if both lie on the border and at least one point lies between them
+            cut, start = None, cls.index(0)
+            i = 1
+            while i < n and cut is None:
+                if cls[(start + i) % n] == 0:
                     i += 1
-                    if i >= n:
-                        break
+                    continue
+                k = i
+                while k + 1 < n and cls[(start + k + 1) % n] != 0:
+                    k += 1
+                a, b = (start + i) % n, (start + k) % n
+                if (k - i >= 2 and cls[a] == 1 and cls[b] == 1 and bm.edges.get((vs[a], vs[b])) is None
+                        and _has_area(vs, a, b)):
+                    cut = (vs[a], vs[b])
+                i = k + 1
             if cut is None:
                 continue
             try:

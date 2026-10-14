@@ -87,7 +87,7 @@ import numpy as np
 from . import config, creases, edgesupport, maps
 
 EDGES = config.opt("--edges", "shader")                     # "shader" or "bevel"; set by the add-on or the command line
-EDGE_RADIUS = float(config.opt("--edge-radius", "0.15"))    # the edge radius in mm (the units of the mesh)
+EDGE_RADIUS = float(config.opt("--edge-radius", "0.1"))     # the edge radius in mm (the units of the mesh)
 BEVEL_SEGMENTS = int(config.opt("--bevel-segments", "1"))
 RADIUS_MIN, RADIUS_MAX, SEGMENTS_MAX = 0.08, 0.2, 4      # maintainer 2026-10-13: "mm so machen 0.08 bis 0.2"
 EDGE_INNER = 85.0                            # an edge inside one island counts from this bend on (the rule W12)
@@ -104,7 +104,7 @@ SAME_SIDE = 30.0                        # a corner lies on the side of an edge w
 TURNED = 0.3                            # a face that was there counts as turned over below this cosine to its old normal
 HARDEN = False                          # True: Blender's Harden Normals, as the first test build did (probe only)
 STRENGTH = "__mod_weightednormals_faceweight"       # the Bevel modifier's face strength: lower on the faces it made
-EDGE_VERSION = 11                        # how a bevelled copy is marked; copies of earlier test builds are made anew
+EDGE_VERSION = 12                        # how a bevelled copy is marked; copies of earlier test builds are made anew
 EDGE_FOLDS, EDGE_GAP = "rb_folds", "rb_gap"       # the verdict of the checks, taken before the bevel changed the layout
 EDGE_NODE = "rb_bevel_"                      # names of the switch nodes
 RADIUS_WAS = "rb_bevel_was"                    # on a group node: the importer's Bevel value before the radius was set
