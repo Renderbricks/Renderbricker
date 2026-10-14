@@ -116,7 +116,8 @@ def chosen_again(me, drop=False):
 def _arc(c, r, a, b, omega, sigma):
     """Points at the share `sigma` of the arcs around `c` (radius `r`) from the unit directions `a` to `b`."""
     so = np.sin(omega)
-    return c + r[:, None] * (np.sin((1.0 - sigma) * omega)[:, None] * a + np.sin(sigma * omega)[:, None] * b) / so[:, None]
+    wa, wb = np.sin((1.0 - sigma) * omega) / so, np.sin(sigma * omega) / so
+    return c + r[:, None] * (wa[:, None] * a + wb[:, None] * b)
 
 
 def _combine(moves):
@@ -163,7 +164,7 @@ def _candidates(co, frames, width):
     tree.balance()
     mid, reach = (la + lb) / 2, np.linalg.norm(lb - la, axis=1) / 2 + width
     vi, li = [], []
-    for i, (c, r) in enumerate(zip(mid.tolist(), reach.tolist())):
+    for i, (c, r) in enumerate(zip(mid.tolist(), reach.tolist(), strict=True)):
         found = tree.find_range(Vector(c), r)
         vi.extend(f[1] for f in found)
         li.extend([i] * len(found))
@@ -177,7 +178,8 @@ def _profile(c, r, a, b, omega, sigma, segments):
         return _arc(c, r, a, b, omega, sigma)
     k = np.minimum(np.floor(sigma * segments), segments - 1)
     f = sigma * segments - k
-    return _arc(c, r, a, b, omega, k / segments) * (1.0 - f)[:, None] + _arc(c, r, a, b, omega, (k + 1) / segments) * f[:, None]
+    p0, p1 = _arc(c, r, a, b, omega, k / segments), _arc(c, r, a, b, omega, (k + 1) / segments)
+    return p0 * (1.0 - f)[:, None] + p1 * f[:, None]
 
 
 def _corner(p, rows, width):
