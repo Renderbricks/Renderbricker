@@ -145,7 +145,10 @@ TRADEMARK = ("Renderbricks®", "is a registered word mark in Germany.")   # the 
 
 DISCLAIMER = ("Au|thor: Prof. Mi|chael Klein – Me|di|a|de|sign Uni|ver|si|ty of Ap|plied Sci|ences. "
               "Ren|der|bricks is about ren|der|ing dig|i|tal LEGO®. LEGO® is a trade|mark of the LEGO Group of "
-              "com|pa|nies which does not spon|sor, au|tho|rize or en|dorse this add-on.")   # | = hyphenation point
+              "com|pa|nies which does not spon|sor, au|tho|rize or en|dorse this add-on. "
+              "Ren|der|brick|er is an in|de|pen|dent add-on, not an of|fi|cial Me|ca|bricks prod|uct, and has no "
+              "im|port|er of its own: Im|port from Me|ca|bricks starts the Me|ca|bricks add-on by "
+              "Nico|las 'Scrubs' Jar|raud, which must be in|stalled.")   # | = hyphenation point; the last sentence: #42
 
 
 # The first link is http: the web space has no certificate yet (checked 2026-10-11), https does not answer.

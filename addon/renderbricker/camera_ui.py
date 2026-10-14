@@ -377,9 +377,12 @@ class MECSUB_OT_import_mecabricks(bpy.types.Operator):
     @classmethod
     def description(cls, context, properties):
         if mecabricks_import_available():
-            return ("Import a Mecabricks scene (.zmbx) with the Mecabricks add-on - the same as File > Import > "
-                    "Mecabricks (.zmbx). The collection of an imported model is put into the collection list, "
-                    "whichever way it is imported")
+            # (UPDATES #42, maintainer 2026-10-11: "... es muss klar sein, dass die Import Funktion nicht als
+            #  eingebauter Importer missverstanden wird.")
+            return ("Starts the Mecabricks add-on by Nicolas 'Scrubs' Jarraud to import a Mecabricks scene (.zmbx) - "
+                    "the same as File > Import > Mecabricks (.zmbx). Renderbricker is an independent add-on, not an "
+                    "official Mecabricks product, and has no importer of its own. The collection of an imported "
+                    "model is put into the collection list, whichever way it is imported")
         return ("Needs the Mecabricks Lite or Advanced add-on by Nicolas 'Scrubs' Jarraud, installed and "
                 "enabled - available at www.mecabricks.com")
 
