@@ -9,7 +9,7 @@ the part size (reparam, MIN_SLIDE). Everything else is decided per island (shrin
 The memory is then that of the largest batch plus the joined copies."""
 import bpy
 import numpy as np
-from . import bevel, checks, config, copies, meshparts, reparam, welding
+from . import bevel, checks, config, copies, maps, meshparts, reparam, welding
 
 BATCH_FACES = int(config.opt("--batch-faces", "40000"))     # faces of the import per batch; 0: never in batches
 ACTIVE = [False]               # a batch is being baked: no batches inside a batch
@@ -88,8 +88,12 @@ def bake(orig, levels):
     finally:
         ACTIVE[0] = False
         copies.QUALITY_PIN[0] = welding.FLAT_SHARE_PIN[0] = reparam.SIZE_PIN[0] = None
+    made = {}
     try:
-        made = {lv: join_copies(orig, [(f, s, m[lv]) for f, s, m in parts], lv) for lv in levels}
+        for lv in sorted(levels, reverse=True):
+            made[lv] = join_copies(orig, [(f, s, m[lv]) for f, s, m in parts], lv)
+            for _f, sub, m in parts:                # that level's batch copies are not needed any more
+                copies.discard_copy(sub, m.pop(lv))
     finally:
         for _f, sub, m in parts:
             for cp in m.values():
@@ -147,8 +151,12 @@ def join_copies(orig, parts, level):
         for v, host in zip(flat[0::2], flat[1::2]):
             flat_tv += [int(off + v), int(faces[host]) if host < nk else n + extra0 + (host - nk)]
     joined["rb_tv"] = flat_tv
-    if bevel.EDGE_FOLDS in parts[0][2]:
+    if any(bevel.EDGE_FOLDS in cp for _f, _s, cp in parts):
         joined[bevel.EDGE_FOLDS] = ",".join(str(i) for i in sorted(set(folds)))
+    if any(cp.get(maps.MARK) for _f, _s, cp in parts):
+        # the mark of the EEVEE bevel map is the number of the copy's shape (rb_src): a batch marked its own shape,
+        # the joined copy is the whole import's (the material's switch compares the two)
+        maps.mark_copy(joined, orig)
     if gaps:
         joined[bevel.EDGE_GAP] = max(gaps)
     for key in BEVEL_COUNTS:                        # what bevel_copy counted, over all batches (a batch without a
