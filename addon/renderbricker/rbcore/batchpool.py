@@ -19,10 +19,16 @@ from . import config
 JOBS = int(os.environ.get("RENDERBRICKER_BATCH_JOBS", config.opt("--batch-jobs", "0")))   # background Blenders
                                                  # for the batches of one mesh; 0: by the cores
 MIN_BATCHES = 2                                  # fewer batches are baked here
-MIN_FACES = int(config.opt("--parallel-faces", "30000"))   # nor batches of fewer faces in all: starting a Blender
-                                                           # costs ~3 s (Banana Mech in batches of 300 faces: slower)
-SPLIT_MIN = 8000                                           # faces of a batch at least when they are split for the
-                                                           # Blenders (a cell baked alone came out further off)
+MIN_FACES = int(config.opt("--parallel-faces", "8000"))    # nor batches of fewer faces in all: starting a Blender
+                                                           # costs ~3 s (Banana Mech in batches of 300 faces: slower);
+                                                           # 30,000 baked the 48 x 48 baseplate's 28,275 faces of 71
+                                                           # cell shapes (Renderbricks run 111) here: 110 s, in four
+                                                           # Blenders 35 s
+SPLIT_MIN = 4000                                           # faces of a batch at least when they are split for the
+                                                           # Blenders (a cell baked alone came out further off; 4,000
+                                                           # hold several cells: 4186 in 8 Blenders 64 s against 83 s
+                                                           # with 8,000, shapes within 0.095 mm - the known spread of
+                                                           # the bevel at a stud's foot per cell, run 287)
 
 
 def worth(faces, batches_n):
