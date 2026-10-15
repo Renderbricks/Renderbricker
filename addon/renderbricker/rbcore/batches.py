@@ -123,10 +123,14 @@ def _points_on_segments(a, b, p, reach):
     segment's box, widened by `reach`, in the cells of a grid as large as the median segment; the points of those
     cells tested at once (replaces a KD query and a numpy call per open edge, run 287)."""
     size = max(float(np.median(np.linalg.norm(b - a, axis=1))), 8 * reach)
-    lo = np.floor((np.minimum(a, b) - reach) / size).astype(np.int64)
-    hi = np.floor((np.maximum(a, b) + reach) / size).astype(np.int64)
-    span = hi - lo + 1
-    count = span.prod(axis=1)
+    while True:     # a few long slanting segments among short ones take cells by the million (the cut baseplate
+        lo = np.floor((np.minimum(a, b) - reach) / size).astype(np.int64)     # 2552 asked 9 GB in one Blender,
+        hi = np.floor((np.maximum(a, b) + reach) / size).astype(np.int64)     # the importer's run 112): the grid
+        span = hi - lo + 1                                                    # coarser then
+        count = span.prod(axis=1)
+        if count.sum() <= 16 * len(a) + (1 << 16):
+            break
+        size *= 2
     seg = np.repeat(np.arange(len(a)), count)
     k = np.arange(len(seg)) - np.repeat(np.concatenate(([0], np.cumsum(count)[:-1])), count)
     sp = span[seg]
