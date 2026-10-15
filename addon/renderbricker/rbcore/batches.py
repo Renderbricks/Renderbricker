@@ -19,10 +19,11 @@ from collections import defaultdict
 import bpy
 import numpy as np
 
-from . import bevel, checks, config, copies, maps, meshparts, reparam, welding
+from . import batchpool, bevel, checks, config, copies, maps, meshparts, reparam, welding
 
 BATCH_FACES = int(config.opt("--batch-faces", "40000"))     # faces of the import per batch; 0: never in batches
 SHARE = config.opt("--share-shapes", "1") == "1"            # islands of one shape baked once
+PARALLEL = config.opt("--parallel-batches", "1") == "1"      # the batches of a mesh in background Blenders (batchpool)
 ACTIVE = [False]               # a batch is being baked: no batches inside a batch
 BEVEL_COUNTS = ("rb_bevel_normals", "rb_bevel_support", "rb_bevel_plain", "rb_bevel_moved", "rb_bevel_back",
                 "rb_bevel_flat")   # counts bevel.bevel_copy leaves on a copy: added over the batches
@@ -243,8 +244,11 @@ def cell_classes(arr, cores, fulls, corners, ids, passive):
         f = fulls[i]
         key = (len(f), len(cores[i]), np.bincount(lt[f]).tobytes())
         cen = centres(f, corners[i])
+        sig = np.concatenate((cen.mean(axis=0), cen.std(axis=0)))   # equal cells: equal within TOL_PLACE
         found = None
         for r, fr, tree, dr in groups[key][-SHAPES_TRIED:]:   # the latest few: cells that differ stay quick
+            if np.abs(dr["sig"] - sig).max() > 2 * TOL_PLACE:
+                continue
             at = np.array([tree.find(c)[1:] for c in cen.tolist()], dtype=np.float64)
             if at[:, 1].max() > TOL_PLACE or len(np.unique(at[:, 0])) != len(f):
                 continue
@@ -281,7 +285,9 @@ def cell_classes(arr, cores, fulls, corners, ids, passive):
             for j, c in enumerate(cen.tolist()):
                 tree.insert(c, j)
             tree.balance()
-            groups[key].append((i, f, tree, described(f, corners[i], islands=True)))
+            desc = described(f, corners[i], islands=True)
+            desc["sig"] = sig
+            groups[key].append((i, f, tree, desc))
             continue
         r, fr, fc, fits = found
         mine = dict(zip(fr.tolist(), fc.tolist(), strict=True))
@@ -324,8 +330,9 @@ def _uv_islands(points, uv, sizes):
 def grid_origin(arr, unit):
     """The corner of the CELL grid for a unit: per axis in the middle of the widest gap between its faces' centres
     (modulo CELL), so that no face lies on a border by a hair - a face whose centre sits on it falls into one cell or
-    the next by rounding, and equal cells come out unequal. On a plate cut by the importer's cells of the studs' grid
-    the borders land on those cells' borders (its corner is 0.04 mm off the grid: the edge of a LEGO part is inset)."""
+    the next by rounding, and equal cells come out unequal. (Borders on the importer's cut lines, 4 mm beside the
+    studs' centres, needed 4 rings of faces to come out as the direct bake at the plate's outer row of studs, these
+    2 - run 287; the borders then pass near the studs' centres.)"""
     co, lv, lt = arr["co"], arr["lv"], arr["lt"]
     ls = np.concatenate(([0], np.cumsum(lt)[:-1]))
     sizes = lt[unit]
@@ -344,7 +351,8 @@ def grid_origin(arr, unit):
 CELL = 8.0      # mm: the cells a unit too large for a batch is cut into - the LEGO module (grid_origin)
 CELL_FACES = int(config.opt("--cell-faces", "100000"))   # a unit above this is baked in cells (about 9 GB at the
                                                           # large parts' quality) - smaller ones whole, in a batch
-HALO = 3        # rings of faces around a cell's core that are baked with it and left out of the copy
+HALO = 2        # rings of faces around a cell's core that are baked with it and left out of the copy (3 was no nearer
+                # to a direct bake in a crop of the cut 4186, shader and bevel; 1 was further off, run 287)
 
 
 def cells(arr, unit, origin):
@@ -389,6 +397,8 @@ def cells(arr, unit, origin):
     # the corners of the unit's faces, local
     vert = lv[loops]
     out = []
+    point_flag = np.zeros(len(co), bool)              # marks set and cleared per cell: no sorting (np.isin and
+    face_flag = np.zeros(len(unit), bool)             # np.unique per ring took 6 of 11 s, run 287)
     ck = code(key)
     o = np.argsort(ck, kind="stable")
     _kk, ks = np.unique(ck[o], return_index=True)
@@ -401,28 +411,40 @@ def cells(arr, unit, origin):
         cl = meshparts.face_loops(starts, sizes, cand)          # corners of the candidates (local to the unit)
         cv = vert[cl]
         cs = np.concatenate(([0], np.cumsum(sizes[cand])[:-1]))
-        take = np.isin(cand, core)
+        face_flag[core] = True
+        take = face_flag[cand]
+        face_flag[core] = False
         for _ring in range(HALO):
-            marked = np.unique(cv[np.repeat(take, sizes[cand])])
-            take = np.logical_or.reduceat(np.isin(cv, marked), cs)
+            marked = cv[np.repeat(take, sizes[cand])]
+            point_flag[marked] = True
+            take = np.logical_or.reduceat(point_flag[cv], cs)
+            point_flag[marked] = False
         out.append((np.sort(unit[core]), np.sort(unit[cand[take]]), corner))
     return out
 
 
-def pack(islands, ids):
+def pack(islands, ids, size=None):
     """The islands `ids` in batches of up to BATCH_FACES faces, in the order of their first face (cells too: baked
     each alone, a cell of a plate came out further from the direct bake - 0.031 mm against 0.0065 at 99.9 %,
     run 287)."""
-    out, cur, size = [], [], 0
+    out, cur, filled = [], [], 0
     for i in ids:
-        if cur and size + len(islands[i]) > BATCH_FACES:
+        if cur and filled + len(islands[i]) > (size or BATCH_FACES):
             out.append(cur)
-            cur, size = [], 0
+            cur, filled = [], 0
         cur.append(i)
-        size += len(islands[i])
+        filled += len(islands[i])
     if cur:
         out.append(cur)
     return out
+
+
+def _packed(fulls, ids):
+    """pack, in one batch per background Blender when they are worth it (batchpool)."""
+    faces = sum(len(fulls[i]) for i in ids)
+    if PARALLEL and faces >= batchpool.MIN_FACES:
+        return pack(fulls, ids, batchpool.batch_size(faces, BATCH_FACES))
+    return pack(fulls, ids)
 
 
 def bake(orig, levels):
@@ -473,10 +495,11 @@ def bake_steps(orig, levels):
     copies.QUALITY_PIN[0], welding.FLAT_SHARE_PIN[0], reparam.SIZE_PIN[0] = quality, flat, reparam.part_size(orig)
     parts, reports = [], []
     try:
-        todo = pack(fulls, [i for i in range(len(islands)) if i not in shared])
+        todo = _packed(fulls, [i for i in range(len(islands)) if i not in shared])
         done = 0
         while todo:
-            for j, ids in enumerate(todo):
+            subs = []
+            for ids in todo:
                 faces = np.unique(np.concatenate([fulls[i] for i in ids]))
                 sub_arr, *_ = meshparts.select_arrays(arr, faces)
                 # the piece each face is the core of, if that piece is in this batch (-1: only a ring here)
@@ -485,19 +508,36 @@ def bake_steps(orig, levels):
                 isf = np.where(mine, face_in_island[faces], -1)
                 sub_arr["attrs"][ISLAND] = ('FACE', 'INT', isl[:, None].astype(np.int32))
                 sub_arr["attrs"][ISLAND_FACE] = ('FACE', 'INT', isf[:, None].astype(np.int32))
-                sub = meshparts.build_arrays(sub_arr, f"{orig.name}~{len(parts)}", orig)
-                made, rep = welding._bake_weld(sub, levels)
-                parts.append((faces, sub, made))
-                reports.append(rep)
-                done += 1
-                total = done + len(todo) - j - 1
-                yield 0.02 + 0.88 * done / total, f"piece {done} of {total}"
+                subs.append((faces, meshparts.build_arrays(sub_arr, f"{orig.name}~{len(parts) + len(subs)}", orig)))
+            total = done + len(subs)
+            if PARALLEL and batchpool.worth(sum(len(f) for f, _s in subs), len(subs)):
+                # the batches at once in background Blenders, each with this one's settings and pins (batchpool)
+                gen = batchpool.bake([sub for _f, sub in subs], levels)
+                while True:
+                    try:
+                        k, _n = next(gen)
+                    except StopIteration as stop:
+                        results = stop.value
+                        break
+                    blenders = batchpool.jobs(len(subs))
+                    yield 0.02 + 0.88 * (done + k) / total, f"piece {done + k} of {total} ({blenders} Blenders)"
+                for (faces, sub), (made, rep) in zip(subs, results, strict=True):
+                    parts.append((faces, sub, made))
+                    reports.append(rep)
+                done = total
+            else:
+                for faces, sub in subs:
+                    made, rep = welding._bake_weld(sub, levels)
+                    parts.append((faces, sub, made))
+                    reports.append(rep)
+                    done += 1
+                    yield 0.02 + 0.88 * done / total, f"piece {done} of {total}"
             # a shape whose copy cannot just be moved: its islands are baked as they are, in another round
             fixed = _fixed_shapes(parts, islands, face_island, set(shared.values()))
             back = sorted(k for k, rep in shared.items() if rep in fixed)
             for k in back:
                 del shared[k], moves[k]
-            todo = pack(fulls, back)
+            todo = _packed(fulls, back)
     finally:
         ACTIVE[0] = False
         copies.QUALITY_PIN[0] = welding.FLAT_SHARE_PIN[0] = reparam.SIZE_PIN[0] = None
@@ -640,10 +680,10 @@ def join_copies(orig, arr, islands, moves, parts, level, passive, is_cell=None):
         o = np.argsort(keys, kind="stable")
         starts, count = np.concatenate([b[1] for b in blocks])[o], np.concatenate([b[2] for b in blocks])[o]
         order = np.arange(int(count.sum())) + np.repeat(starts - (np.cumsum(count) - count), count)
+    snapped = close_seams(pieces, from_cell) if is_cell is not None and any(is_cell) else 0
     joined, voff = meshparts.join_arrays(pieces, f"{orig.name} L{level}", parts[0][2], face_order=order,
                                          drop=(ISLAND, ISLAND_FACE))
     del pieces
-    snapped = close_seams(joined, voff, np.concatenate(from_cell)) if is_cell is not None and any(is_cell) else 0
     # the properties: those of a batch copy, then what belongs to the whole mesh
     joined["rb_original"], joined["rb_src"] = orig.name, copies.source_hash(orig)
     joined["rb_seam_points"] = snapped
@@ -675,7 +715,7 @@ def join_copies(orig, arr, islands, moves, parts, level, passive, is_cell=None):
     return joined
 
 
-SEAM_TOL = 0.06    # mm: the open points of two cells' copies this near are one point of their seam (run 287: 16,767 of
+SEAM_TOL = 0.08    # mm: the open points of two cells' copies this near are one point of their seam (run 287: 16,767 of
                    # 16,821 seam points of the cut 4186 found their partner within 0.05 mm)
 SEAM_T_TOL = 0.005  # mm: a point without a partner this near another piece's open edge is put onto it (a T joint)
 
@@ -689,22 +729,22 @@ def _cell_points(piece, is_cell, island):
     return out
 
 
-def close_seams(me, voff, from_cell):
+def close_seams(pieces, from_cell):
     """Cells meet at seams that were one surface in the import; baked apart, the two sides' points of a seam lie up
     to 0.05 mm apart, and the joined copy has hairline cracks there (maintainer, 15.10.2026: thin lines along the
     cells' borders of the 48 x 48 baseplate - Random Walk sees through them). The open points of cells closer than
-    SEAM_TOL, of different pieces (`voff`: the first point of each), are set to their common mean - the sides then
+    SEAM_TOL, of different pieces (the arrays before they are joined; `from_cell`: per piece its points of cells),
+    are set to their common mean - the sides then
     share their corners to the bit, and Cycles' intersection is watertight there. Partners are mutual nearest points of
     two pieces. A point with no partner but the open edge of another piece passing within SEAM_T_TOL (a long edge of
-    a large face: a T joint) is then put onto that edge. Returns the points moved."""
-    co = np.empty(len(me.vertices) * 3, np.float32)
-    me.vertices.foreach_get("co", co)
-    co = co.reshape(-1, 3).astype(np.float64)
-    ev = np.empty(len(me.edges) * 2, np.int64)
-    me.edges.foreach_get("vertices", ev)
-    le = np.empty(len(me.loops), np.int64)
-    me.loops.foreach_get("edge_index", le)
-    open_ev = ev.reshape(-1, 2)[np.bincount(le, minlength=len(me.edges)) == 1]
+    a large face: a T joint) is then put onto that edge. Returns the points moved. (On the arrays, not the joined
+    mesh: reading and updating a copy of 14.5 M faces back took 23 s, run 287.)"""
+    nv = np.array([len(p["co"]) for p in pieces], np.int64)
+    voff = np.concatenate(([0], np.cumsum(nv)[:-1]))
+    co = np.concatenate([p["co"] for p in pieces]).astype(np.float64)
+    from_cell = np.concatenate(from_cell)
+    open_ev = np.concatenate([p["ev"][np.bincount(p["le"], minlength=len(p["ev"])) == 1] + o
+                              for p, o in zip(pieces, voff, strict=True)])
     open_ev = open_ev[from_cell[open_ev].all(axis=1)]
     cand = np.unique(open_ev)
     if not len(cand):
@@ -757,8 +797,13 @@ def close_seams(me, voff, from_cell):
         co[cand[alone[pt]]] = a + t[:, None] * (b - a)
         moved = len(pt)
     if len(used) or moved:
-        me.vertices.foreach_set("co", co.astype(np.float32).ravel())
-        me.update()
+        changed = np.zeros(len(co), bool)
+        changed[cand[used]] = True
+        if moved:
+            changed[cand[alone[pt]]] = True
+        for p, o, n in zip(pieces, voff, nv, strict=True):
+            if changed[o:o + n].any():
+                p["co"] = co[o:o + n].astype(np.float32)
     return int(len(used)) + moved
 
 
