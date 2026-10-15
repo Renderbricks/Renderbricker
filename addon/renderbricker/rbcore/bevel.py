@@ -55,6 +55,9 @@ size (run 277). The shader has no such limit - it changes nothing but the normal
               erzeugen Geometrie-Probleme".
 The borders of a chamfer Mecabricks modelled (a narrow face between two shallow edges) are left alone. After the
 bevel, bevel_copy looks for faces that turned over, takes the bevel near them out and bevels again.
+The chamfer is decided for a whole run of chosen edges (run 290, maintainer with a screenshot of the hair 11256: "hier
+brechen Bevel-Kanten weg, wenn ich echte Bevels wähle. Frisuren sind kompliziert."): on organic parts narrow faces come
+and go along a fold, and an edge left out here and there ended the bevel in the middle of the fold.
 
 Test build of run 281 (maintainer 2026-10-13: "Entweder alle oder nur Bevel Shader." - "0.15 zerstört nicht mehr
 die Stelle. Es gibt lediglich Shading Artefakte." - after the trial of run 280: "Mach erst mal eine Version zum
@@ -110,13 +113,14 @@ MATCH = {1: 0.595, 2: 0.521, 3: 0.506, 4: 0.502}     # bevel width / shader radi
 ROOM = 0.9                              # share of the room beside an edge the bevel may take (half of it between two)
 CHAMFER_ANGLE = 60.0                    # a modelled chamfer: both borders of a face bend by less than this ...
 CHAMFER_WIDTH = 1.5                     # ... and the face between them is narrower than this (mm)
+CHAMFER_RUN = 0.5                       # ... along this share of the length of their run of edges, or more (run 290)
 TRIES = 6                               # bevel, look for turned faces, take the bevel near them out: at most so often
 TURN_MAX = 56.0                         # no corner is turned further: the corner of a box takes 54.7 degrees
 SAME_SIDE = 30.0                        # a corner lies on the side of an edge whose normal it has within this angle
 TURNED = 0.3                            # a face that was there counts as turned over below this cosine to its old normal
 HARDEN = False                          # True: Blender's Harden Normals, as the first test build did (probe only)
 STRENGTH = "__mod_weightednormals_faceweight"       # the Bevel modifier's face strength: lower on the faces it made
-EDGE_VERSION = 13                        # how a bevelled copy is marked; copies of earlier test builds are made anew
+EDGE_VERSION = 14                        # how a bevelled copy is marked; copies of earlier test builds are made anew (14: run 290)
 EDGE_FOLDS, EDGE_GAP = "rb_folds", "rb_gap"       # the verdict of the checks, taken before the bevel changed the layout
 EDGE_NODE = "rb_bevel_"                      # names of the switch nodes
 RADIUS_WAS = "rb_bevel_was"                    # on a group node: the importer's Bevel value before the radius was set
@@ -231,9 +235,44 @@ def _leave_chamfers(bm, w):
             if sides and max(g.calc_length() for g in sides) < CHAMFER_WIDTH and any(g.index in shallow for g in far):
                 chamfer.add(i)
                 chamfer.update(g.index for g in far if g.index in shallow)
+    chamfer = _whole_runs(bm, on, chamfer)
     for i in chamfer:
         w[i] = 0.0
     return {"chamfer": len(chamfer), "bevelled": int((w > 0.5).sum())}
+
+
+def _whole_runs(bm, on, chamfer):
+    """A run of chosen edges - edges joined where a point has exactly two of them - is left alone as a whole or not at
+    all (run 290): it is a chamfer's border when the edges `chamfer` found make CHAMFER_RUN of its length or more, and
+    then every edge of it is; otherwise none is. On a brick a chamfer's border is one with its run; on hair (11256)
+    narrow faces between shallow edges come and go along a fold, and an edge taken out here and there ended the bevel
+    in the middle of the fold - 96 times on 11256 ("hier brechen Bevel-Kanten weg")."""
+    if not chamfer:
+        return chamfer
+    parent = {}
+
+    def find(i):
+        root = i
+        while parent.get(root, root) != root:
+            root = parent[root]
+        while parent.get(i, i) != root:
+            parent[i], i = root, parent[i]
+        return root
+    for v in bm.verts:
+        mine = [e.index for e in v.link_edges if on[e.index]]
+        if len(mine) == 2:
+            a, b = find(mine[0]), find(mine[1])
+            if a != b:
+                parent[a] = b
+    total, found = {}, {}
+    for e in bm.edges:
+        if on[e.index]:
+            r, ln = find(e.index), e.calc_length()
+            total[r] = total.get(r, 0.0) + ln
+            if e.index in chamfer:
+                found[r] = found.get(r, 0.0) + ln
+    whole = {r for r, ln in found.items() if ln >= CHAMFER_RUN * total[r]}
+    return {e.index for e in bm.edges if on[e.index] and find(e.index) in whole}
 
 
 # ---------------------------------------------------------------- the room of an edge, the lines of the edges
