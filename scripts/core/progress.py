@@ -10,6 +10,7 @@ import os, subprocess, threading, time
 FOOTER = os.path.join(os.path.expanduser("~"), ".claude", "job_progress.tsv")
 PARTS = os.path.join(os.path.expanduser("~"), ".claude", "job_progress.d")    # one part file per process
 HEARTBEAT = 10.0
+TICK_INTERVAL = 1.0     # ticks write at most once a second (15.10.2026: snap_gaps wrote 4x/s for 70 min)
 
 
 class Progress:
@@ -17,6 +18,7 @@ class Progress:
         self.title, self.start = title, time.time()
         self.stage_no, self.stage, self.done, self.total, self.begun = 0, "", 0, 0, self.start
         self.state = "running"
+        self._last_write = 0.0
         self._lock = threading.Lock()
         self._stop = threading.Event()
         threading.Thread(target=self._beat, daemon=True).start()
@@ -36,7 +38,12 @@ class Progress:
             self.done += n
             if total is not None:
                 self.total = total
-        self.write()
+        self._tick_write()
+
+    def _tick_write(self):
+        # stage changes, finish and heartbeat write at once; ticks only when the last write is old
+        if time.time() - self._last_write >= TICK_INTERVAL:
+            self.write()
 
     def _row(self, now):
         left = (now - self.begun) / self.done * (self.total - self.done) if self.done and self.total else 0
@@ -50,7 +57,8 @@ class Progress:
         if not os.path.isdir(os.path.dirname(FOOTER)):
             return
         with self._lock:
-            rows = self._rows(time.time())
+            self._last_write = time.time()
+            rows = self._rows(self._last_write)
         # own rows into a part file per process, then the footer file is rebuilt from all parts
         # (run 50: two jobs wrote the one file and their bars took turns instead of showing side
         # by side); parts of ended processes drop out when stale (limits of the status line)
@@ -149,7 +157,7 @@ class _Item:
             it["done"] += n
             if total is not None:
                 it["total"] = total
-        self.p.write()
+        self.p._tick_write()
 
 
 def run_blender(cmd, log, prog=None, count=None, total=None):
