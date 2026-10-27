@@ -22,7 +22,7 @@ import numpy as np
 
 from . import checks, config, creases
 
-GROOVE_KINK = 35.0      # degrees: an edge of the copy bending this much is a groove (run 291: 20 marked soft facets too)
+GROOVE_KINK = 35.0      # degrees: an edge of the copy bending this much is a groove (run 291: 20 took soft facets too)
 ORGANIC = "rb_organic"  # copy property: corners that took the smooth normal (0 when nothing was organic)
 
 
