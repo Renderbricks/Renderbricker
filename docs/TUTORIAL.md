@@ -155,7 +155,7 @@ with level 1, and F12 switches to level 2 only while it renders.
 
 A progress bar shows the parts done and the time left (1); **Esc** cancels (2). Blenders in the
 back­ground share the work – for the Italian Riviera twelve of them con­verted the 810 parts in
-79 seconds. At the end the scene is saved.
+87 seconds. At the end the scene is saved.
 
 ![After Apply: the summary (1), Subdivision: ON (2) and the cache file (3)](images/tutorial/T05_apply_result.webp)
 
@@ -246,7 +246,7 @@ level 2). *All views* at 50 % gives the six slots below in about half a minute.
 ![All views: the six slots of the Render window](images/tutorial/T08b_all_views.webp)
 
 **Cycles or EEVEE:** the same view with both engines, imported with the current Mecabricks add-on,
-con­verted with Ren­der­bricker 1.2.7 and ren­dered in Blender 5.3 at 256 samples each. EEVEE comes close in
+con­verted with Ren­der­bricker 1.3.0 and ren­dered in Blender 5.3 at 256 samples each. EEVEE comes close in
 light and shadow – its sun lamp follows the sky, the shadows lie in the same place, arches and door­ways are
 dark as in Cycles – but glass looks milky where Cycles shows the room behind it, small insides are a little
 lighter, and trans­par­ent parts such as the water around the boat look grey where Cycles lets
@@ -313,18 +313,21 @@ meanwhile.
 A ter­mi­nal shows the progress; the result is written next to the scene as a new file:
 
 ```
-Italian_Riviera_Headless.blend  →  Italian_Riviera_Headless_subdiv_1-0-0.blend
+Italian_Riviera_Headless.blend  →  Italian_Riviera_Headless_subdiv_1-3-0.blend
 ```
 
 The end of the ter­mi­nal for the Italian Riviera:
 
 ```
-PROGRESS [##############################] 810/810 meshes  100.0 %  elapsed 1:22  left ~0:00  15573.007
-MERGE copies of the workers (bake 84 s)
-CACHE 1620 copies in …\Italian_Riviera_Headless_subdiv_1-0-0_rbcache.blend (23 s)
-SAVED …\Italian_Riviera_Headless_subdiv_1-0-0.blend (1 s)
+PROGRESS [##############################] 810/810 meshes  100.0 %  elapsed 1:15  left ~0:00  3036.003
+PEAK worker 8: 2.79 GB (scene loaded 0.33 GB, 68 meshes)
+MERGE copies of the workers (bake 76 s)
+CACHE 1620 copies in …\Italian_Riviera_Headless_subdiv_1-3-0_rbcache.blend (15 s)
+MERGE loaded and linked 15 s
+MERGE cleaned 0 s
+SAVED …\Italian_Riviera_Headless_subdiv_1-3-0.blend (1 s)
 
-Done: "…\Italian_Riviera_Headless_subdiv_1-0-0.blend"
+Done: "…\Italian_Riviera_Headless_subdiv_1-3-0.blend"
 ```
 
 **Check:** the ter­mi­nal ends with *Done* and the name of the result. Open that file – it is con­verted
