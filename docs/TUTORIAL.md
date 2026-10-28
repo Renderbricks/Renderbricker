@@ -123,17 +123,19 @@ Ren­der­bricker is an inde­pen­dent add-on, not an offi­cial Mecabricks pro
 **What it is for:** knowing what the defaults do. They suit most scenes – for the Italian Riviera
 all of them stay as they are.
 
-![The panel with its default settings (1–7)](images/tutorial/T03_settings.webp)
+![The panel with its default settings (1–9)](images/tutorial/T03_settings.webp)
 
 | | Setting | Default | In short |
 |---|---|---|---|
 | 1 | Collection / Selected | **Collection** | which parts: the ones in the collections of the list – the imported model is in it already – or the selected ones |
 | 2 | Variant | **A – Mecabricks normals** | keeps the shading of the import; *B* gives crisper logos on the studs |
 | 3 | Levels | **Viewport 1 / Render 2** | smooth enough to work with, full quality in the render |
-| 4 | Bevel maps for EEVEE | **off** | clean round rims in EEVEE renders – see [Going further](#bevel-maps-for-eevee) |
-| 5 | Several Blender processes | **on** | larger scenes are converted by several Blenders at once |
-| 6 | Low Memory | **Auto** | only for very large parts or little memory – see [Going further](#low-memory) |
-| 7 | Cache file | **on** | the copies go into a file of their own, the scene file stays small |
+| 4 | Edges | **Shader** | the importer's material rounds the sharp edges; *Bevel* gives the smooth copies real rounded edges – see [Going further](#edges-shader-or-bevel) |
+| 5 | Radius (mm) | **0.1** | how far the rounding of an edge reaches, for both *Shader* and *Bevel* |
+| 6 | Bevel maps for EEVEE | **off** | clean round rims in EEVEE renders – see [Going further](#bevel-maps-for-eevee) |
+| 7 | Several Blender processes | **on** | larger scenes are converted by several Blenders at once |
+| 8 | Low Memory | **Auto** | only for very large parts or little memory – see [Going further](#low-memory) |
+| 9 | Cache file | **on** | the copies go into a file of their own, the scene file stays small |
 
 Every mesh in the listed col­lec­tions is treated as a Mecabricks part: Ren­der­bricker does not tell LEGO parts
 from other meshes. Keep your own models out of these collections.
@@ -395,7 +397,7 @@ Parts outside the choice stay as imported; Apply con­verts only what is not up 
 
 ### Edges: Shader or Bevel
 
-The importer rounds the sharp edges of a part in its mate­rial: with a Bevel node in Cycles and a baked map in EEVEE. That is **Edges: Shader**, the default. With **Edges: Bevel**, Apply gives these edges a real bevel in the smooth copies: the outline of the part is round too, and the edges look the same in Cycles and EEVEE, also on parts without a map. **Segments** sets its facets, 1 to 3, start 2 (3 rounds the out­line most). **Radius (mm)** sets the round­ing for both, in mil­lime­tres of the real part: 0.08 to 0.2, start 0.1 – finer than the importer shows by itself (about 0.2). Studs, logos and the chamfers Mecabricks modelled keep their own round­ing. Chang­ing the switch makes Apply convert the parts again; a bevelled copy has about a fifth more faces.
+The importer rounds the sharp edges of a part in its mate­rial: with a Bevel node in Cycles and a baked map in EEVEE. That is **Edges: Shader**, the default. With **Edges: Bevel**, Apply gives these edges a real bevel in the smooth copies: the outline of the part is round too, and the edges look the same in Cycles and EEVEE, also on parts without a map. **Seg­ments** sets its facets, 1 to 3, start 2 (3 rounds the outline most). **Radius (mm)** sets the round­ing for both, in mil­lime­tres of the real part: 0.08 to 0.2, start 0.1 – finer than the importer shows by itself (about 0.2). Studs, logos and the cham­fers Mecabricks mod­elled keep their own rounding. Chang­ing the switch makes Apply convert the parts again; a bev­elled copy has about a fifth more faces.
 
 ### Bevel maps for EEVEE
 
