@@ -264,9 +264,9 @@ across the picture yourself. The detail below is the square and the boat at twic
 
 The same view at 8K (7680 × 4320) with 512 samples – about five minutes on an RTX 5090 – and four
 parts of it at full size. Click a detail for a 4K section around it; the over­view down­loads the
-whole 8K render (1.7 MB):
+whole 8K render (1.5 MB):
 
-[![The 8K render with the four details (1–4)](images/tutorial/T08c_overview.webp)](https://github.com/Renderbricks/Renderbricker/releases/download/v1.1.0/Italian_Riviera_8K_512_samples.webp)
+[![The 8K render with the four details (1–4)](images/tutorial/T08c_overview.webp)](https://github.com/Renderbricks/Renderbricker/releases/download/v1.3.0/Italian_Riviera_8K_512_samples.webp)
 
 [![Detail 1: the roof tiles](images/tutorial/T08c_crop1.webp)](https://raw.githubusercontent.com/Renderbricks/Renderbricker/main/docs/images/tutorial/T08c_crop1_4k.webp)
 
