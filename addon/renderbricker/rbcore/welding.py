@@ -58,10 +58,16 @@ FLAT_SHARE_PIN = [None]  # a batch of a large mesh takes the share of the whole 
 DESIGN_LOG = None        # a list: (mesh, position, turn) of every designed corner (scans, run 73)
 
 
+WEDGE_SEAM = 30.0        # seam of a thin wedge island creased from this dihedral (run 56; a general 30 deg
+                         # threshold for curved islands, run 54, moved Technic parts by up to 0.32) - on
+                         # mechanical parts only (flat share >= MECH_FLAT, rules 3.14, run 291l)
 SPIKE_TURN = 150.0       # outline turn from which an island corner is the tip of a thin wedge, run 54
 
 
 WEDGE_TIP = SPIKE_TURN   # W4 ignores wedge tips from this turn (run 54)
+
+
+WEDGE_SEAM_TIP = SPIKE_TURN   # islands with such a tip are wedges for WEDGE_SEAM (run 56)
 
 
 GROOVE_TURN = SPIKE_TURN      # hairpin of a crease chain on organic shapes = groove end (run 55)
@@ -125,7 +131,7 @@ def weld(orig):
       1 _islands          classify the islands (flat, curved, logo ...) and number them on the faces
       2 _outline_corners  what must survive the weld: edges inside an island, sharp outline corners, thin wedges
       3 _weld_seams       weld vertices along real seams only - no face and no corner may be lost
-      4 _seam_creases     seams hard from SEAM_SHARP (thin wedges too, rules 3.14), logo edges
+      4 _seam_creases     seams hard from SEAM_SHARP (thin wedges of mechanical parts: WEDGE_SEAM), logo edges
       5 _hole_rings       the walls of a polygonised hole stay smooth; convex rings and hexagons stay hard (W5b)
       6 _island_creases   flat stays flat, degenerate faces, steep inner edges (W12), plane beside a bevel (W13)
       7 _relief_tips      the tips of low relief steps are released
@@ -184,9 +190,9 @@ def _islands(w):
 
 
 def _outline_corners(w):
-    """Stage 2, before the weld changes the outlines. Reads bm. Adds interior (the edges inside an island,
-    by position), sharp_pos {position: turn} of the sharp outline corners."""
-    bm = w.bm
+    """Stage 2, before the weld changes the outlines. Reads bm, isl. Adds interior (the edges inside an island,
+    by position), sharp_pos {position: turn} of the sharp outline corners, wedge_isl (thin wedge islands)."""
+    bm, isl = w.bm, w.isl
     interior = {frozenset((P(e.verts[0].co), P(e.verts[1].co))) for e in bm.edges if len(e.link_faces) == 2}
     # sharp corners of the island outlines (the rules' is_sharp) - they stay corners after
     # welding (run 50: 54200, a corner where three islands meet almost tangentially lost all
@@ -211,7 +217,11 @@ def _outline_corners(w):
     wedge_tip_pos = {P(v.co) for v in wedge_tips}
     sharp_pos = {P(v.co): creases.turn(v) for v in bm.verts if v.is_boundary and creases.is_sharp(v)
                  and not ((creases.turn(v) or 0) >= WEDGE_TIP and P(v.co) in wedge_tip_pos)}
-    w.interior, w.sharp_pos = interior, sharp_pos
+    # thin wedge islands (a smooth wedge tip, see above): their weak seams (< WEDGE_SEAM) stay
+    # smooth - on hair 13768 a 29 deg seam of such a wedge made a third crease and so a corner;
+    # a general 30 deg seam threshold moved Technic parts by up to 0.32 (run 56)
+    wedge_isl = {f[isl] for v in wedge_tips if (creases.turn(v) or 0) >= WEDGE_SEAM_TIP for f in v.link_faces}
+    w.interior, w.sharp_pos, w.wedge_isl = interior, sharp_pos, wedge_isl
 
 
 def _weld_seams(w):
@@ -269,10 +279,15 @@ def _weld_seams(w):
 
 
 def _seam_creases(w):
-    """Stage 4. Reads bm, isl, kind_of, interior. Adds E (the creased edges: here logo edges and edges
+    """Stage 4. Reads bm, isl, kind_of, interior, wedge_isl, flat_share. Adds E (the creased edges: here logo edges and edges
     of more than two faces), seams (edges between islands), cand (seams sharp enough to stay hard: edge, angle,
     the two islands - stage 5 decides)."""
-    bm, isl, kind_of, interior = w.bm, w.isl, w.kind_of, w.interior
+    bm, isl, kind_of, interior, wedge_isl = w.bm, w.isl, w.kind_of, w.interior, w.wedge_isl
+    # on organic parts a wedge is a strand: its seams are hard edges as every seam (hair 23186: the 10-30 deg
+    # strand edges left soft widened the strands and smeared their tips, run 291l); on mechanical parts the
+    # wedge is a modelled chamfer's end and stays soft (47758: creased, its corner stood out 0.5)
+    if w.flat_share < MECH_FLAT:
+        wedge_isl = set()
     E, seams, cand = set(), set(), []
     for e in bm.edges:
         lf = e.link_faces
@@ -288,9 +303,10 @@ def _seam_creases(w):
                 E.add(e)
             continue
         seams.add(e)
-        # also the seams of a thin wedge island (a strand): from 30 deg only (rules up to 3.11) left the
-        # import's hard strand edges soft - the strands widened and their tips smeared (hair 23186, run 291l)
-        if d >= SEAM_SHARP:
+        # a seam of a thin wedge island is a hard edge only from WEDGE_SEAM (hair 13768: a 29 deg
+        # seam made a third crease at the corner of the face opening, run 54/56)
+        limit = WEDGE_SEAM if (a in wedge_isl or b in wedge_isl) else SEAM_SHARP
+        if d >= limit:
             cand.append((e, d, a, b))
     w.E, w.seams, w.cand = E, seams, cand
 
