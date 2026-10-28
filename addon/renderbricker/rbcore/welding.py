@@ -279,9 +279,9 @@ def _weld_seams(w):
 
 
 def _seam_creases(w):
-    """Stage 4. Reads bm, isl, kind_of, interior, wedge_isl, flat_share. Adds E (the creased edges: here logo edges and edges
-    of more than two faces), seams (edges between islands), cand (seams sharp enough to stay hard: edge, angle,
-    the two islands - stage 5 decides)."""
+    """Stage 4. Reads bm, isl, kind_of, interior, wedge_isl, flat_share. Adds E (the creased edges: here logo edges
+    and edges of more than two faces), seams (edges between islands), cand (seams sharp enough to stay hard: edge,
+    angle, the two islands - stage 5 decides)."""
     bm, isl, kind_of, interior, wedge_isl = w.bm, w.isl, w.kind_of, w.interior, w.wedge_isl
     # on organic parts a wedge is a strand: its seams are hard edges as every seam (hair 23186: the 10-30 deg
     # strand edges left soft widened the strands and smeared their tips, run 291l); on mechanical parts the
