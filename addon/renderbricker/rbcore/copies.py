@@ -1,7 +1,7 @@
 """The subdivided copies of a part: baking a level, UVs, links pointing to the copy of a level, masters."""
 import bpy
 import numpy as np
-from . import bevel, checks, config, creases, maps, organic, reparam, workscene
+from . import bevel, checks, config, creases, maps, reparam, workscene
 
 
 def original_of(me):
@@ -108,7 +108,6 @@ def bake_copy(orig, work, level):
                     cp[checks.LAYOUT] = lay
     finally:
         config.LEVELS = keep
-    organic.smooth_normals(orig, cp, level)     # M2b: variant A shades organic surfaces round (UPDATES #56)
     cp.name = f"{orig.name} L{level}"
     cp["rb_original"], cp["rb_level"], cp["rb_variant"] = orig.name, level, config.SHADING
     cp["rb_rules"] = config.RULES_VERSION          # Apply skips meshes whose copies are up to date (user, 2026-09-28)
