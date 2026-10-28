@@ -10,12 +10,16 @@ Only on organic parts - less than welding.MECH_FLAT of the area in islands that 
 (hair: up to 0.10): run 291's library check found every brick changed at its studs (the stud's wall is a curved
 island; its top edge shaded harder, a light ring at its foot).
 So, on such a part, on the children of import faces in curved islands (creases.classify - flat faces and logos keep A):
-  - a groove is an edge of the copy where the subdivided surface still bends by GROOVE_KINK or more - the crease
-    rules kept it sharp;
+  - a groove is an edge of the copy on a fully creased edge of the cage (the whole crease chain - the copy carries
+    crease_edge until strip_copy), or one where the subdivided surface still bends by GROOVE_KINK or more;
   - a corner on a groove's point keeps its interpolated import normal;
   - every other corner takes the smooth normal of the subdivided surface, split at the grooves only; the faces
     between blend from one to the other.
-Run 291 tried keeping every corner of a face that touches a groove: small square patches along the strands."""
+Run 291 tried keeping every corner of a face that touches a groove: small square patches along the strands. The
+first build took the bend alone: a crease chain bending by 10 to 35 deg (23186 L1: 328 of 1,704 creased edges) stayed
+kinked but took one smooth normal across the kink, and along a chain the verdict changed where the bend crossed 35 deg -
+soft light and dark patches at the ends of the strands (maintainer's screenshots 28.10.2026). Smooth normals on the
+grooves too (no import normals kept) washed the strands' edges out."""
 import bmesh
 import bpy
 import numpy as np
@@ -57,7 +61,8 @@ def _mech_flat():
 
 
 def _grooves(cp):
-    """Per edge of `cp`: its two faces bend by GROOVE_KINK or more."""
+    """Per edge of `cp`: fully creased (while the copy still has crease_edge), or its two faces bend by GROOVE_KINK or
+    more."""
     nl, nf = len(cp.loops), len(cp.polygons)
     le = np.empty(nl, np.int64)
     cp.loops.foreach_get("edge_index", le)
@@ -74,6 +79,11 @@ def _grooves(cp):
     a, b = f[first[two]], f[first[two] + 1]
     out = np.zeros(len(cp.edges), bool)
     out[edge[two]] = (fn[a] * fn[b]).sum(axis=1) <= np.cos(np.radians(GROOVE_KINK))
+    ce = cp.attributes.get("crease_edge")
+    if ce is not None:
+        crease = np.empty(len(cp.edges), np.float32)
+        ce.data.foreach_get("value", crease)
+        out |= crease >= 0.99
     return out
 
 
