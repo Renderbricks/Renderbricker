@@ -12,8 +12,8 @@ Ren­der­bricker is an inde­pen­dent add-on, not an offi­cial Mecabricks pro
 
 The button at the very top of the panel starts that add-on's import of a Mecabricks scene (`.zmbx`) – the same
 as *File > Import > Mecabricks (.zmbx)*. Without the Mecabricks Lite or Advanced add-on, installed and enabled,
-the button is greyed out, with a note and a link to
-[www.mecabricks.com](https://www.mecabricks.com) below it. The col­lec­tion of an imported model is put
+the button is greyed out, with a note and links below it to [Mecabricks Lite](https://www.mecabricks.com/en/shop/product/2) (free),
+[Mecabricks Advanced](https://www.mecabricks.com/en/shop/product/4) (paid) and the [Mecabricks shop](https://www.mecabricks.com/en/shop). The col­lec­tion of an imported model is put
 into the col­lec­tion list (see *Col­lec­tion / Selected* below), so Apply works right after the import –
 which­ever way the model is imported: this button, *File > Import* or the importer's own panel.
 

@@ -96,7 +96,7 @@ Ren­der­bricker is an inde­pen­dent add-on, not an offi­cial Mecabricks pro
 
 1. In [Mecabricks](https://www.mecabricks.com), export the model for Blender – a `.zmbx` file.
 2. In Blender: *File → Import → **Mecabricks (.zmbx)*** (1) – or **Import from Mecabricks** at the top
-   of the Ren­der­bricker panel (Mecabricks Lite or Advanced add-on) – and pick the file. Either way the
+   of the Ren­der­bricker panel (Mecabricks add-on [Lite](https://www.mecabricks.com/en/shop/product/2), free, or [Advanced](https://www.mecabricks.com/en/shop/product/4), paid) – and pick the file. Either way the
    col­lec­tion of the model is put into Ren­der­bricker's col­lec­tion list.
 3. Save the scene (*File → Save As*). Ren­der­bricker offers the name of the imported model; the cache
    file will carry the same name:

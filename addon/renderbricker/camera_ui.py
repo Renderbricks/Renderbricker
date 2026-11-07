@@ -367,7 +367,11 @@ def mecabricks_import_available():
         return False
 
 
-MECABRICKS_URL = "https://www.mecabricks.com"
+# Where to get Nicolas' importers - Lite is free, Advanced is paid (maintainer 2026-11-07, UPDATES #58: "idealerweise
+# den Lite-Importer, weil er ist umsonst ... und dazu die Links, wo man sie sich runterladen kann").
+MECABRICKS_SHOP = (("Mecabricks Lite (free)", "https://www.mecabricks.com/en/shop/product/2"),
+                   ("Mecabricks Advanced (paid)", "https://www.mecabricks.com/en/shop/product/4"),
+                   ("Mecabricks shop", "https://www.mecabricks.com/en/shop"))
 
 
 class MECSUB_OT_import_mecabricks(bpy.types.Operator):
@@ -383,8 +387,8 @@ class MECSUB_OT_import_mecabricks(bpy.types.Operator):
                     "the same as File > Import > Mecabricks (.zmbx). Renderbricker is an independent add-on, not an "
                     "official Mecabricks product, and has no importer of its own. The collection of an imported "
                     "model is put into the collection list, whichever way it is imported")
-        return ("Needs the Mecabricks Lite or Advanced add-on by Nicolas 'Scrubs' Jarraud, installed and "
-                "enabled - available at www.mecabricks.com")
+        return ("Needs the Mecabricks Lite (free) or Advanced (paid) add-on by Nicolas 'Scrubs' Jarraud, "
+                "installed and enabled - both in the Mecabricks shop (links below the button)")
 
     @classmethod
     def poll(cls, context):
@@ -407,7 +411,9 @@ def draw_import(L, context, depress=False):
         col.scale_y = 0.8
         col.label(text="Needs the Mecabricks add-on", icon='INFO')
         col.label(text="(Lite or Advanced), enabled", icon='BLANK1')
-        L.operator("wm.url_open", text="www.mecabricks.com", icon='URL').url = MECABRICKS_URL
+        links = L.column(align=True)
+        for text, url in MECABRICKS_SHOP:
+            links.operator("wm.url_open", text=text, icon='URL').url = url
     else:                               # which importer it is (UPDATES #34); red when two are enabled
         line = importer.importer_line()
         if line:

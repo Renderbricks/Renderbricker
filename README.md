@@ -23,7 +23,7 @@ Renderbricker is an independent add-on, not an official Mecabricks product, and 
 
 - Blender 4.5 LTS or newer (developed with 5.2 LTS and 5.3)
 - Windows, Linux or macOS
-- Scenes from [www.mecabricks.com](https://www.mecabricks.com), imported with the Mecabricks Lite or Advanced add-on – a separate add-on from mecabricks.com; Renderbricker has no importer of its own
+- Scenes from [www.mecabricks.com](https://www.mecabricks.com), imported with the Mecabricks add-on – [Lite](https://www.mecabricks.com/en/shop/product/2) (free) or [Advanced](https://www.mecabricks.com/en/shop/product/4) (paid), from the [Mecabricks shop](https://www.mecabricks.com/en/shop); Renderbricker has no importer of its own
 
 ## Installation
 
