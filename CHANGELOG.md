@@ -8,6 +8,7 @@ documentation changes are not.
 ## [Unreleased]
 
 - **Where to get the Mecabricks add-on:** while neither Mecabricks Lite nor Advanced is enabled, the note below **Import from Mecabricks** links to both in the Mecabricks shop – Lite (free) and Advanced (paid) – and to the shop itself, instead of the Mecabricks home page.
+- **Apply from a script converts large parts too.** Called from a Python script (`bpy.ops.mecsub.apply()`), Apply left every part of more than 40,000 faces – a baseplate – as imported and still reported success, its summary counting the part without objects. Such parts are now converted piece by piece there as well, as from the panel. Apply from the panel was not affected.
 
 ## [1.3.0] – 2026-10-28
 

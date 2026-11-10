@@ -107,7 +107,11 @@ class _Stepped:
         self.cache_part = None          # scripts: the cache is written in finish()
         for i in range(len(self.items)):
             try:
-                self.step(context, i)
+                r = self.step(context, i)
+                if hasattr(r, "__next__"):          # a large part's own steps (#54): run them here too (#57)
+                    for st in r:
+                        if len(st) > 2 and st[2]:   # only waiting for a helper process
+                            time.sleep(0.01)
             except core.MemoryShortage as e:        # stop cleanly, processed meshes stay (run 49)
                 self.cancelled = True
                 self.finish(context)
