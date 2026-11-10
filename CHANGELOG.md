@@ -9,6 +9,7 @@ documentation changes are not.
 
 - **Where to get the Mecabricks add-on:** while neither Mecabricks Lite nor Advanced is enabled, the note below **Import from Mecabricks** links to both in the Mecabricks shop – Lite (free) and Advanced (paid) – and to the shop itself, instead of the Mecabricks home page.
 - **Apply from a script converts large parts too.** Called from a Python script (`bpy.ops.mecsub.apply()`), Apply left every part of more than 40,000 faces – a baseplate – as imported and still reported success, its summary counting the part without objects. Such parts are now converted piece by piece there as well, as from the panel. Apply from the panel was not affected.
+- **The crab 31577 / 33121 is round at its claws.** The smooth copy kept a small flat strip inside each claw tip, a point at the tip, a notch in the outline where the C ends and a kink at its foot – the real part is round there. The strip now runs on as part of the curve (the same happens on the arch 7302, the only other part in the Mecabricks library with such a strip), and the three corners of each claw are rounded off by a rule for this part alone. The part is recognised by its shape, so it also works when the mesh was renamed. Because the rules changed, the next **Apply** converts every part again.
 
 ## [1.3.0] – 2026-10-28
 

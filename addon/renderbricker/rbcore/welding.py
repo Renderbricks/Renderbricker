@@ -4,7 +4,7 @@ import bpy, bmesh, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
-from . import bevel, checks, config, copies, creases, meshparts, shading, shrink, workscene
+from . import bevel, checks, config, copies, creases, facets, meshparts, part_rules, shading, shrink, workscene
 
 
 # ================================================================ rules 3.0: weld (runs 48-50)
@@ -131,7 +131,8 @@ def weld(orig):
       1 _islands          classify the islands (flat, curved, logo ...) and number them on the faces
       2 _outline_corners  what must survive the weld: edges inside an island, sharp outline corners, thin wedges
       3 _weld_seams       weld vertices along real seams only - no face and no corner may be lost
-      4 _seam_creases     seams hard from SEAM_SHARP (thin wedges of mechanical parts: WEDGE_SEAM), logo edges
+      4 _seam_creases     seams hard from SEAM_SHARP (thin wedges of mechanical parts: WEDGE_SEAM), logo edges;
+                          an arc's last step stays soft (W2b, facets.py)
       5 _hole_rings       the walls of a polygonised hole stay smooth; convex rings and hexagons stay hard (W5b)
       6 _island_creases   flat stays flat, degenerate faces, steep inner edges (W12), plane beside a bevel (W13)
       7 _relief_tips      the tips of low relief steps are released
@@ -140,7 +141,8 @@ def weld(orig):
         _rounding_ends    a coarse rounding runs out softly where it ends in a seam: the seam is released, the
                           next wall gets the support edge the import does not have (W18) - the cage then has
                           other faces than the import there (checks.LAYOUT on the copies)
-      9 _t_vertices       T vertices and open points that stay apart are pinned
+      9 _t_vertices       T vertices and open points that stay apart are pinned; a part's own rule frees corners
+                          (part_rules.py)
         release_arc_corners   coarse arcs across a flat island (W16)
      10 _work_mesh        the mesh with crease_edge, crease_vert, sharp_edge and normals; the report"""
     orig_name[0] = orig.name
@@ -155,10 +157,15 @@ def weld(orig):
     _pinned_corners(w)
     _rounding_ends(w)
     _t_vertices(w)
+    arc_points = facets.seam_points(w)                   # W2b: before the work mesh, in its numbering
+    part_corners = part_rules.free_corners(w)
     arc_released = release_arc_corners(w.E, w.V, w.kind_of, w.isl)
     w.bm.verts.index_update()
     free = sorted(v.index for v in w.rounded_points)     # W17 points: left free by the shrink compensation
+    arc_soft = len(w.arc_soft)
     wm, tv, rep = _work_mesh(w, arc_released)
+    facets.average_normals(wm, arc_points)
+    rep["arc_facet_seams"], rep["part_corners"] = arc_soft, part_corners
     rep[shrink.SHRINK_FREE] = free
     rep["rounding_freed"] = w.rounded           # W17: middle points of coarse roundings left free
     rep["rounding_ends"], rep["support_points"] = len(w.soft), w.supports      # W18
@@ -309,6 +316,7 @@ def _seam_creases(w):
         if d >= limit:
             cand.append((e, d, a, b))
     w.E, w.seams, w.cand = E, seams, cand
+    facets.soften(w)                    # W2b: the seams of an arc's last step leave cand (run 295)
 
 
 def _hole_rings(w):
@@ -507,6 +515,8 @@ def _relief_tips(w):
     ring_isl = {f[isl] for e in ring for f in e.link_faces}
     ring_faces = [f.index for f in bm.faces if f[isl] in ring_isl]
     w.ringv, w.rung, w.tipv, w.ring_faces = ringv, rung, tipv, ring_faces
+    w.ring = set(ring) | w.arc_soft     # W2b: a softened seam gets no sharp_edge (as a hole ring); after ringv and
+                                        # ring_faces - its islands keep their imported normals
 
 
 def _pinned_corners(w):
