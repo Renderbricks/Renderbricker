@@ -27,7 +27,7 @@ import math
 
 import numpy as np
 
-from . import cagegeom, meshparts, workscene
+from . import cagegeom, contacts, meshparts, workscene
 
 SHRINK_ROUNDS = 6           # subdivide, measure, correct - at most; a round that leaves more than the one before ends it
 SHRINK_STEP = 0.7           # share of the measured shrink corrected per round (the full step overshot on 3839v2)
@@ -374,8 +374,8 @@ def fit_surface(work, wm, T, C, d, held):
 def compensate(work, wm, free=()):
     """The shrink compensation of rules 3.16 on the cage `wm` (on the object `work` with its Subdivision modifier),
     in this order: W19 (compensate_shrink, as built - what it moves is done), W22 (fit_chains), W23 (fit_surface),
-    W24 (contacts; not yet - its keys are 0). `free`: points left as they are (W17). No point moves further than
-    SHRINK_MAX in all. The cage's custom normals are set again once at the end, as they were; WAS keeps the places
+    W24 (contacts.close - the contacts found by contacts.find in the import's places). `free`: points left as they
+    are (W17). No point moves further than SHRINK_MAX in all. The cage's custom normals are set again once at the end, as they were; WAS keeps the places
     and normals before W19 for undo_shrink. Returns a dict: points, max (mm), left (mm: the largest residual left -
     W19's shrink, W23's residual), cylinders, chain_points, surface_points, coarse_left, contact_points,
     contact_moved."""
@@ -390,6 +390,7 @@ def compensate(work, wm, free=()):
     wm.corner_normals.foreach_get("vector", normals)
     _roots, flat = cagegeom.flat_faces(T)
     C = cagegeom.classes(T, free, flat)
+    K = contacts.find(wm, T, flat)                  # W24: who touches whom, in the import's places
     _pts19, _max19, left19, out["cylinders"] = compensate_shrink(work, wm, free)
     x = np.zeros(n * 3, np.float64)
     wm.vertices.foreach_get("co", x)
@@ -401,6 +402,11 @@ def compensate(work, wm, free=()):
     far = np.linalg.norm(d, axis=1)
     d *= np.minimum(1.0, SHRINK_MAX / np.maximum(far, 1e-12))[:, None]       # no point further than SHRINK_MAX
     _set_points(wm, q + d)
+    if len(K["contacts"]):                          # W24 last, inside the same SHRINK_MAX in all
+        freeset = np.asarray(sorted(int(v) for v in free), np.int64)
+        out["contact_points"] = int((~np.isin(K["contacts"][:, 0], freeset)).sum())
+        d, out["contact_moved"], _slit = contacts.close(work, wm, K, free, q, d)
+        _set_points(wm, q + d)
     wm.normals_split_custom_set(normals.reshape(-1, 3))       # the normals as they were, on the new places
     x = np.zeros(n * 3, np.float64)
     wm.vertices.foreach_get("co", x)

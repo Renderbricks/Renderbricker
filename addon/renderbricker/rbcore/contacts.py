@@ -1,0 +1,301 @@
+"""W24 - touching pieces (rules 3.16, UPDATES #67; designed in run 303, fit.py stage 3 and cage_rest).
+
+A part whose pieces only touch in the import (89678: the bead round the mantle, the ribs under it; the crab's stud
+on its body) opens slits there in the smooth copy: the piece touched rounds away between its own points, and the
+shrink compensation alone does not close them (run 303, finding 7: 0.2176 mm left on 89678). Maintainer 2026-11-12:
+at level 2 no gaps may appear.
+
+    find   the shells of the cage (connected pieces) and its contacts: every point that lies on another shell in the
+           import - within CONTACT, a point of an open rim within CONTACT_RIM (the import's own rims lie up to
+           0.063 mm off the shell they rest on: 89678, the mantle's rim under the bead) - with every shell it
+           touches; where the face touched is flat, its plane (for batches; a direct run does not use it)
+    close  rounds on the smooth surface at level 2: a contact point with a slit to a shell it touched moves
+           CONTACT_STEP x the way to the nearest point of that shell's smooth surface (of several shells towards
+           the widest slit), never further than MAX_MOVE from the import in all; ends when no slit is wider than
+           SLIT_MIN
+    gaps   the gap measure of a copy (resting rims, points that share a place, contact slits) - the measure of the
+           test shrink_fit
+
+Slit: the distance to the nearest point of the shell touched, unless the point lies behind that shell - more than
+BESIDE x its distance behind every face that shares the nearest point (a nearest point on an edge or a corner: all
+faces at it). A nearest point on the shell's open rim is beside it, a slit. 89678's rib corner at 2.3 / 0.5 / 0.8:
+its nearest point lies on an edge between two faces of the body, and with the normal of the one face the tree gave
+the prototype took it for behind and left 0.044 mm, its mirror twin closed.
+
+Read only except close, which moves the points of the cage it is given.
+"""
+import numpy as np
+from mathutils.bvhtree import BVHTree
+
+from . import cagegeom, workscene
+
+CONTACT = 1e-3              # mm: a point this close to another shell in the import touches it
+CONTACT_RIM = 0.08          # mm: a point of an open rim touches from this far
+ASK = 0.5                   # mm: the tree is asked this wide and cut by the distance (asked with the reach itself it
+                            # missed one of the two mirrored corners of 89678's rib)
+REST = 1e-4                 # mm: a shell rests when every point of its open rim lies this close to another shell
+BESIDE = 0.3                # a point is behind the shell touched only when it lies this share of its distance behind it
+RIM_TOL = 1e-6              # mm: a nearest point this close to an edge with one face lies on the shell's open rim
+CONTACT_ROUNDS = 6          # subdivide at level 2, measure, move - at most
+CONTACT_STEP = 1.3          # share of the way to the nearest point moved per round
+SLIT_MIN = 1e-4             # mm: a slit this narrow is closed
+LEVEL = 2                   # the smooth surface the slits are measured on (maintainer 2026-11-12: level 2 is the reference)
+MAX_MOVE = 0.3              # mm: no point further than this from the import in all (= shrink.SHRINK_MAX)
+MOVED = 1e-5                # mm: a point moved this far counts as moved
+CONE = True                 # behind only behind every face that shares the nearest point (the normal cone)
+ASK_EDGE = 1e-3             # mm: the faces at the nearest point - asked this wide, cut at RIM_TOL
+
+
+def _faces(T):
+    """The faces of the cage as lists of point numbers."""
+    return [f.tolist() for f in np.split(T["lv"], T["ls"][1:])] if T["nf"] else []
+
+
+def find(wm, T, flat):
+    """The contacts of the cage `wm` at its places in `T` (cagegeom.arrays, before any move); `flat` (nf) bool the
+    flat faces (cagegeom.flat_faces). Returns a dict: lab (n) the shell of every point (its smallest point number),
+    contacts (m,2) int (point, shell touched) - one row per shell a point touches, plane (m,4) the touched face's
+    plane (normal, normal . point on it) where that face is flat, else nan, resting the shells whose open rim rests
+    on another shell (every rim point within REST). Empty at once when the cage has one shell."""
+    n, co, ev = T["n"], T["co"], T["ev"]
+    lab = cagegeom._components(n, ev[:, 0], ev[:, 1]) if len(ev) else np.arange(n)
+    out = {"lab": lab, "contacts": np.zeros((0, 2), np.int64), "plane": np.zeros((0, 4)), "resting": []}
+    shells, sid = np.unique(lab, return_inverse=True)
+    if len(shells) < 2 or not T["nf"]:
+        return out
+    rim = np.zeros(n, bool)
+    rim[ev[T["efaces"] == 1].ravel()] = True
+    reach = np.where(rim, CONTACT_RIM, CONTACT)
+    # a point can only touch a shell whose box (grown by its reach) holds it - the boxes sort out the rest
+    lo = np.full((len(shells), 3), np.inf)
+    hi = np.full((len(shells), 3), -np.inf)
+    np.minimum.at(lo, sid, co)
+    np.maximum.at(hi, sid, co)
+    cand = np.zeros(n, bool)
+    for s in range(len(shells)):
+        other = sid != s
+        inside = np.all((co >= lo[s] - reach[:, None]) & (co <= hi[s] + reach[:, None]), axis=1)
+        cand |= other & inside
+    if not cand.any():
+        return out
+    tree = BVHTree.FromPolygons(co.tolist(), _faces(T))
+    fshell = lab[T["lv"][T["ls"]]]
+    rows, planes = [], []
+    rests = {}
+    for v in np.nonzero(cand)[0].tolist():
+        best = {}                                   # shell touched -> (distance, nearest face)
+        own = lab[v]
+        for _loc, _nrm, f, dist in tree.find_nearest_range(co[v].tolist(), ASK):
+            s = int(fshell[f])
+            if s != own and dist <= reach[v] and (s not in best or dist < best[s][0]):
+                best[s] = (dist, f)
+        if rim[v]:
+            rests[v] = any(dd <= REST for dd, _f in best.values())
+        for s in sorted(best):
+            f = best[s][1]
+            rows.append((v, s))
+            if flat[f]:
+                nrm = T["fn"][f]
+                planes.append((nrm[0], nrm[1], nrm[2], float(nrm @ co[T["lv"][T["ls"][f]]])))
+            else:
+                planes.append((np.nan, np.nan, np.nan, np.nan))
+    rim_pts = np.nonzero(rim)[0]
+    ok = np.array([rests.get(int(v), False) for v in rim_pts], bool)
+    if len(rim_pts):
+        bad = np.unique(lab[rim_pts[~ok]])
+        out["resting"] = sorted(int(s) for s in np.unique(lab[rim_pts]) if s not in set(bad.tolist()))
+    if rows:
+        out["contacts"] = np.array(rows, np.int64)
+        out["plane"] = np.array(planes, np.float64)
+    return out
+
+
+def _evaluate(work, level, topology):
+    """The points of the smooth surface of `work` at `level` (limit surface on); with `topology` also its quads, its
+    edges and the number of faces per edge."""
+    mod = work.modifiers["Subdivision"]
+    keep = mod.levels
+    mod.levels = level
+    try:
+        dg = workscene.depsgraph_of(work)
+        dg.update()
+        ev = work.evaluated_get(dg)
+        me = ev.to_mesh()
+        try:
+            co = np.zeros(len(me.vertices) * 3)
+            me.vertices.foreach_get("co", co)
+            topo = None
+            if topology:
+                lv = np.zeros(len(me.loops), np.int64); me.loops.foreach_get("vertex_index", lv)
+                le = np.zeros(len(me.loops), np.int64); me.loops.foreach_get("edge_index", le)
+                e2 = np.zeros(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", e2)
+                topo = (lv.reshape(-1, 4), e2.reshape(-1, 2), np.bincount(le, minlength=len(me.edges)))
+        finally:
+            ev.to_mesh_clear()
+    finally:
+        mod.levels = keep
+    return co.reshape(-1, 3), topo
+
+
+def _on_segments(p, a, b):
+    """Distance of the point p to the nearest of the segments a-b (k,3)."""
+    ab = b - a
+    t = np.clip(((p - a) * ab).sum(axis=1) / np.maximum((ab * ab).sum(axis=1), 1e-30), 0.0, 1.0)
+    return float(np.linalg.norm(a + ab * t[:, None] - p, axis=1).min()) if len(a) else np.inf
+
+
+def _behind(tree, p, loc, nrm, dist):
+    """Whether the point `p` lies behind the shell of `tree` whose nearest point to it is `loc` (normal `nrm` of the
+    face the tree gave, distance `dist`): behind every face whose closure holds the nearest point - on an edge or a
+    corner all faces that share it (the normal cone; with one face of them the tree's choice decided, 89678's rib
+    corner at 2.3 / 0.5 / 0.8 was behind and its mirror twin beside). More than BESIDE x its distance behind."""
+    if float((p - loc) @ nrm) > -BESIDE * dist:
+        return False
+    if not CONE:
+        return True
+    for _l, n_f, _f, d_f in tree.find_nearest_range(loc.tolist(), ASK_EDGE):
+        if d_f <= RIM_TOL and float((p - loc) @ np.array(n_f)) > -BESIDE * dist:
+            return False
+    return True
+
+
+def close(work, wm, K, free, q, d):
+    """W24 on the cage `wm` of `work`, which stands at q + d (q the import's places, d the moves so far). `K`: find's
+    dict; `free`: points left as they are (W17). Rounds: the smooth surface at LEVEL; every contact point with a slit
+    wider than SLIT_MIN moves CONTACT_STEP x the way to the nearest point of the shell touched, of several shells
+    towards the widest slit; no point further than MAX_MOVE from q in all. Every contact is measured on the smooth
+    surface (ruling 13.11.2026: no plane targets in a direct run - near the edge of a flat face its smooth surface
+    rounds away from the plane, 89678's rib feet kept 0.027 mm; find's planes are for batches). Leaves the cage at
+    q + the moves. Returns (the moves (n,3), points moved by the contacts, largest slit left)."""
+    d = np.asarray(d, np.float64).copy()
+    rows = np.asarray(K["contacts"], np.int64).reshape(-1, 2)
+    freeset = np.asarray(sorted(int(v) for v in free), np.int64)
+    rows = rows[~np.isin(rows[:, 0], freeset)]
+    if not len(rows) or work.modifiers.get("Subdivision") is None:
+        return d, 0, 0.0
+    n = len(q)
+    shells = sorted(set(rows[:, 1].tolist()))
+    dc = np.zeros((n, 3))
+    left = 0.0
+    quads = qshell = rim_seg = None
+    for round_ in range(CONTACT_ROUNDS + 1):
+        co2, topo = _evaluate(work, LEVEL, topology=quads is None)
+        if topo is not None:                    # the copy's shells: its first points are the cage's
+            quads, e2, efaces = topo
+            lab2 = cagegeom._components(len(co2), e2[:, 0], e2[:, 1])
+            qshell = lab2[quads[:, 0]]
+            open_e = e2[efaces == 1]
+            rim_seg = {s: open_e[lab2[open_e[:, 0]] == s] for s in shells}
+        p = co2[rows[:, 0]]
+        slit = np.zeros(len(rows))
+        target = p.copy()
+        for s in shells:
+            sel = quads[qshell == s]
+            if not len(sel):
+                continue
+            tree = BVHTree.FromPolygons(co2.tolist(), sel.tolist())
+            seg = rim_seg[s]
+            for i in np.nonzero(rows[:, 1] == s)[0].tolist():
+                loc, nrm, _f, dist = tree.find_nearest(p[i].tolist())
+                if loc is None:
+                    continue
+                loc = np.array(loc)
+                behind = _behind(tree, p[i], loc, np.array(nrm), dist)
+                if behind and _on_segments(loc, co2[seg[:, 0]], co2[seg[:, 1]]) <= RIM_TOL:
+                    behind = False              # the nearest point on the shell's open rim: beside it, a slit
+                slit[i] = 0.0 if behind else dist
+                target[i] = loc
+        left = float(slit.max())
+        HISTORY.append((round(left, 5), int((slit > 0.005).sum())))
+        if round_ == CONTACT_ROUNDS or not (slit > SLIT_MIN).any():
+            break
+        step, widest = np.zeros((n, 3)), np.zeros(n)
+        for i in np.nonzero(slit > SLIT_MIN)[0].tolist():
+            v = rows[i, 0]
+            if slit[i] > widest[v]:             # of several shells touched: towards the widest slit
+                step[v], widest[v] = target[i] - p[i], slit[i]
+        x = d + dc + CONTACT_STEP * step
+        far = np.linalg.norm(x, axis=1)
+        x *= np.minimum(1.0, MAX_MOVE / np.maximum(far, 1e-12))[:, None]
+        dc = x - d
+        wm.vertices.foreach_set("co", (q + d + dc).astype(np.float32).ravel())
+        wm.update()
+    return d + dc, int((np.linalg.norm(dc, axis=1) > MOVED).sum()), round(left, 5)
+
+
+HISTORY = []                # (largest slit, slits over 0.005) per round of the last close calls - read by the tests
+
+
+def _copy_shells(cage_lab, cp):
+    """The points of a copy and their shells: its first points are the cage's (the subdivision keeps their numbers)."""
+    n = len(cage_lab)
+    co = np.array([v.co[:] for v in cp.vertices])
+    e2 = np.array([e.vertices[:] for e in cp.edges], np.int64).reshape(-1, 2)
+    lab = np.arange(len(co))
+    lab[:n] = cage_lab
+    lab[n:] = len(co) + np.arange(len(co) - n)
+    while True:
+        m = np.minimum(lab[e2[:, 0]], lab[e2[:, 1]])
+        new = lab.copy(); np.minimum.at(new, e2[:, 0], m); np.minimum.at(new, e2[:, 1], m)
+        if np.array_equal(new, lab):
+            break
+        lab = new
+    return co, lab
+
+
+def gaps(cage, cp):
+    """Gaps of a copy `cp` (maintainer 2026-11-12: at level 2 no gaps may appear) against `cage` (lab, resting,
+    contacts, pairs - the points of different shells at one place in the import): the open rims of the resting
+    shells against the shells they rest on (> 0: the rim floats above), how far the pairs lie apart, and the contact
+    points against the copy of the shell they touched (in front of it or beside it: a slit of that width; behind it:
+    none - the measure of run 303, without the open-rim rule of close)."""
+    co, lab = _copy_shells(cage["lab"], cp)
+    cnt = {}
+    for p in cp.polygons:
+        for k in p.edge_keys:
+            cnt[k] = cnt.get(k, 0) + 1
+    rim = np.array(sorted({v for k, c in cnt.items() if c == 1 for v in k}), np.int64)
+    fshell = np.array([lab[p.vertices[0]] for p in cp.polygons])
+    out = {"resting_shells": len(cage["resting"]), "rim_points": 0, "rim_gap_max": 0.0, "rim_points_above_0.005": 0}
+    dd = []
+    for s in cage["resting"]:
+        faces = [p.vertices[:] for p, fs in zip(cp.polygons, fshell, strict=True) if fs != s]
+        if not faces:
+            continue
+        tree = BVHTree.FromPolygons(co.tolist(), faces)
+        for v in rim[lab[rim] == s]:
+            loc, nrm, _i, dist = tree.find_nearest(co[v].tolist())
+            if loc is not None and dist < 0.5:
+                dd.append(float((co[v] - np.array(loc)) @ np.array(nrm)))
+    if dd:
+        a = np.array(dd)
+        out.update({"rim_points": len(a), "rim_gap_max": round(float(a.max()), 4),
+                    "rim_points_above_0.005": int((a > 0.005).sum())})
+    out["touching_apart_max"] = 0.0
+    pairs = cage.get("pairs", [])
+    if len(pairs):
+        pr = np.array(pairs)
+        out["touching_apart_max"] = round(float(np.linalg.norm(co[pr[:, 0]] - co[pr[:, 1]], axis=1).max()), 5)
+    contacts = [(int(v), int(s)) for v, s in cage["contacts"]]
+    out["contact_points"] = len(contacts)
+    out.update({"slit_max": 0.0, "slit_over_0.005": 0})
+    if contacts:
+        trees, slit, where = {}, [], []
+        for v, s in contacts:
+            if s not in trees:
+                faces = [p.vertices[:] for p, fs in zip(cp.polygons, fshell, strict=True) if fs == s]
+                trees[s] = BVHTree.FromPolygons(co.tolist(), faces) if faces else None
+            if trees[s] is None:
+                continue
+            loc, nrm, _i, dist = trees[s].find_nearest(co[v].tolist())
+            if loc is None:
+                continue
+            side = float((co[v] - np.array(loc)) @ np.array(nrm))
+            g = dist if side > -BESIDE * dist else 0.0
+            slit.append(g); where.append((round(g, 4), [round(float(x), 2) for x in co[v]]))
+        if slit:
+            a = np.array(slit)
+            where.sort(reverse=True)
+            out.update({"slit_max": round(float(a.max()), 4), "slit_over_0.005": int((a > 0.005).sum()),
+                        "slit_worst": where[:3]})
+    return out
