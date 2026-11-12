@@ -22,6 +22,7 @@ vertices_corner_offset = 0) lies at the import point's distance from the axis ag
 no point further than SHRINK_GROW times its own shrink. Only shrink is corrected, never the other way. The cage's
 custom normals are set again afterwards as they were (they are stored relative to the faces).
 """
+import itertools
 import math
 
 import numpy as np
@@ -222,3 +223,85 @@ def undo_shrink(work, wm, faces=None):
 
 
 WAS = {}                    # cage name -> (the places, the corner normals) before the compensation (undo_shrink)
+
+COARSE = 0.17               # a point whose residual is larger than this x its shortest edge is a coarse corner, no rounding
+CHAIN_LAM = 1e-6            # the damping of a chain run that has coarse corners (their moves are then free)
+
+
+def fit_chains(T, C, d, moved):
+    """W22 (rules 3.16, run 303 stage 1): the points of hard chains move square to their chain - the directions `u` of
+    cagegeom.classes - until their limit point (x[a] + 4 x[i] + x[b]) / 6 (a point with two hard edges, the creases
+    infinitely sharp) lies on the import point q[i] in those directions; x = q + d. `T`, `C`: cagegeom.arrays /
+    classes of the cage at the import's places; `d` (n,3) the moves so far (W19's); `moved` (n) the points W19 moved -
+    they keep their place, as every point that does not move, and count as fixed neighbours.
+    Solved exactly per connected run of moving chain points. A coarse corner (residual before the solve larger than
+    COARSE x its shortest edge) keeps its unknowns and loses its equations; a run with one is solved damped,
+    |M a - b|^2 + CHAIN_LAM |a|^2. No point further than SHRINK_GROW x its own residual and SHRINK_MAX (cut).
+    Returns (the moves (n,3), points moved, coarse corners left, cut (n) bool). No Blender call."""
+    n = T["n"]
+    q = np.asarray(T["co"], np.float64)
+    d = np.asarray(d, np.float64)
+    d_new = d.copy()
+    cut = np.zeros(n, bool)
+    nb, u = C["nb"], C["u"]
+    act = (C["kind"] == 2) & (C["ku"] > 0) & ~np.asarray(moved, bool)
+    if not act.any():
+        return d_new, 0, 0, cut
+    # the residual before the solve, in the move directions (unused directions of u are zero rows)
+    x = q + d
+    idx = np.nonzero(act)[0]
+    lim = (x[nb[idx, 0]] + 4.0 * x[idx] + x[nb[idx, 1]]) / 6.0
+    b = np.einsum("nkj,nj->nk", u[idx], q[idx] - lim)                  # (m,2)
+    own = np.linalg.norm(b, axis=1)
+    coarse = own > COARSE * C["short"][idx]
+    b[coarse] = 0.0                                                     # a coarse corner has no equation
+    # the runs: moving chain points joined by their hard edges
+    pos = np.full(n, -1, np.int64)
+    pos[idx] = np.arange(len(idx))
+    pa, pb = pos[nb[idx, 0]], pos[nb[idx, 1]]
+    m = len(idx)
+    lab = np.arange(m)              # every point's label: the smallest point of its run (label jumps, as cagegeom)
+    while True:
+        new = lab.copy()
+        for p in (pa, pb):
+            ok = np.nonzero(p >= 0)[0]
+            low = np.minimum(new[ok], new[p[ok]])
+            np.minimum.at(new, ok, low)
+            np.minimum.at(new, p[ok], low)
+        new = new[new]
+        if np.array_equal(new, lab):
+            break
+        lab = new
+    order = np.argsort(lab, kind="stable")
+    bounds = np.r_[0, np.nonzero(np.diff(lab[order]))[0] + 1, m]
+    rank = np.empty(m, np.int64)
+    a_all = np.zeros((m, 2))
+    for s, e in itertools.pairwise(bounds.tolist()):
+        run = order[s:e]                                                # local numbers of the run's points
+        k = len(run)
+        rank[run] = np.arange(k)
+        U = u[idx[run]]                                                 # (k,2,3)
+        M = np.zeros((k, 2, k, 2))
+        r = np.arange(k)
+        M[r, :, r, :] = (4.0 / 6.0) * np.einsum("kij,klj->kil", U, U)
+        for p in (pa, pb):
+            nbp = p[run]
+            ok = np.nonzero(nbp >= 0)[0]
+            j = rank[nbp[ok]]
+            M[ok, :, j, :] += (1.0 / 6.0) * np.einsum("kij,klj->kil", U[ok], U[j])
+        M[coarse[run]] = 0.0                                            # no equations of coarse corners
+        M = M.reshape(2 * k, 2 * k)
+        rhs = b[run].reshape(-1)
+        if coarse[run].any():
+            M = np.vstack([M, math.sqrt(CHAIN_LAM) * np.eye(2 * k)])
+            rhs = np.r_[rhs, np.zeros(2 * k)]
+        a_all[run] = np.linalg.lstsq(M, rhs, rcond=None)[0].reshape(k, 2)
+    dc = np.einsum("nk,nkj->nj", a_all, u[idx])
+    # no point further than SHRINK_GROW x its own residual and SHRINK_MAX
+    reach = np.minimum(SHRINK_GROW * own, SHRINK_MAX)
+    far = np.linalg.norm(dc, axis=1)
+    over = far > reach + 1e-9
+    dc[over] *= (reach[over] / np.maximum(far[over], 1e-12))[:, None]
+    d_new[idx] = d[idx] + dc
+    cut[idx[over]] = True
+    return d_new, int((np.linalg.norm(dc, axis=1) > SHRINK_MIN).sum()), int(coarse.sum()), cut
