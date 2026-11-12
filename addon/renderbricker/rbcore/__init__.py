@@ -10,6 +10,7 @@
     edgesupport  support edges: the points a rounding in the normals needs, and the net below (UPDATES #43)
     edgeshape the real bevel: points inside the band of a chosen edge moved onto its profile (UPDATES #50)
     cagegeom  the welded cage as arrays: flat faces, held / surface / chain points (rules 3.16, UPDATES #67)
+    outlines  W21: the round outline of a flat face closed, the copy's points on it stay (rules 3.16, UPDATES #67)
     shrink    shrink compensation: round surfaces keep their size through the subdivision (UPDATES #51)
     bevel     edges: shader or bevel - rounded edges in the copies themselves, the material's rounding off (UPDATES #43)
     copies    the subdivided copies of a part and the links that use them
@@ -23,7 +24,7 @@
     headless  the run without a window (run.py)
 
 The modules of the conversion import only modules listed above them (config - workscene, reparam - checks -
-creases - shading - maps - edgesupport - edgeshape - bevel - cagegeom - shrink - copies - welding): no import circle there, each can be read on its own.
+creases - shading - maps - edgesupport - edgeshape - bevel - cagegeom - outlines - shrink - copies - welding): no import circle there, each can be read on its own.
 
 The package reads and writes like one module: rbcore.NAME finds NAME in the module that holds it, and
 rbcore.NAME = value sets it there (the add-on sets the levels and the shading before a run).
@@ -31,9 +32,9 @@ Without a window: blender -b scene.blend --python rbcore/run.py -- result.blend 
 """
 import importlib, sys, types as _types
 
-from . import config, workscene, meshparts, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, cagegeom, shrink, copies, welding, batches, memory, cache, workers, camera, engine, renderfile, headless
+from . import config, workscene, meshparts, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, cagegeom, outlines, shrink, copies, welding, batches, memory, cache, workers, camera, engine, renderfile, headless
 
-MODULES = (config, workscene, meshparts, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, cagegeom, shrink, copies, welding, batches, memory, cache, workers, camera, engine, renderfile, headless,)
+MODULES = (config, workscene, meshparts, reparam, checks, creases, shading, maps, edgesupport, edgeshape, bevel, cagegeom, outlines, shrink, copies, welding, batches, memory, cache, workers, camera, engine, renderfile, headless,)
 
 def _owners(modules):
     """name -> module that defines it: everything a module binds itself (functions and classes defined

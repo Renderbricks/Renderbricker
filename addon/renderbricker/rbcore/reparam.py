@@ -201,10 +201,11 @@ def fixed_uvs(orig, cp, level, verts, P):
     return len(L)
 
 
-def slide(cp, Pl, lv, orig=None, level=None):
+def slide(cp, Pl, lv, orig=None, level=None, stay=None):
     """Move the vertices of `cp` (the smooth copy) along its surface to the points nearest to Pl (the parametric
     points, same vertex order; lv: corner -> vertex). A vertex that cannot get there without a fold (or stays: a
-    boundary, a sharp edge) gets surface-fixed UVs instead (fixed_uvs; needs orig and level). Returns a report."""
+    boundary, a sharp edge, a point of `stay` - bool per vertex, W21's closed outlines) gets surface-fixed UVs instead
+    (fixed_uvs; needs orig and level). Returns a report."""
     n = len(cp.vertices)
     if len(Pl) != n:
         return {"skipped": "topology"}
@@ -218,6 +219,8 @@ def slide(cp, Pl, lv, orig=None, level=None):
     if a is not None:
         fixed = _arr(a.data, "value", n, 1, np.float32) > 0.999
         cp.attributes.remove(cp.attributes[EDGE])
+    if stay is not None and len(stay) == n:
+        fixed = fixed | stay                    # W21: a point of a closed outline must not leave it (rules 3.16)
     a = cp.attributes.get(SHELL)
     shell = None
     if a is not None:

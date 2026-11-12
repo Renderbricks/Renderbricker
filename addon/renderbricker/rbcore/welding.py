@@ -4,7 +4,7 @@ import bpy, bmesh, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
-from . import bevel, checks, config, copies, creases, facets, meshparts, part_rules, shading, shrink, workscene
+from . import bevel, checks, config, copies, creases, facets, meshparts, outlines, part_rules, shading, shrink, workscene
 
 
 # ================================================================ rules 3.0: weld (runs 48-50)
@@ -144,7 +144,9 @@ def weld(orig):
       9 _t_vertices       T vertices and open points that stay apart are pinned; a part's own rule frees corners
                           (part_rules.py)
         release_arc_corners   coarse arcs across a flat island (W16)
-     10 _work_mesh        the mesh with crease_edge, crease_vert, sharp_edge and normals; the report"""
+     10 _work_mesh        the mesh with crease_edge, crease_vert, sharp_edge and normals; the report
+        close_round       the round outline of a flat face, hard on half of it or more, hard all round (W21,
+                          outlines.py; not on the islands in outlines.NO_CLOSE)"""
     orig_name[0] = orig.name
     w = types.SimpleNamespace(orig=orig)
     _islands(w)
@@ -165,6 +167,7 @@ def weld(orig):
     arc_soft = len(w.arc_soft)
     wm, tv, rep = _work_mesh(w, arc_released)
     facets.average_normals(wm, arc_points)
+    rep["outlines_closed"] = outlines.close_round(wm)    # W21: after the normals - it reads the shading of the cage
     rep["arc_facet_seams"], rep["part_corners"] = arc_soft, part_corners
     rep[shrink.SHRINK_FREE] = free
     rep["rounding_freed"] = w.rounded           # W17: middle points of coarse roundings left free
@@ -1204,6 +1207,29 @@ def _bake_weld(orig, levels, method_rep=None):
             for cp in made.values():
                 copies.discard_copy(orig, cp)
             made = _bake_work(orig, work, levels, tv)
+        close_off = None
+        folded = baked_folds(orig, made[lv], lv) if rep.get("outlines_closed") else ()
+        if folded:
+            # W21 must not cost a fold either (rules 3.16): the islands that still fold after the undo are welded
+            # again without their closed outlines (as W18 below)
+            own = np.arange(len(wm.polygons))
+            at = wm.attributes.get("rb_fi")
+            if at is not None:
+                at.data.foreach_get("value", own)
+            close_off = set(own[meshparts.island_faces(wm, folded)].tolist())
+            for cp in made.values():
+                copies.discard_copy(orig, cp)
+            bpy.data.objects.remove(work); bpy.data.meshes.remove(wm)
+            outlines.NO_CLOSE[0] = close_off
+            try:
+                work, wm, tv, rep = weld_work(orig)
+            finally:
+                outlines.NO_CLOSE[0] = None
+            rep["outlines_dropped"] = 1
+            _fit(work, wm, rep)
+            if bevel.signature():
+                rep["bevel_edges"] = bevel.mark_edges(orig, wm)
+            made = _bake_work(orig, work, levels, tv)
         folded = baked_folds(orig, made[lv], lv) if rep.get("rounding_ends") else ()
         if folded:
             # W18 must not cost a fold (library, run 283: con1 folded on two faces with it, on none without): the
@@ -1217,11 +1243,15 @@ def _bake_weld(orig, levels, method_rep=None):
                 copies.discard_copy(orig, cp)
             bpy.data.objects.remove(work); bpy.data.meshes.remove(wm)
             NO_ENDS[0] = off
+            outlines.NO_CLOSE[0] = close_off            # the outlines dropped above stay dropped
             try:
                 work, wm, tv, rep = weld_work(orig)
             finally:
                 NO_ENDS[0] = None
+                outlines.NO_CLOSE[0] = None
             rep["rounding_ends_dropped"] = 1
+            if close_off is not None:
+                rep["outlines_dropped"] = 1
             _fit(work, wm, rep)
             if bevel.signature():
                 rep["bevel_edges"] = bevel.mark_edges(orig, wm)

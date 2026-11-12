@@ -1,7 +1,7 @@
 """The subdivided copies of a part: baking a level, UVs, links pointing to the copy of a level, masters."""
 import bpy
 import numpy as np
-from . import bevel, checks, config, creases, maps, reparam, workscene
+from . import bevel, checks, config, creases, maps, outlines, reparam, workscene
 
 
 def original_of(me):
@@ -97,7 +97,8 @@ def bake_copy(orig, work, level):
             try:
                 par = reparam.param_positions(cp)
                 if par is not None:
-                    reparam.slide(cp, *par, orig=orig, level=level)
+                    stay = outlines.stay_points(work.data, level, len(cp.vertices))     # W21's outlines (W14c)
+                    reparam.slide(cp, *par, orig=orig, level=level, stay=stay)
             except Exception as e:                      # never leave linear UVs on unslid points: W14's smoothed UVs
                 print(f"Renderbricker: reparametrisation failed for {orig.name} ({type(e).__name__}: {e}) - smoothed UVs")
                 bpy.data.meshes.remove(cp)
@@ -144,7 +145,7 @@ def discard_copy(orig, cp):
 # Data of the welded work mesh that the finished copies do not need (run 61: 11 % of an L2
 # copy of Ratatouille): creases (already in the geometry), island and face numbers of the
 # rules, the selection flags of the import (a copy is never edited).
-COPY_DROP = ("crease_edge", "crease_vert", "rb_island", "rb_fi", "rb_param", "rb_rim", "rb_shell")
+COPY_DROP = ("crease_edge", "crease_vert", "rb_island", "rb_fi", "rb_param", "rb_rim", "rb_shell", "rb_closed")
 
 
 COPY_DROP_PREFIX = (".select_", ".uv_select_", ".vs.", ".es.", ".pn.")
