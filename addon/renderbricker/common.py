@@ -113,6 +113,12 @@ HEADLESS_ABOUT = ("Convert headless does the same as Apply, but outside Blender 
                   "scenes.",
                   "It writes a new scene file with the converted parts; the open scene stays as it is.",
                   "It does not render.")
+# UPDATES #68 (maintainer 2026-11-12): the tick in its dialog, the sentence below it and its tooltip - one wording
+HEADLESS_CLOSE = "Close Blender now and open the result when it is done"
+HEADLESS_CLOSE_WHY = ("Recommended on computers with little memory: the open scene then leaves its memory to the "
+                      "conversion. Ticked by itself when the free memory is short for this scene.")
+# the memory stop of Apply in the window names the way out (UPDATES #68)
+MEMORY_WAY_OUT = ", or use Convert headless and let it close Blender"
 
 
 # ---------------------------------------------------------------- panel

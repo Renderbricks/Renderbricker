@@ -306,7 +306,7 @@ After *Not now* the panel keeps saying **Cache of another scene** (1) and offers
 **What it is for:** Convert head­less does the same as Apply, but outside Blender in a console window – for large scenes. It writes a new scene file with the con­verted parts; the open scene stays as it is. It does not render. Blender stays free
 meanwhile.
 
-1. Press **Convert head­less** and confirm with **Con­tinue**. The scene is saved first.
+1. Press **Convert head­less** and confirm with **Con­tinue**. The scene is saved first. On a com­puter with little memory, tick **Close Blender now and open the result when it is done** in the ques­tion: Blender closes, the ter­mi­nal con­verts, and the result opens by itself.
 
 ![The question of Convert headless](images/tutorial/T10_headless_question.webp)
 

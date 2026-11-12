@@ -268,6 +268,8 @@ class _Stepped:
         except Exception as e:              # the summary must never lock the panel either
             err = err or f"{type(e).__name__}: {e}"
         if err:
+            if "free memory" in err and not bpy.app.background and common.MEMORY_WAY_OUT not in err:
+                err += common.MEMORY_WAY_OUT        # UPDATES #68: the way out on a computer with little memory
             what = "Stopped: " if "free memory" in err else "Stopped by an error at "
             s.summary = f"{what}{err}, " + s.summary
             self.report({'ERROR'}, "Renderbricker: " + what + err)

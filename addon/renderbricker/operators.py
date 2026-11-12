@@ -632,11 +632,19 @@ class MECSUB_OT_headless(bpy.types.Operator):
                       "<scene>_subdiv_<add-on version>.blend next to it. The start script written beside it (.bat on "
                       "Windows, .command on macOS, .sh on Linux) can be run again by hand")
 
+    # UPDATES #68 (maintainer 2026-11-12, after the test on a 16 GB Mac): „Die headless Option sollte eine Abfrage
+    # anbieten, ob man Blender schließen möchte." - „Blender schließen und nach Abschluss wieder öffnen und das
+    # Ergebnis laden. Das wäre elegant." The open scene keeps its memory while the console converts; closed, the
+    # conversion gets it. The start script waits until this Blender has ended, then converts, then opens the result.
+    close_blender: bpy.props.BoolProperty(
+        name=common.HEADLESS_CLOSE, default=False, description=common.HEADLESS_CLOSE_WHY)
+
     def invoke(self, context, event):
         if not bpy.data.filepath:
             self.report({'INFO'}, "Save the scene first - Convert headless continues after saving")
             widgets.continue_after_save(context, "mecsub.headless")
             return bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT', filepath=widgets.save_as_name(context))
+        self.close_blender = memory_is_short(context)
         # a dialog of its own: the question of invoke_confirm is one line, and with the sentence about what
         # Convert headless does it grew wider than the Blender window (seen in the tutorial pictures, run 271)
         return context.window_manager.invoke_props_dialog(self, width=460, title="Convert headless",
@@ -649,6 +657,12 @@ class MECSUB_OT_headless(bpy.types.Operator):
         for sentence in common.HEADLESS_ABOUT:
             for line in textwrap.wrap(sentence, 62):
                 col.label(text=line)
+        self.layout.prop(self, "close_blender")
+        col = self.layout.column(align=True)
+        col.scale_y = 0.85
+        col.active = self.close_blender
+        for line in textwrap.wrap(common.HEADLESS_CLOSE_WHY, 62):
+            col.label(text=line)
         self.layout.label(text="The scene is saved now. Continue?")
 
     def execute(self, context):
@@ -669,12 +683,39 @@ class MECSUB_OT_headless(bpy.types.Operator):
         out = os.path.join(folder, name + ".blend")
         s = context.scene.mecsub
         args = headless_args(context, out)
-        script = write_headless_script(os.path.join(folder, name), stem, blend, out, args)
+        close = bool(self.close_blender)
+        script = write_headless_script(os.path.join(folder, name), stem, blend, out, args,
+                                       wait_pid=os.getpid() if close else None, reopen=close)
         how = start_script(script)
         s.summary = (f"Headless conversion started in a terminal: {os.path.basename(script)}, result: {os.path.basename(out)}"
                      if how else f"Start script written, run it in a terminal: {script}")
         self.report({'INFO'}, "Renderbricker: " + s.summary)
+        if close and how:                    # only when a terminal runs it - else Blender stays open
+            bpy.ops.wm.save_mainfile()       # the summary changed the scene: saved, so quitting asks nothing
+            bpy.app.timers.register(quit_blender, first_interval=0.5)
         return {'FINISHED'}
+
+
+def memory_is_short(context):
+    """The tick *Close Blender* is preset when the free memory would not hold the largest part in scope at the
+    render level together with the reserve for the rest of the computer (rbcore memory.py) - as on a 16 GB Mac with
+    Italian Riviera's baseplate (UPDATES #65, #68: 9 GB needed, 6 GB free)."""
+    try:
+        free = core.free_memory_gb()
+        if free is None:
+            return False
+        level = max(2, context.scene.mecsub.render_level)
+        meshes = {core.original_of(o.data) for o in common.targets(context) if o.type == 'MESH'}
+        largest = max((core.memory_need_gb(me, level) for me in meshes), default=0.0)
+        return largest + core.RESERVE_GB > free
+    except Exception:   # noqa: BLE001 - only a preset: without a reading the tick stays off
+        return False
+
+
+def quit_blender():
+    """Quit this Blender (Convert headless with *Close Blender*); a function of its own so tests can replace it."""
+    bpy.ops.wm.quit_blender()
+    return None
 
 
 def headless_args(context, out):
@@ -708,19 +749,32 @@ HEADLESS_SHOW = ("PROGRESS", "SKIP", "SAVED", "Error", "Traceback", "MESHES", "J
                  "RETIRE", "CLEAN", "PEAK", "MEMORY", "SEGMENT")
 
 
-def write_headless_script(base, stem, blend, out, args):
-    """Start script for the headless conversion: <base>.bat (Windows), .command (macOS), .sh (Linux)."""
+def write_headless_script(base, stem, blend, out, args, wait_pid=None, reopen=False):
+    """Start script for the headless conversion: <base>.bat (Windows), .command (macOS), .sh (Linux).
+    wait_pid: the script first waits until that process (the Blender that wrote it and quits, UPDATES #68) has
+    ended, so the conversion's memory plan counts the memory it freed. reopen: after a written result the same
+    Blender is started with it; after a failure nothing is opened and the console keeps the message."""
     import os, sys, shlex
     blender = bpy.app.binary_path
     head = f"Renderbricker {common.VERSION}: converting"
+    wait_text = "Waiting until Blender has closed ..."
     if sys.platform.startswith("win"):
         q = lambda x: '"' + x.replace("%", "%%") + '"'
         lines = ["@echo off", "chcp 65001 >nul", f"title Renderbricker {common.VERSION} headless: {stem}"]
         lines += [f"echo {line}" for line in common.HEADLESS_ABOUT] + ["echo."]
+        if wait_pid:
+            # findstr, not find: with Git for Windows on the PATH "find" can be its Unix find, which matched
+            # nothing and the loop did not wait (measured 12.11.2026); the process id stands between spaces
+            lines += [f"echo {wait_text}", ":wait_blender",
+                      f'tasklist /FI "PID eq {int(wait_pid)}" /NH 2>nul | findstr /C:" {int(wait_pid)} " >nul '
+                      "&& (timeout /t 1 /nobreak >nul & goto wait_blender)", "echo."]
+        done = f"echo Done: {q(out)}"
+        if reopen:
+            done += f" & echo Opening the result in Blender ... & start \"\" {q(blender)} {q(out)}"
         lines += [f"echo {head} {q(blend)}", f"echo Result: {q(out)}", "echo.",
                  " ".join([q(blender)] + [q(a) if (" " in a or os.sep in a) else a for a in args])
                  + " 2>&1 | findstr /B " + " ".join(f'/C:"{w}"' for w in HEADLESS_SHOW),
-                 "echo.", f"if exist {q(out)} (echo Done: {q(out)}) else (echo FAILED - no result written)", "pause"]
+                 "echo.", f"if exist {q(out)} ({done}) else (echo FAILED - no result written)", "pause"]
         path = base + ".bat"
         with open(path, "w", encoding="utf-8", newline="\r\n") as fh:
             fh.write("\n".join(lines) + "\n")
@@ -728,10 +782,17 @@ def write_headless_script(base, stem, blend, out, args):
     path = base + (".command" if sys.platform == "darwin" else ".sh")
     lines = ["#!/bin/sh", f"# Renderbricker {common.VERSION} headless conversion of {stem}"]
     lines += [f"echo {shlex.quote(line)}" for line in common.HEADLESS_ABOUT] + ["echo"]
+    if wait_pid:
+        lines += [f"echo {shlex.quote(wait_text)}",
+                  f"while kill -0 {int(wait_pid)} 2>/dev/null; do sleep 1; done", "echo"]
+    done = f"echo {shlex.quote('Done: ' + out)}"
+    if reopen:      # nohup: the result stays open when the terminal is closed
+        done += (f"; echo 'Opening the result in Blender ...'; nohup {shlex.quote(blender)} {shlex.quote(out)} "
+                 ">/dev/null 2>&1 &")
     lines += [f"echo {shlex.quote(head + ' ' + blend)}", f"echo {shlex.quote('Result: ' + out)}", "echo",
              " ".join(shlex.quote(a) for a in [blender] + args)
              + " 2>&1 | grep -E " + shlex.quote("^(" + "|".join(HEADLESS_SHOW) + ")"),
-             "echo", f"if [ -f {shlex.quote(out)} ]; then echo {shlex.quote('Done: ' + out)}; "
+             "echo", f"if [ -f {shlex.quote(out)} ]; then {done}; "
              "else echo 'FAILED - no result written'; fi",
              "printf 'Press Enter to close. '", "read _"]
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
