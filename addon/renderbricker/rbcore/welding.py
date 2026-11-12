@@ -1180,6 +1180,22 @@ def _fit(work, wm, rep):
     rep["shrink_points"], rep["shrink_max"], rep["shrink_left"], rep["shrink_cylinders"] = shrink.compensate_shrink(work, wm, free)
 
 
+def _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=False):
+    """The compensation must not cost a fold: the islands whose copy of level `lv` folds go back to the import's
+    places, the copies are baked again (per island since UPDATES #54 - before, one fold took it back on the whole
+    mesh). `dropped`: an undo before this weld counts in the report. Returns the copies."""
+    if dropped:
+        rep["shrink_dropped"] = 1
+    folded = baked_folds(orig, made[lv], lv) if rep.get("shrink_points") else ()
+    if not folded:
+        return made
+    back = shrink.undo_shrink(work, wm, folded)
+    rep["shrink_dropped"], rep["shrink_points"] = 1, max(0, rep["shrink_points"] - back)
+    for cp in made.values():
+        copies.discard_copy(orig, cp)
+    return _bake_work(orig, work, levels, tv)
+
+
 def _bake_weld(orig, levels, method_rep=None):
     from . import batches
     if batches.wanted(orig):                    # a large mesh: batch by batch of islands (UPDATES #54, run 287)
@@ -1198,15 +1214,7 @@ def _bake_weld(orig, levels, method_rep=None):
         # quality and the copies baked again (1 of 1,372 parts in the library; doing every check at the bake
         # quality cost 2.5-3.6x the repair time).
         lv = config.RENDER_LEVEL if config.RENDER_LEVEL in made else max(made)
-        folded = baked_folds(orig, made[lv], lv) if rep.get("shrink_points") else ()
-        if folded:
-            # the compensation must not cost a fold: the islands that fold go back to the import's places, baked
-            # again (per island since UPDATES #54 - before, one fold took it back on the whole mesh)
-            back = shrink.undo_shrink(work, wm, folded)
-            rep["shrink_dropped"], rep["shrink_points"] = 1, max(0, rep["shrink_points"] - back)
-            for cp in made.values():
-                copies.discard_copy(orig, cp)
-            made = _bake_work(orig, work, levels, tv)
+        made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv)
         close_off = None
         folded = baked_folds(orig, made[lv], lv) if rep.get("outlines_closed") else ()
         if folded:
@@ -1221,6 +1229,7 @@ def _bake_weld(orig, levels, method_rep=None):
                 copies.discard_copy(orig, cp)
             bpy.data.objects.remove(work); bpy.data.meshes.remove(wm)
             outlines.NO_CLOSE[0] = close_off
+            undone = bool(rep.get("shrink_dropped"))
             try:
                 work, wm, tv, rep = weld_work(orig)
             finally:
@@ -1230,6 +1239,9 @@ def _bake_weld(orig, levels, method_rep=None):
             if bevel.signature():
                 rep["bevel_edges"] = bevel.mark_edges(orig, wm)
             made = _bake_work(orig, work, levels, tv)
+            # the fresh cage is compensated again: the islands that fold go back as above (the cage keeps its faces -
+            # W21 changes creases only), and the report keeps an undo of the first weld
+            made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=undone)
         folded = baked_folds(orig, made[lv], lv) if rep.get("rounding_ends") else ()
         if folded:
             # W18 must not cost a fold (library, run 283: con1 folded on two faces with it, on none without): the
