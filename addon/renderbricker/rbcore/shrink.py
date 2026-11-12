@@ -371,12 +371,13 @@ def fit_surface(work, wm, T, C, d, held):
     return d + best, int(moved.sum()), coarse, round(float(best_r[on].max()) if on.any() else 0.0, 5)
 
 
-def compensate(work, wm, free=()):
+def compensate(work, wm, free=(), quality=None):
     """The shrink compensation of rules 3.16 on the cage `wm` (on the object `work` with its Subdivision modifier),
     in this order: W19 (compensate_shrink, as built - what it moves is done), W22 (fit_chains), W23 (fit_surface),
     W24 (contacts.close - the contacts found by contacts.find in the import's places). `free`: points left as they
-    are (W17). No point moves further than SHRINK_MAX in all. The cage's custom normals are set again once at the end, as they were; WAS keeps the places
-    and normals before W19 for undo_shrink. Returns a dict: points, max (mm), left (mm: the largest residual left -
+    are (W17); `quality`: the subdivision quality W24 measures its slits at - the copies' bake quality (None: the
+    modifier's own). No point moves further than SHRINK_MAX in all. The cage's custom normals are set again once at
+    the end, as they were; WAS keeps the places and normals before W19 for undo_shrink. Returns a dict: points, max (mm), left (mm: the largest residual left -
     W19's shrink, W23's residual), cylinders, chain_points, surface_points, coarse_left, contact_points,
     contact_moved."""
     out = {"points": 0, "max": 0.0, "left": 0.0, "cylinders": 0, "chain_points": 0, "surface_points": 0,
@@ -405,7 +406,7 @@ def compensate(work, wm, free=()):
     if len(K["contacts"]):                          # W24 last, inside the same SHRINK_MAX in all
         freeset = np.asarray(sorted(int(v) for v in free), np.int64)
         out["contact_points"] = int((~np.isin(K["contacts"][:, 0], freeset)).sum())
-        d, out["contact_moved"], _slit = contacts.close(work, wm, K, free, q, d)
+        d, out["contact_moved"], _slit = contacts.close(work, wm, K, free, q, d, quality)
         _set_points(wm, q + d)
     wm.normals_split_custom_set(normals.reshape(-1, 3))       # the normals as they were, on the new places
     x = np.zeros(n * 3, np.float64)

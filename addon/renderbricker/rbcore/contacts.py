@@ -35,7 +35,8 @@ ASK = 0.5                   # mm: the tree is asked this wide and cut by the dis
                             # missed one of the two mirrored corners of 89678's rib)
 REST = 1e-4                 # mm: a shell rests when every point of its open rim lies this close to another shell
 BESIDE = 0.3                # a point is behind the shell touched only when it lies this share of its distance behind it
-RIM_TOL = 1e-6              # mm: a nearest point this close to an edge with one face lies on the shell's open rim
+RIM_TOL = 1e-6              # a nearest point this close to an edge lies on it - mm x max(1, its largest coordinate):
+                            # the BVH works in float32, about 1e-6 mm at 8 mm already (review of Task 6)
 CONTACT_ROUNDS = 6          # subdivide at level 2, measure, move - at most
 CONTACT_STEP = 1.3          # share of the way to the nearest point moved per round
 SLIT_MIN = 1e-4             # mm: a slit this narrow is closed
@@ -43,7 +44,7 @@ LEVEL = 2                   # the smooth surface the slits are measured on (main
 MAX_MOVE = 0.3              # mm: no point further than this from the import in all (= shrink.SHRINK_MAX)
 MOVED = 1e-5                # mm: a point moved this far counts as moved
 CONE = True                 # behind only behind every face that shares the nearest point (the normal cone)
-ASK_EDGE = 1e-3             # mm: the faces at the nearest point - asked this wide, cut at RIM_TOL
+ASK_EDGE = 1e-3             # mm: the faces at the nearest point - asked this wide, cut at _tol
 
 
 def _faces(T):
@@ -110,12 +111,14 @@ def find(wm, T, flat):
     return out
 
 
-def _evaluate(work, level, topology):
+def _evaluate(work, level, topology, quality=None):
     """The points of the smooth surface of `work` at `level` (limit surface on); with `topology` also its quads, its
     edges and the number of faces per edge."""
     mod = work.modifiers["Subdivision"]
-    keep = mod.levels
+    keep, keep_q = mod.levels, mod.quality
     mod.levels = level
+    if quality is not None:
+        mod.quality = quality
     try:
         dg = workscene.depsgraph_of(work)
         dg.update()
@@ -133,7 +136,7 @@ def _evaluate(work, level, topology):
         finally:
             ev.to_mesh_clear()
     finally:
-        mod.levels = keep
+        mod.levels, mod.quality = keep, keep_q
     return co.reshape(-1, 3), topo
 
 
@@ -142,6 +145,11 @@ def _on_segments(p, a, b):
     ab = b - a
     t = np.clip(((p - a) * ab).sum(axis=1) / np.maximum((ab * ab).sum(axis=1), 1e-30), 0.0, 1.0)
     return float(np.linalg.norm(a + ab * t[:, None] - p, axis=1).min()) if len(a) else np.inf
+
+
+def _tol(loc):
+    """RIM_TOL at the place `loc`: relative to its largest coordinate from 1 mm on."""
+    return RIM_TOL * max(1.0, float(np.abs(loc).max()))
 
 
 def _behind(tree, p, loc, nrm, dist):
@@ -154,12 +162,12 @@ def _behind(tree, p, loc, nrm, dist):
     if not CONE:
         return True
     for _l, n_f, _f, d_f in tree.find_nearest_range(loc.tolist(), ASK_EDGE):
-        if d_f <= RIM_TOL and float((p - loc) @ np.array(n_f)) > -BESIDE * dist:
+        if d_f <= _tol(loc) and float((p - loc) @ np.array(n_f)) > -BESIDE * dist:
             return False
     return True
 
 
-def close(work, wm, K, free, q, d):
+def close(work, wm, K, free, q, d, quality=None):
     """W24 on the cage `wm` of `work`, which stands at q + d (q the import's places, d the moves so far). `K`: find's
     dict; `free`: points left as they are (W17). Rounds: the smooth surface at LEVEL; every contact point with a slit
     wider than SLIT_MIN moves CONTACT_STEP x the way to the nearest point of the shell touched, of several shells
@@ -167,6 +175,7 @@ def close(work, wm, K, free, q, d):
     surface (ruling 13.11.2026: no plane targets in a direct run - near the edge of a flat face its smooth surface
     rounds away from the plane, 89678's rib feet kept 0.027 mm; find's planes are for batches). Leaves the cage at
     q + the moves. Returns (the moves (n,3), points moved by the contacts, largest slit left)."""
+    HISTORY.clear()
     d = np.asarray(d, np.float64).copy()
     rows = np.asarray(K["contacts"], np.int64).reshape(-1, 2)
     freeset = np.asarray(sorted(int(v) for v in free), np.int64)
@@ -179,7 +188,7 @@ def close(work, wm, K, free, q, d):
     left = 0.0
     quads = qshell = rim_seg = None
     for round_ in range(CONTACT_ROUNDS + 1):
-        co2, topo = _evaluate(work, LEVEL, topology=quads is None)
+        co2, topo = _evaluate(work, LEVEL, topology=quads is None, quality=quality)
         if topo is not None:                    # the copy's shells: its first points are the cage's
             quads, e2, efaces = topo
             lab2 = cagegeom._components(len(co2), e2[:, 0], e2[:, 1])
@@ -201,7 +210,7 @@ def close(work, wm, K, free, q, d):
                     continue
                 loc = np.array(loc)
                 behind = _behind(tree, p[i], loc, np.array(nrm), dist)
-                if behind and _on_segments(loc, co2[seg[:, 0]], co2[seg[:, 1]]) <= RIM_TOL:
+                if behind and _on_segments(loc, co2[seg[:, 0]], co2[seg[:, 1]]) <= _tol(loc):
                     behind = False              # the nearest point on the shell's open rim: beside it, a slit
                 slit[i] = 0.0 if behind else dist
                 target[i] = loc
@@ -223,7 +232,7 @@ def close(work, wm, K, free, q, d):
     return d + dc, int((np.linalg.norm(dc, axis=1) > MOVED).sum()), round(left, 5)
 
 
-HISTORY = []                # (largest slit, slits over 0.005) per round of the last close calls - read by the tests
+HISTORY = []                # (largest slit, slits over 0.005) per round of the last close call - read by the tests
 
 
 def _copy_shells(cage_lab, cp):

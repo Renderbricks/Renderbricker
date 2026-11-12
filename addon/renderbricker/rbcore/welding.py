@@ -1174,11 +1174,13 @@ def baked_folds(orig, cp, level):
         config.LEVELS = keep
 
 
-def _fit(work, wm, rep):
+def _fit(work, wm, rep, orig=None):
     """The shrink compensation of the cage (UPDATES #51; rules 3.16: W19, W22, W23, W24), its numbers into the
-    report."""
+    report. W24 measures its slits at the quality the copies of `orig` are baked at (without `orig`: the cage's
+    own count of faces decides it, as bake_quality): at the modifier's quality 3 the limit places lay up to
+    0.0047 mm off, 89678 kept 4 slits of 0.0057 in the copy (review of Task 6)."""
     free = rep.pop(shrink.SHRINK_FREE, [])
-    res = shrink.compensate(work, wm, free)
+    res = shrink.compensate(work, wm, free, copies.bake_quality(orig if orig is not None else wm))
     rep["shrink_points"], rep["shrink_max"], rep["shrink_left"], rep["shrink_cylinders"] = (
         res["points"], res["max"], res["left"], res["cylinders"])
     for k in ("chain_points", "surface_points", "coarse_left", "contact_points", "contact_moved"):
@@ -1216,7 +1218,7 @@ def _bake_weld(orig, levels, method_rep=None):
     # meshes need the repair anyway and were then baked twice - slower (349 -> 396 s)
     work, wm, tv, rep = weld_work(orig)
     try:
-        _fit(work, wm, rep)
+        _fit(work, wm, rep, orig)
         if bevel.signature():                   # Edges: Bevel - the part's own sharp edges, as bevel weight on
             rep["bevel_edges"] = bevel.mark_edges(orig, wm)      # the cage; the subdivision carries it along
         made = _bake_work(orig, work, levels, tv)
@@ -1247,7 +1249,7 @@ def _bake_weld(orig, levels, method_rep=None):
             finally:
                 outlines.NO_CLOSE[0] = None
             rep["outlines_dropped"] = 1
-            _fit(work, wm, rep)
+            _fit(work, wm, rep, orig)
             if bevel.signature():
                 rep["bevel_edges"] = bevel.mark_edges(orig, wm)
             made = _bake_work(orig, work, levels, tv)
@@ -1276,7 +1278,7 @@ def _bake_weld(orig, levels, method_rep=None):
             rep["rounding_ends_dropped"] = 1
             if close_off is not None:
                 rep["outlines_dropped"] = 1
-            _fit(work, wm, rep)
+            _fit(work, wm, rep, orig)
             if bevel.signature():
                 rep["bevel_edges"] = bevel.mark_edges(orig, wm)
             made = _bake_work(orig, work, levels, tv)
