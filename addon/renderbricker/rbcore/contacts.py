@@ -73,10 +73,16 @@ def find(wm, T, flat):
     np.minimum.at(lo, sid, co)
     np.maximum.at(hi, sid, co)
     cand = np.zeros(n, bool)
+    # per shell only the points in its slab along x (Task 7: every point against every box cost 1.5 s on a mesh of
+    # 35,218 faces) - the same test on them
+    by_x = np.argsort(co[:, 0], kind="stable")
+    xs = co[by_x, 0]
+    wide = float(reach.max())
     for s in range(len(shells)):
-        other = sid != s
-        inside = np.all((co >= lo[s] - reach[:, None]) & (co <= hi[s] + reach[:, None]), axis=1)
-        cand |= other & inside
+        v = by_x[np.searchsorted(xs, lo[s, 0] - wide, "left"):np.searchsorted(xs, hi[s, 0] + wide, "right")]
+        r = reach[v][:, None]
+        inside = np.all((co[v] >= lo[s] - r) & (co[v] <= hi[s] + r), axis=1)
+        cand[v[inside & (sid[v] != s)]] = True
     if not cand.any():
         return out
     tree = BVHTree.FromPolygons(co.tolist(), _faces(T))
@@ -167,6 +173,37 @@ def _behind(tree, p, loc, nrm, dist):
     return True
 
 
+def _groups(keys, items):
+    """`items` grouped by their sorted `keys`: (the keys, a list of the items of each)."""
+    if not len(keys):
+        return [], []
+    cut = np.nonzero(np.diff(keys))[0] + 1
+    return keys[np.r_[0, cut]].tolist(), np.split(items, cut)
+
+
+def _shell_parts(co2, topo, shells):
+    """Per shell of `shells` in the smooth copy (points `co2`, `topo` of _evaluate): its points, its quads in the
+    numbers of those points (in the copy's order) and its open rim edges (in the copy's numbers)."""
+    quads, e2, efaces = topo
+    lab2 = cagegeom._components(len(co2), e2[:, 0], e2[:, 1])
+    qshell = lab2[quads[:, 0]]
+    open_e = e2[efaces == 1]
+    order = np.argsort(qshell, kind="stable")
+    qs = qshell[order]
+    eorder = np.argsort(lab2[open_e[:, 0]], kind="stable")
+    es = lab2[open_e[:, 0]][eorder]
+    vorder = np.argsort(lab2, kind="stable")    # the points by shell, in their order
+    vl = lab2[vorder]
+    rank = np.empty(len(lab2), np.int64)        # every point's number within its shell
+    rank[vorder] = np.arange(len(vl)) - np.searchsorted(vl, vl, "left")
+    out = {}
+    for s in shells:
+        sel = quads[order[np.searchsorted(qs, s):np.searchsorted(qs, s, "right")]]
+        out[s] = (vorder[np.searchsorted(vl, s):np.searchsorted(vl, s, "right")], rank[sel].tolist(),
+                  open_e[eorder[np.searchsorted(es, s):np.searchsorted(es, s, "right")]])
+    return out
+
+
 def close(work, wm, K, free, q, d, quality=None):
     """W24 on the cage `wm` of `work`, which stands at q + d (q the import's places, d the moves so far). `K`: find's
     dict; `free`: points left as they are (W17). Rounds: the smooth surface at LEVEL; every contact point with a slit
@@ -186,31 +223,42 @@ def close(work, wm, K, free, q, d, quality=None):
     shells = sorted(set(rows[:, 1].tolist()))
     dc = np.zeros((n, 3))
     left = 0.0
-    quads = qshell = rim_seg = None
+    by_shell = {}                               # shell touched -> its rows (in row order)
+    order = np.argsort(rows[:, 1], kind="stable")
+    for s, part in zip(*_groups(rows[:, 1][order], order), strict=True):
+        by_shell[s] = part.tolist()
+    own = np.asarray(K["lab"])[rows[:, 0]]       # the shell of every row's point
+    per = None
+    slit = np.zeros(len(rows))
+    target = np.zeros((len(rows), 3))
+    dirty = None                                # the shells whose points moved in the last round (None: all)
+    was = (q + d).astype(np.float32)            # the cage as it stands
     for round_ in range(CONTACT_ROUNDS + 1):
-        co2, topo = _evaluate(work, LEVEL, topology=quads is None, quality=quality)
+        co2, topo = _evaluate(work, LEVEL, topology=per is None, quality=quality)
         if topo is not None:                    # the copy's shells: its first points are the cage's
-            quads, e2, efaces = topo
-            lab2 = cagegeom._components(len(co2), e2[:, 0], e2[:, 1])
-            qshell = lab2[quads[:, 0]]
-            open_e = e2[efaces == 1]
-            rim_seg = {s: open_e[lab2[open_e[:, 0]] == s] for s in shells}
+            per = _shell_parts(co2, topo, shells)
         p = co2[rows[:, 0]]
-        slit = np.zeros(len(rows))
-        target = p.copy()
+        # a row neither of whose two shells moved keeps its measure: the smooth surface of a shell depends on its own
+        # points only (Task 7: the same numbers, a second measure of every row cost a second on a plate 6 x 16)
+        again = np.ones(len(rows), bool) if dirty is None else np.isin(own, dirty) | np.isin(rows[:, 1], dirty)
+        slit[again] = 0.0
+        target[again] = p[again]
         for s in shells:
-            sel = quads[qshell == s]
-            if not len(sel):
+            pts, faces, seg = per[s]
+            todo = [i for i in by_shell[s] if again[i]]
+            if not len(pts) or not todo:
                 continue
-            tree = BVHTree.FromPolygons(co2.tolist(), sel.tolist())
-            seg = rim_seg[s]
-            for i in np.nonzero(rows[:, 1] == s)[0].tolist():
+            # the shell's own points only (Task 7: the whole copy per shell and round cost 13 s on a mesh of 35,218
+            # faces with 97 shells touched) - the same faces in the same order, the same tree
+            tree = BVHTree.FromPolygons(co2[pts].tolist(), faces)
+            a, b = co2[seg[:, 0]], co2[seg[:, 1]]
+            for i in todo:
                 loc, nrm, _f, dist = tree.find_nearest(p[i].tolist())
                 if loc is None:
                     continue
                 loc = np.array(loc)
                 behind = _behind(tree, p[i], loc, np.array(nrm), dist)
-                if behind and _on_segments(loc, co2[seg[:, 0]], co2[seg[:, 1]]) <= _tol(loc):
+                if behind and _on_segments(loc, a, b) <= _tol(loc):
                     behind = False              # the nearest point on the shell's open rim: beside it, a slit
                 slit[i] = 0.0 if behind else dist
                 target[i] = loc
@@ -227,7 +275,10 @@ def close(work, wm, K, free, q, d, quality=None):
         far = np.linalg.norm(x, axis=1)
         x *= np.minimum(1.0, MAX_MOVE / np.maximum(far, 1e-12))[:, None]
         dc = x - d
-        wm.vertices.foreach_set("co", (q + d + dc).astype(np.float32).ravel())
+        now = (q + d + dc).astype(np.float32)
+        dirty = np.unique(np.asarray(K["lab"])[np.any(now != was, axis=1)])     # the cage points that changed
+        was = now
+        wm.vertices.foreach_set("co", now.ravel())
         wm.update()
     return d + dc, int((np.linalg.norm(dc, axis=1) > MOVED).sum()), round(left, 5)
 
