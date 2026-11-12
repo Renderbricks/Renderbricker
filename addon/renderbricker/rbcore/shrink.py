@@ -377,9 +377,9 @@ def compensate(work, wm, free=(), quality=None):
     W24 (contacts.close - the contacts found by contacts.find in the import's places). `free`: points left as they
     are (W17); `quality`: the subdivision quality W24 measures its slits at - the copies' bake quality (None: the
     modifier's own). No point moves further than SHRINK_MAX in all. The cage's custom normals are set again once at
-    the end, as they were; WAS keeps the places and normals before W19 for undo_shrink. Returns a dict: points, max (mm), left (mm: the largest residual left -
-    W19's shrink, W23's residual), cylinders, chain_points, surface_points, coarse_left, contact_points,
-    contact_moved."""
+    the end, as they were; WAS keeps the places and normals before W19 for undo_shrink. Returns a dict: points,
+    max (mm), left (mm: the largest residual left - W19's shrink, W23's residual), cylinders, chain_points,
+    surface_points, coarse_left, contact_points, contact_moved."""
     out = {"points": 0, "max": 0.0, "left": 0.0, "cylinders": 0, "chain_points": 0, "surface_points": 0,
            "coarse_left": 0, "contact_points": 0, "contact_moved": 0}
     n = len(wm.vertices)
