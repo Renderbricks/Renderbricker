@@ -27,7 +27,7 @@ import math
 
 import numpy as np
 
-from . import meshparts, workscene
+from . import cagegeom, meshparts, workscene
 
 SHRINK_ROUNDS = 6           # subdivide, measure, correct - at most; a round that leaves more than the one before ends it
 SHRINK_STEP = 0.7           # share of the measured shrink corrected per round (the full step overshot on 3839v2)
@@ -305,3 +305,110 @@ def fit_chains(T, C, d, moved):
     d_new[idx] = d[idx] + dc
     cut[idx[over]] = True
     return d_new, int((np.linalg.norm(dc, axis=1) > SHRINK_MIN).sum()), int(coarse.sum()), cut
+
+
+FIT_ROUNDS = 6              # W23: subdivide, measure, correct - at most
+FIT_STEP = 0.8              # W23: share of the measured residual corrected per round
+
+
+def _set_points(wm, x):
+    wm.vertices.foreach_set("co", np.asarray(x, np.float32).ravel())
+    wm.update()
+
+
+def fit_surface(work, wm, T, C, d, held):
+    """W23 (rules 3.16, run 303 stage 2): the surface points - no or one hard edge, the directions `u` of
+    cagegeom.classes, one each: the point normal without the normals of its flat faces - move along that direction
+    until their limit point lies on the import point in it, both signs. Rounds through Blender as W19's: residual
+    r = u . (q - limit point) with the cage at q + d + the moves of the rounds; the first round decides who takes part
+    (|r| > SHRINK_MIN, not a coarse corner: |r| <= COARSE x its shortest edge) and how far (min(SHRINK_GROW |r|,
+    SHRINK_MAX)); every round moves by FIT_STEP r u; per island of the cage the round with the smallest mean |r| is
+    kept and an island stops when a round leaves more than the one before. `held` (n) bool: points that keep their
+    place (W19's). Leaves the cage at the places of its last round. Returns (the moves (n,3), points moved, coarse
+    corners left, largest residual left on the points that took part in mm)."""
+    n = T["n"]
+    q = np.asarray(T["co"], np.float64)
+    d = np.asarray(d, np.float64)
+    on = (C["kind"] == 1) & (C["ku"] > 0) & ~np.asarray(held, bool)
+    if not on.any() or work.modifiers.get("Subdivision") is None:
+        return d.copy(), 0, 0, 0.0
+    u = C["u"][:, 0]
+    _ids, isl = np.unique(meshparts.point_islands(wm), return_inverse=True)
+    k = len(_ids)
+    dj, best = np.zeros((n, 3)), np.zeros((n, 3))
+    best_r = np.zeros(n)
+    best_left = np.full(k, np.inf)
+    active = np.ones(k, bool)
+    reach, coarse = None, 0
+    for round_ in range(FIT_ROUNDS + 1):
+        _set_points(wm, q + d + dj)
+        r = ((q - _limit_points(work, n)) * u).sum(axis=1)
+        if reach is None:                           # who takes part, and how far: decided on the first measure
+            far_off = on & (np.abs(r) > COARSE * C["short"])
+            coarse = int(far_off.sum())
+            on &= (np.abs(r) > SHRINK_MIN) & ~far_off
+            reach = np.minimum(SHRINK_GROW * np.abs(r), SHRINK_MAX)
+            active &= np.bincount(isl[on], minlength=k) > 0
+            if not active.any():
+                break
+        r = np.where(on, r, 0.0)
+        count = np.bincount(isl[on], minlength=k)
+        left = np.bincount(isl[on], weights=np.abs(r[on]), minlength=k) / np.maximum(count, 1)
+        better = active & (left < best_left)
+        take = better[isl]
+        best[take], best_r[take], best_left[better] = dj[take], np.abs(r[take]), left[better]
+        if round_:
+            active &= better                        # a round that leaves more than the one before ends the island
+        active &= ~((round_ == FIT_ROUNDS) | (left < SHRINK_MIN))
+        if not active.any():
+            break
+        step = active[isl] & on
+        dj[step] = dj[step] + u[step] * (FIT_STEP * r[step])[:, None]
+        far = np.linalg.norm(dj, axis=1)
+        over = step & (far > reach)
+        dj[over] *= (reach[over] / np.maximum(far[over], 1e-12))[:, None]
+    moved = np.linalg.norm(best, axis=1) > SHRINK_MIN
+    return d + best, int(moved.sum()), coarse, round(float(best_r[on].max()) if on.any() else 0.0, 5)
+
+
+def compensate(work, wm, free=()):
+    """The shrink compensation of rules 3.16 on the cage `wm` (on the object `work` with its Subdivision modifier),
+    in this order: W19 (compensate_shrink, as built - what it moves is done), W22 (fit_chains), W23 (fit_surface),
+    W24 (contacts; not yet - its keys are 0). `free`: points left as they are (W17). No point moves further than
+    SHRINK_MAX in all. The cage's custom normals are set again once at the end, as they were; WAS keeps the places
+    and normals before W19 for undo_shrink. Returns a dict: points, max (mm), left (mm: the largest residual left -
+    W19's shrink, W23's residual), cylinders, chain_points, surface_points, coarse_left, contact_points,
+    contact_moved."""
+    out = {"points": 0, "max": 0.0, "left": 0.0, "cylinders": 0, "chain_points": 0, "surface_points": 0,
+           "coarse_left": 0, "contact_points": 0, "contact_moved": 0}
+    n = len(wm.vertices)
+    if not n or not len(wm.polygons) or work.modifiers.get("Subdivision") is None:
+        return out
+    T = cagegeom.arrays(wm)                         # the import's places and shading, before any move
+    q = T["co"].copy()
+    normals = np.zeros(len(wm.loops) * 3, np.float32)
+    wm.corner_normals.foreach_get("vector", normals)
+    _roots, flat = cagegeom.flat_faces(T)
+    C = cagegeom.classes(T, free, flat)
+    _pts19, _max19, left19, out["cylinders"] = compensate_shrink(work, wm, free)
+    x = np.zeros(n * 3, np.float64)
+    wm.vertices.foreach_get("co", x)
+    d = x.reshape(-1, 3) - q
+    moved = np.linalg.norm(d, axis=1) > 1e-6        # W19's points: done, the others build on their places
+    d, out["chain_points"], coarse_c, _cut = fit_chains(T, C, d, moved)
+    d, out["surface_points"], coarse_s, left_s = fit_surface(work, wm, T, C, d, moved)
+    out["coarse_left"] = coarse_c + coarse_s
+    far = np.linalg.norm(d, axis=1)
+    d *= np.minimum(1.0, SHRINK_MAX / np.maximum(far, 1e-12))[:, None]       # no point further than SHRINK_MAX
+    _set_points(wm, q + d)
+    wm.normals_split_custom_set(normals.reshape(-1, 3))       # the normals as they were, on the new places
+    x = np.zeros(n * 3, np.float64)
+    wm.vertices.foreach_get("co", x)
+    far = np.linalg.norm(x.reshape(-1, 3) - q, axis=1)
+    if not (far > SHRINK_MIN).any():
+        WAS.pop(wm.name, None)
+        return out
+    WAS[wm.name] = (q, normals)
+    out.update({"points": int((far > SHRINK_MIN).sum()), "max": round(float(far.max()), 5),
+                "left": round(max(float(left19), float(left_s)), 5)})
+    return out

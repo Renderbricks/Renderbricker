@@ -4,7 +4,7 @@ import bpy, bmesh, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
-from . import bevel, checks, config, copies, creases, facets, meshparts, outlines, part_rules, shading, shrink, workscene
+from . import bevel, checks, config, copies, creases, facets, meshparts, outlines, part_rules, reparam, shading, shrink, workscene
 
 
 # ================================================================ rules 3.0: weld (runs 48-50)
@@ -1175,9 +1175,14 @@ def baked_folds(orig, cp, level):
 
 
 def _fit(work, wm, rep):
-    """The shrink compensation of the cage (UPDATES #51), its numbers into the report."""
+    """The shrink compensation of the cage (UPDATES #51; rules 3.16: W19, W22, W23, W24), its numbers into the
+    report."""
     free = rep.pop(shrink.SHRINK_FREE, [])
-    rep["shrink_points"], rep["shrink_max"], rep["shrink_left"], rep["shrink_cylinders"] = shrink.compensate_shrink(work, wm, free)
+    res = shrink.compensate(work, wm, free)
+    rep["shrink_points"], rep["shrink_max"], rep["shrink_left"], rep["shrink_cylinders"] = (
+        res["points"], res["max"], res["left"], res["cylinders"])
+    for k in ("chain_points", "surface_points", "coarse_left", "contact_points", "contact_moved"):
+        rep[k] = res[k]
 
 
 def _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=False):
@@ -1191,6 +1196,13 @@ def _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=False):
         return made
     back = shrink.undo_shrink(work, wm, folded)
     rep["shrink_dropped"], rep["shrink_points"] = 1, max(0, rep["shrink_points"] - back)
+    # W14c's marks hold the cage's places at the first bake - the compensated ones: they are made again on the places
+    # the undo gave back (rules 3.16; with the old marks an island put back slid to its compensated places, 23443:
+    # 0.28 mm off the copy without compensation)
+    for name in (reparam.PARAM, reparam.EDGE, reparam.SHELL):
+        at = wm.attributes.get(name)
+        if at is not None:
+            wm.attributes.remove(at)
     for cp in made.values():
         copies.discard_copy(orig, cp)
     return _bake_work(orig, work, levels, tv)
