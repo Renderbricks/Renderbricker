@@ -93,9 +93,9 @@ def find(wm, T, flat):
     for v in np.nonzero(cand)[0].tolist():
         best = {}                                   # shell touched -> (distance, nearest face)
         own, rv = lab_l[v], reach_l[v]
-        for _loc, _nrm, f, dist in tree.find_nearest_range(co[v].tolist(), ASK):
+        for f, dist in [(h[2], h[3]) for h in tree.find_nearest_range(co[v].tolist(), ASK) if h[3] <= rv]:
             s = fshell_l[f]
-            if s != own and dist <= rv and (s not in best or dist < best[s][0]):
+            if s != own and (s not in best or dist < best[s][0]):
                 best[s] = (dist, f)
         if rim[v]:
             rests[v] = any(dd <= REST for dd, _f in best.values())
