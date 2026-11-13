@@ -38,6 +38,7 @@ SHRINK_SQUARE = 0.1         # a cylinder: every face normal within this cosine o
 SHRINK_GAP = 45.0           # ... its points all round the axis, no gap wider than this (degrees)
 SHRINK_TRUE = 0.03          # ... and at one distance from it, within this share of the radius
 SHRINK_FREE = "_shrink_free"        # report key: points of the cage that are left free (W17)
+SHRINK_APART = "_shrink_apart"      # report key: points of the cage that stay apart (welding, stage 9; W24a)
 
 
 def _regions(wm):
@@ -467,15 +468,17 @@ def fit_surface(work, wm, T, C, d, held):
     return d + best, int(moved.sum()), coarse, round(float(best_r[on].max()) if on.any() else 0.0, 5)
 
 
-def compensate(work, wm, free=(), quality=None):
+def compensate(work, wm, free=(), quality=None, apart=()):
     """The shrink compensation of rules 3.16 on the cage `wm` (on the object `work` with its Subdivision modifier),
     in this order: W19 (compensate_shrink, as built - what it moves is done), W22 (fit_chains), W23 (fit_surface),
     W24 (contacts.close - the contacts found by contacts.find in the import's places). `free`: points left as they
     are (W17); `quality`: the subdivision quality W24 measures its slits at - the copies' bake quality (None: the
-    modifier's own). No point moves further than SHRINK_MAX in all. The cage's custom normals are set again once at
-    the end, as they were, if W22 to W24 moved a point (W19 sets them itself); WAS keeps the places and normals
-    before W19 for undo_shrink. Returns a dict: points, max (mm), left (mm: the largest residual left - W19's
-    shrink, W23's residual), cylinders, chain_points, surface_points, coarse_left, contact_points, contact_moved.
+    modifier's own); `apart`: the points that stay apart (welding, stage 9) - W24 does not move them (W24a). No
+    point moves further than SHRINK_MAX in all. The cage's
+    custom normals are set again once at the end, as they were, if W22 to W24 moved a point (W19 sets them itself);
+    WAS keeps the places and normals before W19 for undo_shrink. Returns a dict: points, max (mm), left (mm: the
+    largest residual left - W19's shrink, W23's residual), cylinders, chain_points, surface_points, coarse_left,
+    contact_points, contact_moved.
     Every subdivision in here is read for its points only: the modifier's custom normals are off meanwhile (Task 7: the
     points are the same to the bit, an evaluation costs a third - the custom normals of 600,000 corners were most of it;
     the subdivision itself is kept, its settings do not hold the normals) and back on at the end."""
@@ -484,13 +487,13 @@ def compensate(work, wm, free=(), quality=None):
     if mod is not None:
         mod.use_custom_normals = False
     try:
-        return _compensate(work, wm, free, quality)
+        return _compensate(work, wm, free, quality, apart)
     finally:
         if mod is not None:
             mod.use_custom_normals = keep
 
 
-def _compensate(work, wm, free, quality):
+def _compensate(work, wm, free, quality, apart=()):
     out = {"points": 0, "max": 0.0, "left": 0.0, "cylinders": 0, "chain_points": 0, "surface_points": 0,
            "coarse_left": 0, "contact_points": 0, "contact_moved": 0}
     n = len(wm.vertices)
@@ -502,7 +505,7 @@ def _compensate(work, wm, free, quality):
     wm.corner_normals.foreach_get("vector", normals)
     _roots, flat = cagegeom.flat_faces(T)
     C = cagegeom.classes(T, free, flat)
-    K = contacts.find(wm, T, flat)                  # W24: who touches whom, in the import's places
+    K = contacts.find(wm, T, flat, C["planes"])     # W24: who touches whom, in the import's places
     _pts19, _max19, left19, out["cylinders"] = compensate_shrink(work, wm, free)
     x = np.zeros(n * 3, np.float64)
     wm.vertices.foreach_get("co", x)
@@ -518,7 +521,8 @@ def _compensate(work, wm, free, quality):
     if len(K["contacts"]):                          # W24 last, inside the same SHRINK_MAX in all
         freeset = np.asarray(sorted(int(v) for v in free), np.int64)
         out["contact_points"] = int((~np.isin(K["contacts"][:, 0], freeset)).sum())
-        d, out["contact_moved"], _slit = contacts.close(work, wm, K, free, q, d, quality)
+        d, out["contact_moved"], _slit = contacts.close(work, wm, K, free, q, d, quality, hold=apart,
+                                                        planes=C["planes"])
         _set_points(wm, q + d)
     x = np.zeros(n * 3, np.float64)
     wm.vertices.foreach_get("co", x)

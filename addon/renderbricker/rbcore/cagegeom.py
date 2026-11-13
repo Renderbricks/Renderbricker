@@ -148,7 +148,7 @@ def classes(T, free, flat):
     hard (ne) the hard edges. Held: a point without faces, a point left free (W17), a creased point, a point where more
     than two hard edges meet. For the points left free also, from the same call (W22a takes them as coarse corners):
     free (n) bool, ku_free (n) the number of directions a free point would move in as a chain point (0 for every
-    other point) and u_free (n,2,3) those directions."""
+    other point) and u_free (n,2,3) those directions. planes: _flat_planes of the call (W24b, W24e read them)."""
     n, co, ev, cr = T["n"], T["co"], T["ev"], T["cr"]
     hard = (cr >= HARD) | (T["efaces"] != 2)
     # neighbours along hard edges, in edge order
@@ -225,4 +225,4 @@ def classes(T, free, flat):
         u[is_free] = 0.0
         ku[is_free] = 0
     return {"kind": kind, "ku": ku.astype(np.int8), "u": u, "nd": nd, "vn": vn, "nb": nb, "short": short,
-            "hard": hard, "free": is_free, "ku_free": ku_free, "u_free": u_free}
+            "hard": hard, "free": is_free, "ku_free": ku_free, "u_free": u_free, "planes": (count, planes)}

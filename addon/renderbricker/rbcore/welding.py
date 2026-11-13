@@ -165,12 +165,14 @@ def weld(orig):
     arc_released = release_arc_corners(w.E, w.V, w.kind_of, w.isl)
     w.bm.verts.index_update()
     free = sorted(v.index for v in w.rounded_points)     # W17 points: left free by the shrink compensation
+    apart = sorted(v.index for v in w.apart)             # stage 9's points that stay apart: W24 holds them (W24a)
     arc_soft = len(w.arc_soft)
     wm, tv, rep = _work_mesh(w, arc_released)
     facets.average_normals(wm, arc_points)
     rep["outlines_closed"] = outlines.close_round(wm)    # W21: after the normals - it reads the shading of the cage
     rep["arc_facet_seams"], rep["part_corners"] = arc_soft, part_corners
     rep[shrink.SHRINK_FREE] = free
+    rep[shrink.SHRINK_APART] = apart
     rep["rounding_freed"] = w.rounded           # W17: middle points of coarse roundings left free
     rep["rounding_ends"], rep["support_points"] = len(w.soft), w.supports      # W18
     return wm, tv, rep
@@ -831,7 +833,8 @@ def _rounding_ends(w):
 
 def _t_vertices(w):
     """Stage 9. Reads bm, V. Adds tv [(vertex, host face)] and pins (adds to V) the T vertices, the ends of their
-    host edges and every open point that stays apart."""
+    host edges and every open point that stays apart; adds apart: those points (the shrink compensation's W24 does
+    not move them - W24a)."""
     bm, V = w.bm, w.V
     # T vertices: open vertex on the inside of another open edge
     tv = []
@@ -868,13 +871,15 @@ def _t_vertices(w):
     for v in bm.verts:
         if v.is_boundary:
             opos[P(v.co)].append(v)
-    V |= {v for g in opos.values() if len(g) > 1 for v in g}
+    apart = {v for g in opos.values() if len(g) > 1 for v in g}
     bm.faces.ensure_lookup_table()
     for vi, host in tv:
-        V.add(bm.verts[vi])
+        apart.add(bm.verts[vi])
         for e in bm.faces[host].edges:
             if e.is_boundary and (bm.verts[vi].co - (e.verts[0].co + e.verts[1].co) / 2).length <= e.calc_length() / 2 + config.MERGE_DIST:
-                V |= set(e.verts)
+                apart |= set(e.verts)
+    V |= apart
+    w.apart = apart
     w.tv = tv
 
 
@@ -1179,9 +1184,10 @@ def _fit(work, wm, rep, orig=None):
     """The shrink compensation of the cage (UPDATES #51; rules 3.16: W19, W22, W23, W24), its numbers into the
     report. W24 measures its slits at the quality the copies of `orig` are baked at (without `orig`: the cage's
     own count of faces decides it, as bake_quality): at the modifier's quality 3 the limit places lay up to
-    0.0047 mm off, 89678 kept 4 slits of 0.0057 in the copy (review of Task 6)."""
-    free = rep.pop(shrink.SHRINK_FREE, [])
-    res = shrink.compensate(work, wm, free, copies.bake_quality(orig if orig is not None else wm))
+    0.0047 mm off, 89678 kept 4 slits of 0.0057 in the copy (review of Task 6). The points that stay apart (the
+    weld's stage 9) are held by W24 (W24a)."""
+    free, apart = rep.pop(shrink.SHRINK_FREE, []), rep.pop(shrink.SHRINK_APART, [])
+    res = shrink.compensate(work, wm, free, copies.bake_quality(orig if orig is not None else wm), apart)
     rep["shrink_points"], rep["shrink_max"], rep["shrink_left"], rep["shrink_cylinders"] = (
         res["points"], res["max"], res["left"], res["cylinders"])
     for k in ("chain_points", "surface_points", "coarse_left", "contact_points", "contact_moved"):

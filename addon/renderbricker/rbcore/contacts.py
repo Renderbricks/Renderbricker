@@ -10,10 +10,11 @@ at level 2 no gaps may appear.
            0.063 mm off the shell they rest on: 89678, the mantle's rim under the bead) - with every shell it
            touches, its nearest face there and, where that is flat, its plane (for batches.unit_plan; close does not
            use them)
+           - not a joint (W24e) and at a pole one row per place touched (W24d)
     close  rounds on the smooth surface at level 2: a contact point with a slit to a shell it touched moves
            CONTACT_STEP x the way to the nearest point of that shell's smooth surface (of several shells towards
-           the widest slit), never further than MAX_MOVE from the import in all; ends when no slit is wider than
-           SLIT_MIN
+           the widest slit), never further than MAX_MOVE from the import in all, never a point that stays apart
+           (W24a) and never off the flat faces it lies on (W24b); ends when no slit is wider than SLIT_MIN
     gaps   the gap measure of a copy (resting rims, points that share a place, contact slits) - the measure of the
            test shrink_fit
 
@@ -24,6 +25,9 @@ its nearest point lies on an edge between two faces of the body, and with the no
 the prototype took it for behind and left 0.044 mm, its mirror twin closed.
 
 Read only except close, which moves the points of the cage it is given.
+
+Rework of run 306 (13.11.2026; the diagnosis found every hole of rules 3.16 in W24 or in the baked copy, where no
+rule looked): W24a, W24b, W24d, W24e restrain close as W22 / W23 are restrained.
 """
 import numpy as np
 from mathutils.bvhtree import BVHTree
@@ -46,6 +50,9 @@ MAX_MOVE = 0.3              # mm: no point further than this from the import in 
 MOVED = 1e-5                # mm: a point moved this far counts as moved
 CONE = True                 # behind only behind every face that shares the nearest point (the normal cone)
 ASK_EDGE = 1e-3             # mm: the faces at the nearest point - asked this wide, cut at _tol
+JOINT_COS = 0.996           # W24e: two flat faces within 5 degrees lie in one plane ...
+JOINT_OFF = 0.01            # mm: ... when the point is no further than this off the other's plane
+MANY = 8                    # W24d: a point touching more shells than this - they count once per place touched
 
 
 def _faces(T):
@@ -53,13 +60,21 @@ def _faces(T):
     return [f.tolist() for f in np.split(T["lv"], T["ls"][1:])] if T["nf"] else []
 
 
-def find(wm, T, flat):
+def find(wm, T, flat, planes=None):
     """The contacts of the cage `wm` at its places in `T` (cagegeom.arrays, before any move); `flat` (nf) bool the
-    flat faces (cagegeom.flat_faces). Returns a dict: lab (n) the shell of every point (its smallest point number),
-    contacts (m,2) int (point, shell touched) - one row per shell a point touches, face (m) the nearest face of the
-    shell touched, plane (m,4) that face's plane (normal, normal . point on it) where it is flat, else nan, resting
-    the shells whose open rim rests on another shell (every rim point within REST). Empty at once when the cage has
-    one shell."""
+    flat faces (cagegeom.flat_faces); `planes` the flat planes of every point (cagegeom._flat_planes; None: made
+    here). Returns a dict: lab (n) the shell of every point (its smallest point number), contacts (m,2) int (point,
+    shell touched) - one row per shell a point touches, face (m) the nearest face of the shell touched, plane (m,4)
+    that face's plane (normal, normal . point on it) where it is flat, else nan, resting the shells whose open rim
+    rests on another shell (every rim point within REST). Empty at once when the cage has one shell.
+      W24e  a row that only the wide reach makes (a rim point further than CONTACT off the shell) is no contact when
+            that shell has, within the point's reach, a flat face in the plane of one of the point's own flat faces
+            (normals within JOINT_COS, the point within JOINT_OFF of its plane): the two lie side by side with a
+            joint between them (con1: an insert in a hole 0.05 mm larger; W24 dragged the hole's outline 0.27 mm
+            over it). A rim resting on a surface or standing before it is not in that plane (89678's mantle rim
+            0.063 mm under the bead) - no single reach separates the two (0.05 below 0.063)
+      W24d  a point touching more than MANY shells (a pole: 20398, 432 shells, 379,260 rows) touches each place once:
+            the shells by distance, one dropped whose nearest point lies within CONTACT of one kept"""
     n, co, ev = T["n"], T["co"], T["ev"]
     lab = cagegeom._components(n, ev[:, 0], ev[:, 1]) if len(ev) else np.arange(n)
     out = {"lab": lab, "contacts": np.zeros((0, 2), np.int64), "face": np.zeros(0, np.int64), "plane": np.zeros((0, 4)),
@@ -89,28 +104,48 @@ def find(wm, T, flat):
     if not cand.any():
         return out
     tree = BVHTree.FromPolygons(co.tolist(), _faces(T))
-    fshell = lab[T["lv"][T["ls"]]]
-    rows, planes, nearest = [], [], []
+    n_planes, own_planes = cagegeom._flat_planes(T, flat) if planes is None else planes
+    first_of = T["lv"][T["ls"]]                     # a point of every face
+    fshell = lab[first_of]
+    rows, row_planes, nearest = [], [], []
     rests = {}
     fshell_l, lab_l, reach_l = fshell.tolist(), lab.tolist(), reach.tolist()     # Python numbers in the loop (Task 7)
     for v in np.nonzero(cand)[0].tolist():
-        best = {}                                   # shell touched -> (distance, nearest face)
+        best = {}                                   # shell touched -> (distance, nearest face, nearest place)
+        near_faces = []                             # the faces of other shells within the reach: (face, normal)
         own, rv = lab_l[v], reach_l[v]
-        for f, dist in [(h[2], h[3]) for h in tree.find_nearest_range(co[v].tolist(), ASK) if h[3] <= rv]:
+        for loc, n_f, f, dist in [h for h in tree.find_nearest_range(co[v].tolist(), ASK) if h[3] <= rv]:
             s = fshell_l[f]
-            if s != own and (s not in best or dist < best[s][0]):
-                best[s] = (dist, f)
+            if s != own:
+                near_faces.append((f, n_f))
+                if s not in best or dist < best[s][0]:
+                    best[s] = (dist, f, loc)
         if rim[v]:
-            rests[v] = any(dd <= REST for dd, _f in best.values())
+            rests[v] = any(b[0] <= REST for b in best.values())
+            if n_planes[v]:                         # W24e: a joint is no contact
+                for f, n_f in near_faces:
+                    s = fshell_l[f]
+                    if s in best and best[s][0] > CONTACT and flat[f]:
+                        n_f = np.array(n_f)
+                        in_plane = any(abs(float(n_f @ own_planes[v, k])) > JOINT_COS
+                                       for k in range(min(int(n_planes[v]), 2)))
+                        if abs(float((co[v] - co[first_of[f]]) @ n_f)) < JOINT_OFF and in_plane:
+                            del best[s]
+        if len(best) > MANY:                        # W24d: many shells at one place (a pole) count once per place
+            kept = []
+            for s in sorted(best, key=lambda s: (best[s][0], s)):
+                if all((best[s][2] - best[k][2]).length > CONTACT for k in kept):
+                    kept.append(s)
+            best = {s: best[s] for s in kept}
         for s in sorted(best):
             f = best[s][1]
             rows.append((v, s))
             nearest.append(f)
             if flat[f]:
                 nrm = T["fn"][f]
-                planes.append((nrm[0], nrm[1], nrm[2], float(nrm @ co[T["lv"][T["ls"][f]]])))
+                row_planes.append((nrm[0], nrm[1], nrm[2], float(nrm @ co[T["lv"][T["ls"][f]]])))
             else:
-                planes.append((np.nan, np.nan, np.nan, np.nan))
+                row_planes.append((np.nan, np.nan, np.nan, np.nan))
     rim_pts = np.nonzero(rim)[0]
     ok = np.array([rests.get(int(v), False) for v in rim_pts], bool)
     if len(rim_pts):
@@ -119,7 +154,7 @@ def find(wm, T, flat):
     if rows:
         out["contacts"] = np.array(rows, np.int64)
         out["face"] = np.array(nearest, np.int64)
-        out["plane"] = np.array(planes, np.float64)
+        out["plane"] = np.array(row_planes, np.float64)
     return out
 
 
@@ -222,14 +257,21 @@ def _shell_parts(co2, topo, shells):
     return out
 
 
-def close(work, wm, K, free, q, d, quality=None):
+def close(work, wm, K, free, q, d, quality=None, hold=(), planes=None):
     """W24 on the cage `wm` of `work`, which stands at q + d (q the import's places, d the moves so far). `K`: find's
     dict; `free`: points left as they are (W17). Rounds: the smooth surface at LEVEL; every contact point with a slit
     wider than SLIT_MIN moves CONTACT_STEP x the way to the nearest point of the shell touched, of several shells
     towards the widest slit; no point further than MAX_MOVE from q in all. Every contact is measured on the smooth
     surface (ruling 13.11.2026: no plane targets in a direct run - near the edge of a flat face its smooth surface
-    rounds away from the plane, 89678's rib feet kept 0.027 mm; find's planes are for batches). Leaves the cage at
-    q + the moves. Returns (the moves (n,3), points moved by the contacts, largest slit left)."""
+    rounds away from the plane, 89678's rib feet kept 0.027 mm; find's planes are for batches).
+      W24a  `hold`: the points that stay apart (welding, stage 9: T points, the ends of their host edges, unwelded
+            twins) do not move - their rows are measured, their slit reported. Moved, one side of the pair moved and
+            the other stayed: the copy tore open (92092: T gap 0.405 mm; 3.15 had 0.0001)
+      W24b  `planes` (cagegeom._flat_planes: the count and the first two planes per point): a move keeps to the flat
+            faces the point lies on, as W22 and W23 do - one plane: in it, two: along their line, three: none (con1:
+            the slots' corners moved 0.063 mm off their walls). A flat piece whose corner would have to sink into a
+            curved face keeps its slit there (13767: 0.095 mm at 4 points, rules 3.15 0.110)
+    Leaves the cage at q + the moves. Returns (the moves (n,3), points moved by the contacts, largest slit left)."""
     HISTORY.clear()
     d = np.asarray(d, np.float64).copy()
     rows = np.asarray(K["contacts"], np.int64).reshape(-1, 2)
@@ -238,6 +280,9 @@ def close(work, wm, K, free, q, d, quality=None):
     if not len(rows) or work.modifiers.get("Subdivision") is None:
         return d, 0, 0.0
     n = len(q)
+    still = np.zeros(n, bool)                   # W24a
+    if len(hold):
+        still[np.asarray(sorted(int(v) for v in hold), np.int64)] = True
     shells = sorted(set(rows[:, 1].tolist()))
     dc = np.zeros((n, 3))
     left = 0.0
@@ -299,6 +344,9 @@ def close(work, wm, K, free, q, d, quality=None):
             v = rows[i, 0]
             if slit[i] > widest[v]:             # of several shells touched: towards the widest slit
                 step[v], widest[v] = target[i] - p[i], slit[i]
+        step[still] = 0.0                       # W24a: the points that stay apart
+        if planes is not None:                  # W24b: a point keeps to the flat faces it lies on
+            step = _in_planes(step, planes)
         x = d + dc + CONTACT_STEP * step
         far = np.linalg.norm(x, axis=1)
         x *= np.minimum(1.0, MAX_MOVE / np.maximum(far, 1e-12))[:, None]
@@ -313,6 +361,23 @@ def close(work, wm, K, free, q, d, quality=None):
         wm.vertices.foreach_set("co", now.ravel())
         wm.update()
     return d + dc, int((np.linalg.norm(dc, axis=1) > MOVED).sum()), round(left, 5)
+
+
+def _in_planes(step, planes):
+    """`step` (n,3) without what leaves the flat faces a point lies on: `planes` = (count (n), the first two planes
+    (n,2,3)) of cagegeom._flat_planes - one plane: the step in it; two: along their line; three or more: none."""
+    count, pl = planes
+    out = step.copy()
+    one = count >= 1
+    n1 = pl[:, 0]
+    out[one] -= n1[one] * (out[one] * n1[one]).sum(axis=1)[:, None]
+    two = count == 2
+    if two.any():
+        line = np.cross(pl[two, 0], pl[two, 1])
+        line /= np.maximum(np.linalg.norm(line, axis=1), 1e-12)[:, None]
+        out[two] = line * (step[two] * line).sum(axis=1)[:, None]
+    out[count >= 3] = 0.0
+    return out
 
 
 HISTORY = []                # (largest slit, slits over 0.005) per round of the last close call - read by the tests
