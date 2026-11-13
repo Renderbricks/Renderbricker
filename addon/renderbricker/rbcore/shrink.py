@@ -379,7 +379,22 @@ def compensate(work, wm, free=(), quality=None):
     modifier's own). No point moves further than SHRINK_MAX in all. The cage's custom normals are set again once at
     the end, as they were; WAS keeps the places and normals before W19 for undo_shrink. Returns a dict: points,
     max (mm), left (mm: the largest residual left - W19's shrink, W23's residual), cylinders, chain_points,
-    surface_points, coarse_left, contact_points, contact_moved."""
+    surface_points, coarse_left, contact_points, contact_moved.
+    Every subdivision in here is read for its points only: the modifier's custom normals are off meanwhile (Task 7: the
+    points are the same to the bit, an evaluation costs a third - the custom normals of 600,000 corners were most of it;
+    the subdivision itself is kept, its settings do not hold the normals) and back on at the end."""
+    mod = work.modifiers.get("Subdivision")
+    keep = mod.use_custom_normals if mod is not None else None
+    if mod is not None:
+        mod.use_custom_normals = False
+    try:
+        return _compensate(work, wm, free, quality)
+    finally:
+        if mod is not None:
+            mod.use_custom_normals = keep
+
+
+def _compensate(work, wm, free, quality):
     out = {"points": 0, "max": 0.0, "left": 0.0, "cylinders": 0, "chain_points": 0, "surface_points": 0,
            "coarse_left": 0, "contact_points": 0, "contact_moved": 0}
     n = len(wm.vertices)
