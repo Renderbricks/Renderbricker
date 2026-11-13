@@ -226,6 +226,91 @@ WAS = {}                    # cage name -> (the places, the corner normals) befo
 
 COARSE = 0.17               # a point whose residual is larger than this x its shortest edge is a coarse corner, no rounding
 CHAIN_LAM = 1e-6            # the damping of a chain run that has coarse corners (their moves are then free)
+OVER_END = 0.0025           # mm: W22b - a chain point lifts the limit curve over a straight piece by no more than this
+STRAIGHT_DEG = cagegeom.FLAT_DEG    # W22b: the import's hard edges run straight on through a point within this
+_T = np.array([0.25, 0.5, 0.75])    # W22b: the level-2 places on a chain edge
+_N2 = (-3 * _T ** 3 + 3 * _T ** 2 + 3 * _T + 1) / 6     # the B-spline weights there of the moving point ...
+_N3 = _T ** 3 / 6                                       # ... and of its other neighbour
+
+
+def _half_creased(T):
+    """W22a: the points with an edge of two faces creased 0 < crease < HARD, or such a point crease (W3 / W16 and the
+    fold repair leave them). OpenSubdiv treats the edge as sharp for the first levels - the point is a corner there,
+    its limit is not the limit of a point with two hard edges (W22's model is 0.11 to 0.57 mm off on them, 6e-6 mm
+    on the others)."""
+    semi = np.zeros(T["n"], bool)
+    e = (T["cr"] > 1e-6) & (T["cr"] < cagegeom.HARD) & (T["efaces"] == 2)
+    semi[T["ev"][e].ravel()] = True
+    return semi | ((T["vcr"] > 1e-6) & (T["vcr"] < cagegeom.HARD))
+
+
+def _guard(T, C, idx, dc):
+    """W22b, the guard (design w22_guard, variant GD). Per moving chain point i (its move dc, after the reach cut) and
+    each of its chain edges (i, j), k its other chain neighbour: the edge is a STRAIGHT PIECE when the import's hard
+    edges run straight on through j within STRAIGHT_DEG ((a): at a point with two hard edges its other neighbour h, at a
+    junction or corner any hard edge there), or when it is more than ROUNDING_RATIO x as long as the chain edges that
+    follow it at both ends ((b): (i, k), and (j, h) where j has two hard edges). Then i's move across the line (j, i),
+    away from k, is at most
+        cap = min over t in (1/4, 1/2, 3/4) of (OVER_END + N3(t) s) / N2(t),   s = the distance of q[k] from the line
+    - what i's move lifts the limit curve between j and i over the import's line stays within OVER_END at the level-2
+    places. Import places only (no neighbour's move, no order: batches give the same). A larger move is scaled down as
+    a whole, by the smaller factor of its two edges. Returns which of idx were clamped; dc is changed in place."""
+    q = np.asarray(T["co"], np.float64)
+    nb = C["nb"]
+    cos_s = math.cos(math.radians(STRAIGHT_DEG))
+    two = (nb[:, 0] >= 0) & (nb[:, 1] >= 0)
+    mv = np.linalg.norm(dc, axis=1) > SHRINK_MIN
+    scale = np.ones(len(idx))
+    adj = None                      # the hard edges per point, built when a piece ends at a junction or corner
+    i = idx
+    for side in (0, 1):
+        j = nb[i, side]
+        k = nb[i, 1 - side]
+        ok = mv & (j >= 0) & (k >= 0)
+        tji = q[i] - q[j]
+        L = np.linalg.norm(tji, axis=1)
+        Lk = np.linalg.norm(q[k] - q[i], axis=1)
+        ok &= (L > 1e-9) & (Lk > 1e-9)
+        t = tji / np.maximum(L, 1e-12)[:, None]
+        h = np.where(nb[j, 0] == i, nb[j, 1], nb[j, 0])            # j's other chain neighbour
+        chain_j = two[j] & (h >= 0)
+        tj = q[j] - q[np.maximum(h, 0)]
+        Lh = np.linalg.norm(tj, axis=1)
+        tj /= np.maximum(Lh, 1e-12)[:, None]
+        straight = chain_j & ((tj * t).sum(axis=1) > cos_s)        # (a) at a point with two hard edges
+        follow = np.where(chain_j & (Lh > 1e-9), np.maximum(Lk, Lh), Lk)
+        straight |= L > cagegeom.ROUNDING_RATIO * follow           # (b), at both ends
+        cand = np.nonzero(ok & ~chain_j & ~straight)[0]            # (a) at a junction or corner: any hard edge there
+        if len(cand):
+            if adj is None:
+                adj = {}
+                for a, b in T["ev"][C["hard"]].tolist():
+                    adj.setdefault(a, []).append(b)
+                    adj.setdefault(b, []).append(a)
+            for c in cand.tolist():
+                jj, ii = int(j[c]), int(i[c])
+                for w in adj.get(jj, ()):
+                    if w != ii:
+                        v = q[jj] - q[w]
+                        lv = np.linalg.norm(v)
+                        if lv > 1e-9 and (v / lv) @ t[c] > cos_s:
+                            straight[c] = True
+                            break
+        sel = np.nonzero(ok & straight)[0]
+        if not len(sel):
+            continue
+        t_ = t[sel]
+        nrm = q[i[sel]] - q[k[sel]]                                 # square to the line, away from k
+        nrm -= t_ * (nrm * t_).sum(axis=1)[:, None]
+        s_k = np.linalg.norm(nrm, axis=1)
+        nrm /= np.maximum(s_k, 1e-12)[:, None]
+        o_i = (dc[sel] * nrm).sum(axis=1)
+        cap = ((OVER_END + _N3[None] * s_k[:, None]) / _N2[None]).min(axis=1)
+        bad = (s_k > 1e-9) & (o_i > cap + 1e-9)
+        np.minimum.at(scale, sel, np.where(bad, cap / np.maximum(o_i, 1e-12), 1.0))
+    clamped = scale < 1.0
+    dc[clamped] *= scale[clamped][:, None]
+    return clamped
 
 
 def fit_chains(T, C, d, moved):
@@ -234,9 +319,14 @@ def fit_chains(T, C, d, moved):
     infinitely sharp) lies on the import point q[i] in those directions; x = q + d. `T`, `C`: cagegeom.arrays /
     classes of the cage at the import's places; `d` (n,3) the moves so far (W19's); `moved` (n) the points W19 moved -
     they keep their place, as every point that does not move, and count as fixed neighbours.
+    W22a (Task 8, design w22_guard): a point with a half-creased edge (_half_creased) does not take part - held, a fixed
+    neighbour; W17's free points that would be chain points (C["ku_free"]) take part as coarse corners, moving in
+    their would-be chain directions (C["u_free"]).
     Solved exactly per connected run of moving chain points. A coarse corner (residual before the solve larger than
-    COARSE x its shortest edge) keeps its unknowns and loses its equations; a run with one is solved damped,
-    |M a - b|^2 + CHAIN_LAM |a|^2. No point further than SHRINK_GROW x its own residual and SHRINK_MAX (cut).
+    COARSE x its shortest edge, or a free point) keeps its unknowns and loses its equations; a run with one is solved
+    damped, |M a - b|^2 + CHAIN_LAM |a|^2. No point further than SHRINK_GROW x its own residual and SHRINK_MAX (cut);
+    then W22b, the guard (_guard): no point lifts the limit curve over a straight piece of its chain by more than
+    OVER_END (clamped - reported in cut too: for both the exact equation does not hold).
     Returns (the moves (n,3), points moved, coarse corners left, cut (n) bool). No Blender call."""
     n = T["n"]
     q = np.asarray(T["co"], np.float64)
@@ -244,7 +334,12 @@ def fit_chains(T, C, d, moved):
     d_new = d.copy()
     cut = np.zeros(n, bool)
     nb, u = C["nb"], C["u"]
-    act = (C["kind"] == 2) & (C["ku"] > 0) & ~np.asarray(moved, bool)
+    moved = np.asarray(moved, bool)
+    act = (C["kind"] == 2) & (C["ku"] > 0) & ~moved & ~_half_creased(T)
+    free = (C["ku_free"] > 0) & ~moved                                 # W17's points, as coarse corners
+    if free.any():
+        u = np.where(free[:, None, None], C["u_free"], u)
+        act |= free
     if not act.any():
         return d_new, 0, 0, cut
     # the residual before the solve, in the move directions (unused directions of u are zero rows)
@@ -253,7 +348,7 @@ def fit_chains(T, C, d, moved):
     lim = (x[nb[idx, 0]] + 4.0 * x[idx] + x[nb[idx, 1]]) / 6.0
     b = np.einsum("nkj,nj->nk", u[idx], q[idx] - lim)                  # (m,2)
     own = np.linalg.norm(b, axis=1)
-    coarse = own > COARSE * C["short"][idx]
+    coarse = (own > COARSE * C["short"][idx]) | free[idx]
     b[coarse] = 0.0                                                     # a coarse corner has no equation
     # the runs: moving chain points joined by their hard edges
     pos = np.full(n, -1, np.int64)
@@ -302,8 +397,9 @@ def fit_chains(T, C, d, moved):
     far = np.linalg.norm(dc, axis=1)
     over = far > reach + 1e-9
     dc[over] *= (reach[over] / np.maximum(far[over], 1e-12))[:, None]
+    clamped = _guard(T, C, idx, dc)                                     # W22b
     d_new[idx] = d[idx] + dc
-    cut[idx[over]] = True
+    cut[idx[over | clamped]] = True
     return d_new, int((np.linalg.norm(dc, axis=1) > SHRINK_MIN).sum()), int(coarse.sum()), cut
 
 

@@ -22,6 +22,8 @@ FLAT_NORMAL_DEG = 2.0       # a face whose shading normals all lie this close to
 FLAT_DEG = 1.0              # faces joined across edges bending less than this are one flat face; two flat planes at
                             # a point closer than this count once
 KEEP = 0.5                  # a move direction that loses more than this share to the flat normals is dropped
+ROUNDING_RATIO = 2.0        # the pieces of a round shape are about the same length: within this ratio (W17 in welding,
+                            # W22's guard in shrink)
 
 
 def arrays(wm):
@@ -144,7 +146,9 @@ def classes(T, free, flat):
     in and u (n,2,3) those directions (nd without the normals of the flat faces it lies on), vn the point normals,
     nb (n,2) its neighbours along hard edges (-1 where it has fewer; chain points have two), short its shortest edge,
     hard (ne) the hard edges. Held: a point without faces, a point left free (W17), a creased point, a point where more
-    than two hard edges meet."""
+    than two hard edges meet. For the points left free also, from the same call (W22a takes them as coarse corners):
+    free (n) bool, ku_free (n) the number of directions a free point would move in as a chain point (0 for every
+    other point) and u_free (n,2,3) those directions."""
     n, co, ev, cr = T["n"], T["co"], T["ev"], T["cr"]
     hard = (cr >= HARD) | (T["efaces"] != 2)
     # neighbours along hard edges, in edge order
@@ -164,9 +168,12 @@ def classes(T, free, flat):
     vn = _point_normals(T)
     has_face = np.bincount(T["lv"], minlength=n) > 0
     held = ~has_face | (T["vcr"] >= HARD) | (nh > 2)
+    is_free = np.zeros(n, bool)
     free = np.asarray(list(free), np.int64)
     if len(free):
-        held[free] = True
+        is_free[free] = True
+    # the classes as if no point were free; every row below is computed per point, so the free points' rows are
+    # what they would be as chain points, and every other row is the same as with the free points held
     kind = np.where(held, 0, np.where(nh == 2, 2, 1)).astype(np.int8)
 
     nd = np.zeros((n, 2, 3))
@@ -209,5 +216,13 @@ def classes(T, free, flat):
     np.minimum.at(short, ev[:, 0], elen)
     np.minimum.at(short, ev[:, 1], elen)
     short[~np.isfinite(short)] = 0.0
+    # the free points: held (kind 0, no directions), their chain directions kept apart
+    ku_free = np.where(is_free & (kind == 2), ku, 0).astype(np.int8)
+    u_free = np.where((ku_free > 0)[:, None, None], u, 0.0)
+    if is_free.any():
+        kind[is_free] = 0
+        nd[is_free] = 0.0
+        u[is_free] = 0.0
+        ku[is_free] = 0
     return {"kind": kind, "ku": ku.astype(np.int8), "u": u, "nd": nd, "vn": vn, "nb": nb, "short": short,
-            "hard": hard}
+            "hard": hard, "free": is_free, "ku_free": ku_free, "u_free": u_free}

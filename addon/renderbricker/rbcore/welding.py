@@ -32,7 +32,8 @@ INNER_SHARP = float(config.opt("--inner-sharp", "85"))   # inner island edge cre
 ORGANIC_CORNER = 60.0    # corner bend on organic (all-curved) surfaces, run 53
 COARSE_ROUNDING = config.opt("--coarse-rounding", "1") == "1"   # W17 (run 282); "0": rules 3.6, for comparisons
 ROUNDING_TOTAL = 100.0   # W17: the three bends of a coarse rounding make no more than this ...
-ROUNDING_RATIO = 2.0     # ... its two pieces are about the same length ...
+ROUNDING_RATIO = shrink.cagegeom.ROUNDING_RATIO   # ... its two pieces are about the same length (2.0; one source
+                                                 # with W22's guard) ...
 ROUNDING_DEPTH = 0.06    # ... and the free point gives way by no more than this (mm): a corner radius up to about 0.6
 ROUND_ENDS = config.opt("--round-ends", "1") == "1"   # W18 (run 283); "0": rules 3.7, for comparisons
 ENDS_LOG = None          # a list: (mesh, middle of the seam, why not / "released") of every seam W18 looks at (scans)
