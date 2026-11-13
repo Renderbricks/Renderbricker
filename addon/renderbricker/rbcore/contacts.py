@@ -27,7 +27,7 @@ Read only except close, which moves the points of the cage it is given.
 import numpy as np
 from mathutils.bvhtree import BVHTree
 
-from . import cagegeom, workscene
+from . import cagegeom, config, workscene
 
 CONTACT = 1e-3              # mm: a point this close to another shell in the import touches it
 CONTACT_RIM = 0.08          # mm: a point of an open rim touches from this far
@@ -121,10 +121,15 @@ def _evaluate(work, level, topology, quality=None):
     """The points of the smooth surface of `work` at `level` (limit surface on); with `topology` also its quads, its
     edges and the number of faces per edge."""
     mod = work.modifiers["Subdivision"]
-    keep, keep_q = mod.levels, mod.quality
+    keep, keep_q, keep_uv = mod.levels, mod.quality, mod.uv_smooth
     mod.levels = level
     if quality is not None:
         mod.quality = quality
+    if config.REPARAM:
+        # as copies.bake_copy (W14c: linear UVs) - the bake that follows finds the subdivision built here (Task 7:
+        # with smoothed UVs it was built twice); the points agree with those of smoothed UVs to float rounding
+        # (2e-6 mm at most on run 303's 16 parts), and they are the ones the bake makes
+        mod.uv_smooth = 'NONE'
     try:
         dg = workscene.depsgraph_of(work)
         dg.update()
@@ -142,7 +147,7 @@ def _evaluate(work, level, topology, quality=None):
         finally:
             ev.to_mesh_clear()
     finally:
-        mod.levels, mod.quality = keep, keep_q
+        mod.levels, mod.quality, mod.uv_smooth = keep, keep_q, keep_uv
     return co.reshape(-1, 3), topo
 
 
@@ -274,9 +279,13 @@ def close(work, wm, K, free, q, d, quality=None):
         x = d + dc + CONTACT_STEP * step
         far = np.linalg.norm(x, axis=1)
         x *= np.minimum(1.0, MAX_MOVE / np.maximum(far, 1e-12))[:, None]
-        dc = x - d
-        now = (q + d + dc).astype(np.float32)
-        dirty = np.unique(np.asarray(K["lab"])[np.any(now != was, axis=1)])     # the cage points that changed
+        new = x - d
+        now = (q + d + new).astype(np.float32)
+        changed = np.any(now != was, axis=1)    # the cage points that changed
+        if not changed.any():
+            break                               # every point with a slit stands at MAX_MOVE: the next measure is this
+        dc = new
+        dirty = np.unique(np.asarray(K["lab"])[changed])
         was = now
         wm.vertices.foreach_set("co", now.ravel())
         wm.update()
