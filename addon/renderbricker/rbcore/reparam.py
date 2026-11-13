@@ -59,6 +59,26 @@ TIE_COS = 1e-4       # facing and flatness of tied triangles this close count as
 EDGE = "rb_rim"       # point attribute: 1 on the import's boundary vertices (open rims, seams between shells)
 
 
+TIES = config.opt("--reparam-ties", "1") == "1"   # W27 (rework 2, run 306): "0" - the slide as before, for comparisons
+
+
+def bow_ties(q):
+    """W27: the quads `q` (m,4,3) whose two render triangles face against each other - a bow tie: the quad crosses
+    itself, or is folded along its diagonal. As the renderer splits a quad (Blender, mesh_tessellate.cc, case 4:
+    triangles 0-1-2 and 0-2-3, and 0-1-3 and 1-2-3 when those two face against each other -
+    is_quad_flip_v3_first_third_fast, math_geom.cc). A quad's own normal (the cross of its diagonals) does not show
+    it: a bow tie's mean normal can still point up (3857: the black wedge in the base plate; 13765, 99012uv)."""
+    d1, d2, d3 = q[:, 1] - q[:, 0], q[:, 2] - q[:, 0], q[:, 3] - q[:, 0]
+    a, b = np.cross(d1, d2), np.cross(d2, d3)
+    flip = (a * b).sum(1) < 0.0
+    if flip.any():
+        f = q[flip]
+        a[flip] = np.cross(f[:, 1] - f[:, 0], f[:, 3] - f[:, 0])
+        b[flip] = np.cross(f[:, 2] - f[:, 1], f[:, 3] - f[:, 1])
+    small = np.minimum(np.linalg.norm(a, axis=1), np.linalg.norm(b, axis=1))
+    return ((a * b).sum(1) < 0.0) & (small > 2e-10)
+
+
 def part_size(me):
     """The largest side of the bounding box of `me` - the scale of MIN_SLIDE."""
     co = _arr(me.vertices, "co", len(me.vertices), 3)
@@ -359,6 +379,7 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
         ofn = _arr(orig.polygons, "normal", len(orig.polygons), 3)
         if int((lt0 * 4 ** (level - 1)).sum()) == nf:
             on = ofn[np.repeat(own_face, lt0 * 4 ** (level - 1))]
+    tied = bow_ties(Ps[quads]) if TIES else None
     for step in range(FOLD_STEPS + 1):
         q = new[quads]
         qn = np.cross(q[:, 2] - q[:, 0], q[:, 3] - q[:, 1])
@@ -367,6 +388,8 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
         bad = (qn * ref).sum(1) < FOLD_COS
         if on is not None:                               # nor turned against its original face (the fold check, W10b)
             bad |= (qn * on).sum(1) < 0.0
+        if TIES:                                         # W27: nor a bow tie the smooth copy did not have
+            bad |= bow_ties(q) & ~tied
         vb = np.zeros(n, bool); vb[quads[bad].ravel()] = True
         vb &= moving
         if not vb.any():
@@ -394,6 +417,8 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
         bad = (qn * ref).sum(1) < FOLD_COS
         if on is not None:
             bad |= (qn * on).sum(1) < 0.0
+        if TIES:
+            bad |= bow_ties(q) & ~tied
         vb = np.zeros(n, bool); vb[quads[bad].ravel()] = True
         vb &= moving
         if not vb.any():

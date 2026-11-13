@@ -4,7 +4,7 @@ import bpy, bmesh, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
-from . import bevel, checks, config, copies, creases, facets, meshparts, outlines, part_rules, reparam, shading, shrink, workscene
+from . import bevel, checks, config, copies, cover, creases, facets, meshparts, outlines, part_rules, reparam, shading, shrink, workscene
 
 
 # ================================================================ rules 3.0: weld (runs 48-50)
@@ -1168,10 +1168,24 @@ def _bake_work(orig, work, levels, tv):
         cp = copies.bake_copy(orig, work, lv)
         if fit is not None and fit["snap"] is not None:
             shrink.contacts.snap(cp, fit["snap"][0], lv, fit["snap"][1], fit["snap"][2])
+        _sink_covers(orig, cp, lv)
         cp["rb_method"] = "weld"
         cp["rb_tv"] = [x for pair in tv for x in pair]      # T vertices for the check (vertex, host face)
         made[lv] = cp
     return made
+
+
+def _sink_covers(orig, cp, lv):
+    """W28 (rework 2, run 306): two faces of the import in one plane, one over the other - the copy of the smaller
+    one goes COVER_SINK behind (cover.sink; per face of the copy its import face and that face's area)."""
+    parent = None
+    lt0, own_face = checks.cage_faces(orig, cp)
+    if int((lt0 * 4 ** (lv - 1)).sum()) == len(cp.polygons):
+        area = np.zeros(len(orig.polygons)); orig.polygons.foreach_get("area", area)
+        parent = (np.repeat(own_face, lt0 * 4 ** (lv - 1)), area)
+    sunk = cover.sink(cp, parent)
+    if sunk:
+        cp["rb_cover_sunk"] = sunk
 
 
 def baked_folds(orig, cp, level):
@@ -1219,15 +1233,59 @@ def _folds(orig, made, lv, memo):
     return folded
 
 
+STILL = "_shrink_still"  # report key: the cage points W25 and W25b hold (one set for both; _bake_weld drops it)
+
+
+def _refit(orig, work, wm, tv, rep, made, levels, still):
+    """The cage back at the import's places and compensated again with the points `still` held for W22 and W23
+    (W25, W25b; W24 then closes on what stands): W14c's marks made again (as _shrink_back), the copies baked again.
+    Returns the copies."""
+    rep[STILL] = sorted(still)
+    shrink.undo_shrink(work, wm)
+    for name in (reparam.PARAM, reparam.EDGE, reparam.SHELL):
+        at = wm.attributes.get(name)
+        if at is not None:
+            wm.attributes.remove(at)
+    for cp in made.values():
+        copies.discard_copy(orig, cp)
+    _fit(work, wm, rep, orig, still=sorted(still))
+    return _bake_work(orig, work, levels, tv)
+
+
 def _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=False, memo=None):
-    """The compensation must not cost a fold: the islands whose copy of level `lv` folds go back to the import's
-    places, the copies are baked again (per island since UPDATES #54 - before, one fold took it back on the whole
-    mesh). `dropped`: an undo before this weld counts in the report. Returns the copies."""
+    """The compensation must not cost a fold: the points of the cage faces whose children fold are held (W25b,
+    below), else the islands whose copy of level `lv` folds go back to the import's places, the copies
+    are baked again (per island since UPDATES #54 - before, one fold took it back on the whole mesh). `dropped`: an
+    undo before this weld counts in the report. Returns the copies."""
     if dropped:
         rep["shrink_dropped"] = 1
     folded = _folds(orig, made, lv, memo) if rep.get("shrink_points") else ()
     if not folded:
         return made
+    # W25b (rework 2, run 306): first only the points of the faces whose children fold are left where the import
+    # has them (and, if that is not enough, the faces around them), the cage is compensated again - as W25 does
+    # for a flat face that was bent, with one set of held points for both (STILL). Taking the compensation back
+    # on the whole island for one fold opened what it had closed elsewhere on it (99012uv: one concave flat quad
+    # on the back wall folds - all 458 points of the shell went back, the cone shrank and the wing's tip stood
+    # 0.085 mm before it).
+    before = rep.get(STILL)
+    still = set(before or ())
+    for attempt in (0, 1):
+        pts = {v for f in folded for v in wm.polygons[f].vertices}
+        if attempt:
+            pts = {v for p in wm.polygons if pts.intersection(p.vertices) for v in p.vertices}
+        still |= pts
+        made = _refit(orig, work, wm, tv, rep, made, levels, still)
+        if memo is not None:
+            memo.clear()
+        folded = _folds(orig, made, lv, memo) if rep.get("shrink_points") else ()
+        if not folded:
+            rep["shrink_held"] = len(still)
+            return made
+    if before is None:                          # it did not help: the island goes back (W25 starts from its own)
+        rep.pop(STILL, None)
+    else:
+        rep[STILL] = before
     back = shrink.undo_shrink(work, wm, folded)
     rep["shrink_dropped"], rep["shrink_points"] = 1, max(0, rep["shrink_points"] - back)
     # W14c's marks hold the cage's places at the first bake - the compensated ones: they are made again on the places
@@ -1315,7 +1373,7 @@ def _unbow(orig, work, wm, tv, rep, made, levels, lv, memo=None):
     if not rep.get("shrink_points") or lv not in made or was is None or len(was[0]) != len(wm.vertices):
         return made
     q = was[0].copy()
-    still = set()
+    still = set(rep.get(STILL, ()))             # with the points W25b holds
     for attempt in (0, 1):
         faces = bowties(wm, made[lv], lv, q)
         if not faces:
@@ -1326,16 +1384,8 @@ def _unbow(orig, work, wm, tv, rep, made, levels, lv, memo=None):
         if pts <= still:
             return made
         still |= pts
-        shrink.undo_shrink(work, wm)
-        for name in (reparam.PARAM, reparam.EDGE, reparam.SHELL):      # W14c's marks: made again (as _shrink_back)
-            at = wm.attributes.get(name)
-            if at is not None:
-                wm.attributes.remove(at)
-        for cp in made.values():
-            copies.discard_copy(orig, cp)
-        _fit(work, wm, rep, orig, still=sorted(still))
+        made = _refit(orig, work, wm, tv, rep, made, levels, still)
         rep["shrink_unbowed"] = len(still)
-        made = _bake_work(orig, work, levels, tv)
         if memo is not None:
             memo.clear()
         made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
@@ -1438,6 +1488,7 @@ def _bake_weld(orig, levels, method_rep=None):
         FITTED.pop(wm.name, None)
         bpy.data.meshes.remove(wm)
         workscene.drop_work_scene()
+    rep.pop(STILL, None)
     return made, rep
 
 

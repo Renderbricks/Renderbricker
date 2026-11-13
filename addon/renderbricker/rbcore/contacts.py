@@ -59,6 +59,7 @@ MANY = 8                    # W24d: a point touching more shells than this - the
 SNAP_MAX = 0.3              # mm: W26 - a slit of the copy wider than this is left (= MAX_MOVE)
 SNAP_TURN = 0.5             # W26: a quad of the copy turns by no more than this cosine (60 degrees) when a point moves
 SNAP_HALVES = 3             # W26: ... the point then goes half the way, this often; then it stays
+CHORD_ADD = 1.25            # W26b: the ends of an open copy edge go this x the way its middle lacks
 
 
 def _faces(T):
@@ -465,11 +466,13 @@ def snap(cp, K, level, ev, hold=()):
     order = np.argsort(touched, kind="stable")
     slit = np.zeros(len(at))
     target = co[at].copy()
+    trees = {}                                  # shell touched -> the tree of its copy (W26b reads them again)
     for s, todo in zip(*_groups(touched[order], order), strict=True):
         pts, faces, seg = parts[s]
         if not len(pts):
             continue
         tree = BVHTree.FromPolygons(co[pts].tolist(), faces)
+        trees[s] = tree
         pp = co[at[todo]]
         hits = [tree.find_nearest(x, SNAP_MAX) for x in pp.tolist()]
         got = [k for k, h in enumerate(hits) if h[0] is not None]
@@ -495,6 +498,7 @@ def snap(cp, K, level, ev, hold=()):
         v = at[i]
         if slit[i] > widest[v]:                 # of several shells touched: onto the widest slit's
             new[v], widest[v] = target[i], slit[i]
+    _chords(new, widest, at, touched, trees, e2, le, len(cp.edges), still)
     quads = lv.reshape(-1, 4)
     near = quads[(widest[quads] > 0).any(axis=1)]
     if len(near):                               # the fold guard
@@ -525,6 +529,44 @@ def snap(cp, K, level, ev, hold=()):
             cp.normals_split_custom_set(normals.reshape(-1, 3))
         SNAPPED[0], SNAPPED[1] = moved, float(widest.max())
     return moved
+
+
+def _chords(new, widest, at, touched, trees, e2, le, n_edges, still):
+    """W26b (rework 2, run 306): the copy's own open edge between two points snap looks at is a chord - where the
+    surface under it is hollow (the fillet at the foot of a wall) its middle stands before the surface though both
+    ends lie on it (89678: 0.006 mm under the rib's edge, a dark wedge 0.3 mm long). Measured at 1/8, 1/4, 1/2, 3/4,
+    7/8 against the copy of the shell both ends touch (`trees`); a place more than SLIT_MIN before a face (its way
+    to it along the face's normal at least 0.7 of the distance - not beside the shell's open rim): both ends go on by
+    the way that place lacks, CHORD_ADD times - of several the longest. Neither end may be held (`still`). Moves
+    `new` and raises `widest` in place."""
+    shell_of = {}
+    for i in range(len(at)):
+        shell_of.setdefault(int(at[i]), set()).add(int(touched[i]))
+    e_open = e2.reshape(-1, 2)[np.bincount(le, minlength=n_edges) == 1]
+    push = np.zeros((len(new), 3))
+    for a, b in e_open.tolist():
+        if a not in shell_of or b not in shell_of or (len(still) > max(a, b) and (still[a] or still[b])):
+            continue
+        for s in sorted(shell_of[a] & shell_of[b]):
+            tree = trees.get(s)
+            if tree is None:
+                continue
+            for w in (0.125, 0.25, 0.5, 0.75, 0.875):
+                mid = new[a] + (new[b] - new[a]) * w
+                loc, nrm, _f, dist = tree.find_nearest(mid.tolist(), SNAP_MAX)
+                if loc is None or dist <= SLIT_MIN:
+                    continue
+                depth = float((mid - np.array(loc)) @ np.array(nrm))
+                if depth < 0.7 * dist:          # behind the face, or beside the shell's rim
+                    continue
+                step = (np.array(loc) - mid) * CHORD_ADD
+                for v in (a, b):
+                    if np.linalg.norm(step) > np.linalg.norm(push[v]):
+                        push[v] = step
+    hit = np.linalg.norm(push, axis=1) > 0
+    if hit.any():
+        new[hit] += push[hit]
+        widest[hit] = np.maximum(widest[hit], np.linalg.norm(push[hit], axis=1))
 
 
 def _copy_shells(cage_lab, cp):
