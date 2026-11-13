@@ -60,6 +60,7 @@ SNAP_MAX = 0.3              # mm: W26 - a slit of the copy wider than this is le
 SNAP_TURN = 0.5             # W26: a quad of the copy turns by no more than this cosine (60 degrees) when a point moves
 SNAP_HALVES = 3             # W26: ... the point then goes half the way, this often; then it stays
 CHORD_ADD = 1.25            # W26b: the ends of an open copy edge go this x the way its middle lacks
+CHORD_AT = np.array([0.125, 0.25, 0.5, 0.75, 0.875])     # W26b: the places measured on an edge
 
 
 def _faces(T):
@@ -119,11 +120,12 @@ def find(wm, T, flat, planes=None, edges=True):
     rows, row_planes, nearest = [], [], []
     rests = {}
     fshell_l, lab_l, reach_l = fshell.tolist(), lab.tolist(), reach.tolist()     # Python numbers in the loop (Task 7)
-    for v in np.nonzero(cand)[0].tolist():
+    cand_v = np.nonzero(cand)[0]
+    for v, at_v in zip(cand_v.tolist(), co[cand_v].tolist(), strict=True):
         best = {}                                   # shell touched -> (distance, nearest face, nearest place)
         near_faces = []                             # the faces of other shells within the reach: (face, normal)
         own, rv = lab_l[v], reach_l[v]
-        for loc, n_f, f, dist in [h for h in tree.find_nearest_range(co[v].tolist(), ASK) if h[3] <= rv]:
+        for loc, n_f, f, dist in [h for h in tree.find_nearest_range(at_v, ASK) if h[3] <= rv]:
             s = fshell_l[f]
             if s != own:
                 near_faces.append((f, n_f))
@@ -179,7 +181,11 @@ def _edge_rows(T, tree, fshell_l, rows):
     for v, s in rows:
         touch.setdefault(v, set()).add(s)
     out = []
-    for e in np.nonzero(T["efaces"] == 1)[0].tolist():
+    touches = np.zeros(len(co), bool)               # an array test first: only the open edges both of whose ends
+    touches[[v for v, _s in rows]] = True           # touch any shell are asked (the loop over every open edge cost)
+    e_all = np.nonzero(T["efaces"] == 1)[0]
+    e_all = e_all[touches[ev[e_all, 0]] & touches[ev[e_all, 1]]]
+    for e in e_all.tolist():
         a, b = int(ev[e, 0]), int(ev[e, 1])
         for s in sorted(touch.get(a, set()) & touch.get(b, set())):
             for k in range(3):
@@ -554,17 +560,23 @@ def _chords(new, widest, at, touched, trees, e2, le, n_edges, still):
     for i in range(len(at)):
         shell_of.setdefault(int(at[i]), set()).add(int(touched[i]))
     e_open = e2.reshape(-1, 2)[np.bincount(le, minlength=n_edges) == 1]
+    # only the open edges both of whose ends snap looks at and neither is held (an array test first - the loop over
+    # every open edge of a copy cost more than the edges it measures: 3028, a plate 6 x 16, 26,282 faces)
+    seen = np.zeros(len(new), bool)
+    seen[np.asarray(at, np.int64)] = True
+    held = np.zeros(len(new), bool)
+    held[:len(still)] = still
+    inner = np.maximum(e_open[:, 0], e_open[:, 1]) < len(still)       # (a held end counts on cage edges only)
+    keep = seen[e_open[:, 0]] & seen[e_open[:, 1]] & ~(inner & (held[e_open[:, 0]] | held[e_open[:, 1]]))
     push = np.zeros((len(new), 3))
-    for a, b in e_open.tolist():
-        if a not in shell_of or b not in shell_of or (len(still) > max(a, b) and (still[a] or still[b])):
-            continue
+    for a, b in e_open[keep].tolist():
         for s in sorted(shell_of[a] & shell_of[b]):
             tree = trees.get(s)
             if tree is None:
                 continue
-            for w in (0.125, 0.25, 0.5, 0.75, 0.875):
-                mid = new[a] + (new[b] - new[a]) * w
-                loc, nrm, _f, dist = tree.find_nearest(mid.tolist(), SNAP_MAX)
+            mids = new[a] + (new[b] - new[a]) * CHORD_AT[:, None]        # the five places at once
+            for mid, mid_l in zip(mids, mids.tolist(), strict=True):
+                loc, nrm, _f, dist = tree.find_nearest(mid_l, SNAP_MAX)
                 if loc is None or dist <= SLIT_MIN:
                     continue
                 depth = float((mid - np.array(loc)) @ np.array(nrm))

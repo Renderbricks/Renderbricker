@@ -34,41 +34,30 @@ def _arrays(cp):
     tn = np.cross(co[tri[:, 1]] - co[tri[:, 0]], co[tri[:, 2]] - co[tri[:, 0]])
     ta = np.linalg.norm(tn, axis=1) / 2
     tn /= np.maximum(2 * ta, 1e-30)[:, None]
-    e2 = np.zeros(len(cp.edges) * 2, np.int64); cp.edges.foreach_get("vertices", e2)
-    e2 = e2.reshape(-1, 2)
-    lab = np.arange(n)
-    while len(e2):
-        m = np.minimum(lab[e2[:, 0]], lab[e2[:, 1]])
-        new = lab.copy()
-        np.minimum.at(new, e2[:, 0], m)
-        np.minimum.at(new, e2[:, 1], m)
-        new = new[new]
-        if np.array_equal(new, lab):
-            break
-        lab = new
-    return co, tri, tp, tn, ta, lab
+    return co, tri, tp, tn, ta
 
 
 def pairs(cp):
     """The triangles of `cp` whose middle lies on another triangle in one plane with it, facing the same way - not of
     its own face, and the middle well inside its own triangle (a neighbour in the same plane only touches its edge):
     (triangle, the triangle under or over it), and the arrays."""
-    co, tri, tp, tn, ta, lab = _arrays(cp)
+    co, tri, tp, tn, ta = _arrays(cp)
     out = []
     if not len(tri) or len(tri) > COVER_MAX:
-        return out, (co, tri, tp, tn, ta, lab)
+        return out, (co, tri, tp, tn, ta)
     tree = BVHTree.FromPolygons(co.tolist(), tri.tolist())
     p = co[tri]
     cen = p.mean(axis=1)
     longest = np.maximum(np.maximum(np.linalg.norm(p[:, 1] - p[:, 0], axis=1), np.linalg.norm(p[:, 2] - p[:, 1], axis=1)),
                          np.linalg.norm(p[:, 0] - p[:, 2], axis=1))
     inside = 2 * ta / np.maximum(longest, 1e-30) / 3          # the middle's distance to the longest edge
-    for t in np.nonzero((ta > COVER_MIN) & (inside > 20 * COVER))[0].tolist():
-        for _loc, _n, t2, _d in tree.find_nearest_range(cen[t].tolist(), COVER):
+    ask = np.nonzero((ta > COVER_MIN) & (inside > 20 * COVER))[0]
+    for t, c in zip(ask.tolist(), cen[ask].tolist(), strict=True):      # (the middles as Python lists at once)
+        for _loc, _n, t2, _d in tree.find_nearest_range(c, COVER):
             if tp[t2] != tp[t] and float(tn[t] @ tn[t2]) > COVER_COS:
                 out.append((t, t2))
                 break
-    return out, (co, tri, tp, tn, ta, lab)
+    return out, (co, tri, tp, tn, ta)
 
 
 def sink(cp, parent=None):
@@ -76,7 +65,7 @@ def sink(cp, parent=None):
     the copy its import face's number and area; without it the copy's own face) is the smaller one - but not its
     points that the covering face's children use too (the hinge the two share stays). Returns the points moved."""
     SUNK[0] = 0
-    found, (co, tri, tp, tn, _ta, _lab) = pairs(cp)
+    found, (co, tri, tp, tn, _ta) = pairs(cp)
     if not found:
         return 0
     if parent is None:
