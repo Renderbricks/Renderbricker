@@ -89,12 +89,13 @@ def find(wm, T, flat):
     fshell = lab[T["lv"][T["ls"]]]
     rows, planes = [], []
     rests = {}
+    fshell_l, lab_l, reach_l = fshell.tolist(), lab.tolist(), reach.tolist()     # Python numbers in the loop (Task 7)
     for v in np.nonzero(cand)[0].tolist():
         best = {}                                   # shell touched -> (distance, nearest face)
-        own = lab[v]
+        own, rv = lab_l[v], reach_l[v]
         for _loc, _nrm, f, dist in tree.find_nearest_range(co[v].tolist(), ASK):
-            s = int(fshell[f])
-            if s != own and dist <= reach[v] and (s not in best or dist < best[s][0]):
+            s = fshell_l[f]
+            if s != own and dist <= rv and (s not in best or dist < best[s][0]):
                 best[s] = (dist, f)
         if rim[v]:
             rests[v] = any(dd <= REST for dd, _f in best.values())
@@ -178,6 +179,33 @@ def _behind(tree, p, loc, nrm, dist):
     return True
 
 
+def _behind_cone(tree, p, loc, dist):
+    """_behind's normal cone for a point already behind the face the tree gave: behind every face that shares the
+    nearest point `loc`."""
+    for _l, n_f, _f, d_f in tree.find_nearest_range(loc.tolist(), ASK_EDGE):
+        if d_f <= _tol(loc) and float((p - loc) @ np.array(n_f)) > -BESIDE * dist:
+            return False
+    return True
+
+
+def _to_segments(p, a, b, chunk=2_000_000):
+    """_on_segments for many points p (k,3) at once: the distance of each to the nearest of the segments a-b."""
+    ab = b - a
+    ab2 = np.maximum((ab * ab).sum(axis=1), 1e-30)
+    out = np.empty(len(p))
+    step = max(1, chunk // max(1, len(a)))
+    for s in range(0, len(p), step):
+        q = p[s:s + step, None, :]
+        t = np.clip(((q - a) * ab).sum(axis=2) / ab2, 0.0, 1.0)
+        out[s:s + step] = np.linalg.norm(a + ab * t[:, :, None] - q, axis=2).min(axis=1)
+    return out
+
+
+def _tols(loc):
+    """_tol for many places (k,3)."""
+    return RIM_TOL * np.maximum(1.0, np.abs(loc).max(axis=1))
+
+
 def _groups(keys, items):
     """`items` grouped by their sorted `keys`: (the keys, a list of the items of each)."""
     if not len(keys):
@@ -257,16 +285,27 @@ def close(work, wm, K, free, q, d, quality=None):
             # faces with 97 shells touched) - the same faces in the same order, the same tree
             tree = BVHTree.FromPolygons(co2[pts].tolist(), faces)
             a, b = co2[seg[:, 0]], co2[seg[:, 1]]
-            for i in todo:
-                loc, nrm, _f, dist = tree.find_nearest(p[i].tolist())
-                if loc is None:
-                    continue
-                loc = np.array(loc)
-                behind = _behind(tree, p[i], loc, np.array(nrm), dist)
-                if behind and _on_segments(loc, a, b) <= _tol(loc):
-                    behind = False              # the nearest point on the shell's open rim: beside it, a slit
-                slit[i] = 0.0 if behind else dist
-                target[i] = loc
+            # the rows of the shell at once (Task 7: per row in Python it cost as much as the subdivisions) - the
+            # measure of _behind and _on_segments, the same numbers
+            pp = p[todo]
+            hits = [tree.find_nearest(x) for x in pp.tolist()]
+            got = [k for k, h in enumerate(hits) if h[0] is not None]
+            if not got:
+                continue
+            rows_s = np.asarray(todo, np.int64)[got]
+            pp = pp[got]
+            loc = np.array([hits[k][0] for k in got], np.float64)
+            nrm = np.array([hits[k][1] for k in got], np.float64)
+            dist = np.array([hits[k][3] for k in got], np.float64)
+            behind = np.einsum("ij,ij->i", pp - loc, nrm) <= -BESIDE * dist
+            if CONE:
+                for k in np.nonzero(behind)[0].tolist():
+                    behind[k] = _behind_cone(tree, pp[k], loc[k], dist[k])
+            if len(seg) and behind.any():       # the nearest point on the shell's open rim: beside it, a slit
+                k = np.nonzero(behind)[0]
+                behind[k[_to_segments(loc[k], a, b) <= _tols(loc[k])]] = False
+            slit[rows_s] = np.where(behind, 0.0, dist)
+            target[rows_s] = loc
         left = float(slit.max())
         HISTORY.append((round(left, 5), int((slit > 0.005).sum())))
         if round_ == CONTACT_ROUNDS or not (slit > SLIT_MIN).any():
