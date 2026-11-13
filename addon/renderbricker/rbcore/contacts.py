@@ -415,7 +415,7 @@ HISTORY = []                # (largest slit, slits over 0.005) per round of the 
 SNAPPED = [0, 0.0]          # W26 on the last copy: the points moved, the widest slit closed - read by the tests
 
 
-def snap(cp, K, level, ev, hold=()):
+def snap(cp, K, level, ev, hold=(), on=None):
     """W26: the seams of the baked copy `cp` (of `level`) closed on the copy itself. W24 closes its contacts on the
     smooth surface as the modifier makes it - the copy is another surface: W14c slides its points along it (43712:
     the top under a stud's foot lies 0.024 mm lower in the copy, the foot 0.018 mm above it), an open edge between
@@ -427,7 +427,10 @@ def snap(cp, K, level, ev, hold=()):
     the shell touched, as close measures (in front of it or beside it: a slit; behind it: none). A point with a slit
     from SLIT_MIN to SNAP_MAX goes onto the nearest point of that shell (of several shells the widest slit's). Then
     no quad of the copy may turn by more than SNAP_TURN: such a point goes half the way, up to SNAP_HALVES times,
-    then it stays (as W14c's slide, reparam.FOLD_STEPS; 92092 folded 4 quads without it). Only points of the copy
+    then it stays (as W14c's slide, reparam.FOLD_STEPS; 92092 folded 4 quads without it) - nor turn a quad that faced
+    the way of its original face against it (`on`: per face of the copy the normal of its import face; the fold
+    check's measure, more than 90 degrees: a quad already turned 80 degrees went past it by a turn under SNAP_TURN,
+    review of the run 306 rework). Only points of the copy
     move; the cage and the copy's corner normals stay. `ev`: the cage's edges; `hold`: the points that stay apart
     (W24a) - they and the edges that end in one are left: their twin would not follow (92092: the T gap came back
     with 0.027 mm). Returns the number of points moved (SNAPPED: and the widest slit closed)."""
@@ -500,15 +503,23 @@ def snap(cp, K, level, ev, hold=()):
             new[v], widest[v] = target[i], slit[i]
     _chords(new, widest, at, touched, trees, e2, le, len(cp.edges), still)
     quads = lv.reshape(-1, 4)
-    near = quads[(widest[quads] > 0).any(axis=1)]
+    k_near = np.nonzero((widest[quads] > 0).any(axis=1))[0]
+    near = quads[k_near]
     if len(near):                               # the fold guard
         def normal(x):
             nn = np.cross(x[near[:, 2]] - x[near[:, 0]], x[near[:, 3]] - x[near[:, 1]])
             return nn / np.maximum(np.linalg.norm(nn, axis=1), 1e-30)[:, None]
 
         before = normal(co)
+        own = None                              # the quads that face their import face's way before the snap
+        if on is not None and len(on) == len(quads):
+            own = np.asarray(on, np.float64)[k_near]
+            faced = np.einsum("ij,ij->i", before, own) >= 0.0
         for step in range(SNAP_HALVES + 1):
-            bad = np.einsum("ij,ij->i", before, normal(new)) < SNAP_TURN
+            now = normal(new)
+            bad = np.einsum("ij,ij->i", before, now) < SNAP_TURN
+            if own is not None:
+                bad |= faced & (np.einsum("ij,ij->i", now, own) < 0.0)
             if not bad.any():
                 break
             vs = np.unique(near[bad])

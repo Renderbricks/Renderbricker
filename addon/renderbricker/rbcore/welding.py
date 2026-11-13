@@ -1166,23 +1166,30 @@ def _bake_work(orig, work, levels, tv):
     fit = FITTED.get(work.data.name)
     for lv in sorted(levels):
         cp = copies.bake_copy(orig, work, lv)
+        lt0, own_face = checks.cage_faces(orig, cp)
+        kids = lt0 * 4 ** (lv - 1)
+        own = np.repeat(own_face, kids) if int(kids.sum()) == len(cp.polygons) else None
         if fit is not None and fit["snap"] is not None:
-            shrink.contacts.snap(cp, fit["snap"][0], lv, fit["snap"][1], fit["snap"][2])
-        _sink_covers(orig, cp, lv)
+            on = None
+            if own is not None:                 # W26's guard: the normal of every copy face's import face
+                fn = np.zeros(len(orig.polygons) * 3); orig.polygons.foreach_get("normal", fn)
+                on = fn.reshape(-1, 3)[own]
+            shrink.contacts.snap(cp, fit["snap"][0], lv, fit["snap"][1], fit["snap"][2], on=on)
+        _sink_covers(orig, cp, own)
         cp["rb_method"] = "weld"
         cp["rb_tv"] = [x for pair in tv for x in pair]      # T vertices for the check (vertex, host face)
         made[lv] = cp
     return made
 
 
-def _sink_covers(orig, cp, lv):
+def _sink_covers(orig, cp, own):
     """W28 (rework 2, run 306): two faces of the import in one plane, one over the other - the copy of the smaller
-    one goes COVER_SINK behind (cover.sink; per face of the copy its import face and that face's area)."""
+    one goes COVER_SINK behind (cover.sink; `own`: per face of the copy its import face, or None; with the import
+    faces' areas)."""
     parent = None
-    lt0, own_face = checks.cage_faces(orig, cp)
-    if int((lt0 * 4 ** (lv - 1)).sum()) == len(cp.polygons):
+    if own is not None:
         area = np.zeros(len(orig.polygons)); orig.polygons.foreach_get("area", area)
-        parent = (np.repeat(own_face, lt0 * 4 ** (lv - 1)), area)
+        parent = (own, area)
     sunk = cover.sink(cp, parent)
     if sunk:
         cp["rb_cover_sunk"] = sunk
@@ -1392,6 +1399,19 @@ def _unbow(orig, work, wm, tv, rep, made, levels, lv, memo=None):
     return made
 
 
+def _refit_new(orig, work, wm, tv, rep, levels, lv, dropped, memo):
+    """A cage welded again (W21's or W18's fallback) is compensated and baked as the first one: _fit, the bevel
+    marks, the copies, the compensation's folds held or undone (_shrink_back) and bent flat faces held (W25,
+    _unbow) - the re-welds went without W25 (W21) and without either (W18; review of the run 306 rework). `dropped`:
+    an undo of the weld before counts in the report. Returns the copies."""
+    _fit(work, wm, rep, orig)
+    if bevel.signature():
+        rep["bevel_edges"] = bevel.mark_edges(orig, wm)
+    made = _bake_work(orig, work, levels, tv)
+    made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=dropped, memo=memo)
+    return _unbow(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
+
+
 def _bake_weld(orig, levels, method_rep=None):
     from . import batches
     if batches.wanted(orig):                    # a large mesh: batch by batch of islands (UPDATES #54, run 287)
@@ -1434,13 +1454,9 @@ def _bake_weld(orig, levels, method_rep=None):
             finally:
                 outlines.NO_CLOSE[0] = None
             rep["outlines_dropped"] = 1
-            _fit(work, wm, rep, orig)
-            if bevel.signature():
-                rep["bevel_edges"] = bevel.mark_edges(orig, wm)
-            made = _bake_work(orig, work, levels, tv)
-            # the fresh cage is compensated again: the islands that fold go back as above (the cage keeps its faces -
-            # W21 changes creases only), and the report keeps an undo of the first weld
-            made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=undone, memo=memo)
+            # the fresh cage is compensated again: the folds held or undone, bent flat faces held as above (the cage
+            # keeps its faces - W21 changes creases only), and the report keeps an undo of the first weld
+            made = _refit_new(orig, work, wm, tv, rep, levels, lv, undone, memo)
         folded = _folds(orig, made, lv, memo) if rep.get("rounding_ends") else ()
         if folded:
             # W18 must not cost a fold (library, run 283: con1 folded on two faces with it, on none without): the
@@ -1450,6 +1466,7 @@ def _bake_weld(orig, levels, method_rep=None):
             if at is not None:
                 at.data.foreach_get("value", own)
             off = set(own[meshparts.island_faces(wm, folded)].tolist())
+            undone = bool(rep.get("shrink_dropped"))
             for cp in made.values():
                 copies.discard_copy(orig, cp)
             FITTED.pop(wm.name, None); bpy.data.objects.remove(work); bpy.data.meshes.remove(wm)
@@ -1463,10 +1480,7 @@ def _bake_weld(orig, levels, method_rep=None):
             rep["rounding_ends_dropped"] = 1
             if close_off is not None:
                 rep["outlines_dropped"] = 1
-            _fit(work, wm, rep, orig)
-            if bevel.signature():
-                rep["bevel_edges"] = bevel.mark_edges(orig, wm)
-            made = _bake_work(orig, work, levels, tv)
+            made = _refit_new(orig, work, wm, tv, rep, levels, lv, undone, memo)
         if _folds(orig, made, lv, memo):
             work.modifiers["Subdivision"].quality = copies.bake_quality(orig)
             rep["repair_bake_quality"] = repair_folds(work, wm)
