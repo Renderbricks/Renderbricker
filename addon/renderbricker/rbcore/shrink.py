@@ -377,9 +377,9 @@ def compensate(work, wm, free=(), quality=None):
     W24 (contacts.close - the contacts found by contacts.find in the import's places). `free`: points left as they
     are (W17); `quality`: the subdivision quality W24 measures its slits at - the copies' bake quality (None: the
     modifier's own). No point moves further than SHRINK_MAX in all. The cage's custom normals are set again once at
-    the end, as they were; WAS keeps the places and normals before W19 for undo_shrink. Returns a dict: points,
-    max (mm), left (mm: the largest residual left - W19's shrink, W23's residual), cylinders, chain_points,
-    surface_points, coarse_left, contact_points, contact_moved.
+    the end, as they were, if W22 to W24 moved a point (W19 sets them itself); WAS keeps the places and normals
+    before W19 for undo_shrink. Returns a dict: points, max (mm), left (mm: the largest residual left - W19's
+    shrink, W23's residual), cylinders, chain_points, surface_points, coarse_left, contact_points, contact_moved.
     Every subdivision in here is read for its points only: the modifier's custom normals are off meanwhile (Task 7: the
     points are the same to the bit, an evaluation costs a third - the custom normals of 600,000 corners were most of it;
     the subdivision itself is kept, its settings do not hold the normals) and back on at the end."""
@@ -410,7 +410,8 @@ def _compensate(work, wm, free, quality):
     _pts19, _max19, left19, out["cylinders"] = compensate_shrink(work, wm, free)
     x = np.zeros(n * 3, np.float64)
     wm.vertices.foreach_get("co", x)
-    d = x.reshape(-1, 3) - q
+    x19 = x.reshape(-1, 3).copy()                   # the cage as W19 left it (with its normals set, if it moved any)
+    d = x19 - q
     moved = np.linalg.norm(d, axis=1) > 1e-6        # W19's points: done, the others build on their places
     d, out["chain_points"], coarse_c, _cut = fit_chains(T, C, d, moved)
     d, out["surface_points"], coarse_s, left_s = fit_surface(work, wm, T, C, d, moved)
@@ -423,10 +424,12 @@ def _compensate(work, wm, free, quality):
         out["contact_points"] = int((~np.isin(K["contacts"][:, 0], freeset)).sum())
         d, out["contact_moved"], _slit = contacts.close(work, wm, K, free, q, d, quality)
         _set_points(wm, q + d)
-    wm.normals_split_custom_set(normals.reshape(-1, 3))       # the normals as they were, on the new places
     x = np.zeros(n * 3, np.float64)
     wm.vertices.foreach_get("co", x)
-    far = np.linalg.norm(x.reshape(-1, 3) - q, axis=1)
+    x = x.reshape(-1, 3)
+    if np.any(x != x19):        # the normals as they were, on the new places - only if W22 to W24 moved a point (an
+        wm.normals_split_custom_set(normals.reshape(-1, 3))   # untouched cage gains no custom normals; review, Task 5)
+    far = np.linalg.norm(x - q, axis=1)
     if not (far > SHRINK_MIN).any():
         WAS.pop(wm.name, None)
         return out

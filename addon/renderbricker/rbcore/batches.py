@@ -5,7 +5,8 @@ subdivision never reaches across an island, and the welded copies of a baseplate
 batch of islands goes through the whole chain of rules as a mesh of its own (welding._bake_weld, unchanged), and the
 copies of the batches are joined in the face order of a direct bake. Three values the rules take from the whole mesh
 are kept for every batch: the bake quality (copies.bake_quality, by the face count), the flat share (welding, W15) and
-the part size (reparam, MIN_SLIDE). Everything else is decided per island (shrink.py, welding._bake_weld, reparam).
+the part size (reparam, MIN_SLIDE). Everything else is decided per island (shrink.py, welding._bake_weld, reparam) -
+but W24's contacts (rules 3.16), which reach across islands: unit_plan bakes the islands they need together.
 
 Islands of one shape are baked once (maintainer: "Eine Grundplatte ist ein modulares, symmetrisches Objekt."): an
 island equal to an earlier one up to where it lies - corners, positions relative to its first point, every attribute
@@ -19,7 +20,7 @@ from collections import defaultdict
 import bpy
 import numpy as np
 
-from . import batchpool, bevel, checks, config, copies, maps, meshparts, reparam, welding
+from . import batchpool, bevel, cagegeom, checks, config, contacts, copies, maps, meshparts, reparam, welding
 
 BATCH_FACES = int(config.opt("--batch-faces", "40000"))     # faces of the import per batch; 0: never in batches
 SHARE = config.opt("--share-shapes", "1") == "1"            # islands of one shape baked once
@@ -45,7 +46,9 @@ def unit_plan(orig, arr):
     the weld pins on both sides) or an open point on the open edge of another island (a T vertex). The weld joins no
     more than that (welding: seams, `_t_vertices`, both within config.MERGE_DIST), so every unit is whole welded
     islands, and a batch of units welds as the whole mesh would - without welding the whole mesh first (the 48 x 48
-    baseplate: 44 s, run 287). Also returns the flat share of the whole mesh (welding, stage 1)."""
+    baseplate: 44 s, run 287). Joined too: islands whose W24 contacts need each other's smooth surface (rules 3.16,
+    _contact_links). Also returns the flat share of the whole mesh (welding, stage 1) and the contacts left out
+    (_contact_links)."""
     import types
     w = types.SimpleNamespace(orig=orig)
     welding._islands(w)
@@ -63,14 +66,190 @@ def unit_plan(orig, arr):
         e, j = _points_on_segments(co[ev[open_e, 0]].astype(np.float64), co[ev[open_e, 1]].astype(np.float64), p,
                                    reach)                      # open points on an open edge (T vertices)
         links.append(np.column_stack((ev[open_e[e], 0], open_v[j])))
-    links = np.concatenate(links).tolist() if links else []
-    lab = meshparts.point_islands(orig, links)
+    lab = meshparts.point_islands(orig, np.concatenate(links).tolist() if links else [])
+    same = cagegeom._components(len(co), links[0][:, 0], links[0][:, 1]) if links else np.arange(len(co))
+    pairs, skipped = _contact_links(orig, same, lab)
+    if len(pairs):
+        lab = cagegeom._components(len(co), pairs[:, 0], pairs[:, 1])[lab]
     ls = np.concatenate(([0], np.cumsum(lt)[:-1]))
     unit_of = lab[lv[ls]]
     order = np.argsort(unit_of, kind="stable")
     _keys, starts = np.unique(unit_of[order], return_index=True)
     units = sorted((np.sort(g) for g in np.split(order, starts[1:])), key=lambda g: int(g[0]))
-    return units, flat
+    return units, flat, skipped
+
+
+PLANE_TOL = contacts.SLIT_MIN / 2   # mm: in the plane - a limit point and the surface it rests on each this close
+                                   # to it leave a slit narrower than SLIT_MIN, which W24 does not close
+HARD_SEAM = 62.0    # deg: a seam of the import bending this much is creased by every rule of the weld (the widest seam
+                    # left smooth: a polygonised hole's ring, welding.RING_MAX_ANGLE 61)
+REST, JOIN, UNSURE = 0, 1, 2    # _rests_flat's verdicts
+
+
+def _contact_links(orig, same, unit):
+    """The pairs of units (`unit` (n): the unit of every point, its smallest point) that W24's contacts join (rules
+    3.16; contacts.find, on the import - its islands are the cage's or smaller, its open rims the cage's or more, so
+    every contact of the cage is one here too), and the number of contacts left out. W24 measures a contact's slit on
+    the smooth surfaces of both islands: apart in two batches the contact is not seen, and the copy is not the direct
+    one (Task 8: the crab in batches of 400 faces, 0.21 mm off where its stud rests on the body's curved top and where
+    the letters stand on the stud). So a contact joins its two units, unless it rests flat (_rests_flat: REST - W24
+    has nothing to close there with the other island or without it; the studs of a baseplate on its top, one unit of
+    the whole plate otherwise). UNSURE: a point on a flat face, its own surface in the plane, but near a crease of the
+    face touched, which may lie inside its edges more than the test can tell - left out, counted (the report's
+    contacts_skipped; 3857: 8,192 contacts of 512 tubes on the plate's inner quad of 251 x 123 mm, whose creased
+    outline bows far inward - joined, tubes and plate were one unit of 49,726 faces without shared shapes; left out,
+    the copy lies up to 0.00034 mm off the direct one at the tubes' feet, Task 8). `same` (n): the import's points
+    that are one in the weld share a label."""
+    T = cagegeom.arrays(orig)
+    none = np.zeros((0, 2), np.int64)
+    if not T["nf"]:
+        return none, 0
+    flat = cagegeom.flat_faces(T)[1]
+    K = contacts.find(orig, T, flat)
+    rows = K["contacts"]
+    across = np.nonzero(unit[rows[:, 0]] != unit[rows[:, 1]])[0] if len(rows) else np.zeros(0, np.int64)
+    if not len(across):
+        return none, 0
+    rows, plane, face = rows[across], K["plane"][across], K["face"][across]
+    verdict = np.full(len(rows), JOIN)              # on a face that is not flat: joined
+    k = np.nonzero(~np.isnan(plane[:, 0]))[0]
+    if len(k):
+        verdict[k] = _rests_flat(T, flat, same, rows[k, 0], face[k], plane[k])
+    return unit[rows[verdict == JOIN]], int((verdict == UNSURE).sum())
+
+
+def _rests_flat(T, flat, same, pts, faces, planes):
+    """Per contact - a point `pts` on the face `faces` of another island, that face's plane `planes` (m,4) -
+    whether W24 leaves it as it is without the other island: REST, else JOIN or UNSURE. The smooth surface is an
+    affine sum with positive weights of control points: at a smooth point the points of the faces at it, at a point
+    on two hard edges (a crease) its limit (a + 4 p + b) / 6 of those edges' other ends, at one on three or more (a
+    corner) the point itself. Hard: an open rim, a seam bending HARD_SEAM or more, an edge of more than two faces -
+    edges the cage is sure to crease; an edge taken soft only adds control points. REST needs: the point's own limit
+    in the plane or behind it (behind the face touched W24 sees no slit), within PLANE_TOL; the other island's surface
+    in the plane - the face touched and every face at its smooth points flat (W22 and W23 move points of flat faces
+    only within them) with all their control points in the plane; and the point inside that surface, further than
+    twice the bow of their creases from their hard edges (else UNSURE). `same` (n): the import's points that are one
+    in the weld share a label - faces and edges at a seam count on both sides."""
+    co, lv, le, lf, fn = T["co"], T["lv"], T["le"], T["lf"], T["fn"]
+    ev = same[T["ev"]]
+    n = len(same)
+    # the edges of the weld: the import's edges by their welded ends; hard ones
+    key = np.minimum(ev[:, 0], ev[:, 1]) * n + np.maximum(ev[:, 0], ev[:, 1])
+    uk, edge_of = np.unique(key, return_inverse=True)
+    nfaces = np.bincount(edge_of, weights=T["efaces"], minlength=len(uk))
+    hard = (nfaces == 1) | (nfaces > 2)
+    seam = np.nonzero((nfaces == 2) & (np.bincount(edge_of, minlength=len(uk)) > 1))[0]
+    if len(seam):                                   # a seam: two open edges of the import, one face each
+        corner_edge = edge_of[le]
+        o = np.argsort(corner_edge, kind="stable")
+        ce = corner_edge[o]
+        lo = np.searchsorted(ce, seam, "left")
+        f1 = lf[o[lo]]
+        f2 = np.array([next((g for g in lf[o[x:y]] if g != f), f) for f, x, y in
+                       zip(f1.tolist(), lo.tolist(), np.searchsorted(ce, seam, "right").tolist(), strict=True)])
+        bend = np.degrees(np.arccos(np.clip(np.einsum("ij,ij->i", fn[f1], fn[f2]), -1.0, 1.0)))
+        hard[seam[bend >= HARD_SEAM]] = True
+    ends = np.column_stack((uk // n, uk % n))[hard]  # the hard edges, as labels
+    hard_nb = {}
+    for x, y in ends.tolist():
+        hard_nb.setdefault(x, []).append(y)
+        hard_nb.setdefault(y, []).append(x)
+    hard_set = {(x, y) for x, y in ends.tolist()} | {(y, x) for x, y in ends.tolist()}
+    rep = np.full(n, -1)                            # a point of every label (its place)
+    rep[same[::-1]] = np.arange(n)[::-1]
+    corner_lab = same[lv]
+    order = np.argsort(corner_lab, kind="stable")
+    sorted_lab = corner_lab[order]
+    pl = None
+
+    def faces_at(lab):
+        return np.unique(lf[order[np.searchsorted(sorted_lab, lab, "left"):np.searchsorted(sorted_lab, lab, "right")]])
+
+    loops = [x.tolist() for x in np.split(corner_lab, T["ls"][1:])]    # per face its welded points
+
+    def offset(labs):                               # signed distance from the plane `pl`, in front > 0
+        return co[rep[np.asarray(labs, np.int64)]] @ pl[:3] - pl[3]
+
+    ctrl = {}
+
+    def control(lab):                               # the control points of a welded point's limit
+        if lab not in ctrl:
+            nb = hard_nb.get(lab, ())
+            ctrl[lab] = ([lab] if len(nb) >= 3 else [lab, *nb] if len(nb) == 2
+                         else sorted({x for g in faces_at(lab).tolist() for x in loops[g]}))
+        return ctrl[lab]
+
+    # per welded point: its limit (a corner: itself, a crease: (a + 4 p + b) / 6; nan: a smooth point, bounded by its
+    # control points) and the bow of a crease curve there (how far it lies inside its edges; nan: a smooth point)
+    deg = np.zeros(n, np.int64)
+    np.add.at(deg, ends.ravel(), 1)
+    lim, bows = np.full((n, 3), np.nan), np.full(n, np.nan)
+    corner = np.nonzero(deg >= 3)[0]
+    lim[corner], bows[corner] = co[rep[corner]], 0.0
+    crease = np.nonzero(deg == 2)[0]
+    if len(crease):
+        nb = np.array([hard_nb[x] for x in crease.tolist()], np.int64)
+        p, a, b = co[rep[crease]], co[rep[nb[:, 0]]], co[rep[nb[:, 1]]]
+        lim[crease] = (a + 4 * p + b) / 6
+        bows[crease] = np.linalg.norm(a + b - 2 * p, axis=1) / 6
+
+    def bow(lab, other):
+        return bows[lab] if not np.isnan(bows[lab]) else 0.5 * float(np.linalg.norm(co[rep[other]] - co[rep[lab]]))
+
+    rest = {}                                       # face touched -> None (JOIN) or its hard edges and margins
+    face_ctrl, face_edges, in_plane = {}, {}, {}    # per face: its control points, its hard edges; per face and plane
+
+    def plane_holds(g):                             # face `g` flat, its control points in the plane `pl`
+        key = (g, *np.round(pl, 6).tolist())        # faces touched in one plane share their neighbours (a plate's top)
+        if key not in in_plane:
+            if g not in face_ctrl:
+                face_ctrl[g] = np.array(sorted({c for x in loops[g] for c in control(x)}), np.int64)
+            in_plane[key] = bool(flat[g]) and float(np.abs(offset(face_ctrl[g])).max()) <= PLANE_TOL
+        return in_plane[key]
+
+    def hard_edges(g):
+        if g not in face_edges:
+            lg = loops[g]
+            face_edges[g] = [(x, y) for x, y in zip(lg, lg[1:] + lg[:1], strict=True) if (x, y) in hard_set]
+        return face_edges[g]
+
+    def resting_face(f):
+        if f not in rest:
+            around = {f} | {g for x in loops[f] if deg[x] < 2 for g in faces_at(x).tolist()}
+            if not all(plane_holds(g) for g in sorted(around)):
+                rest[f] = None
+                return None
+            edges = [e for g in sorted(around) for e in hard_edges(g)]
+            rest[f] = (co[rep[[x for x, _y in edges]]], co[rep[[y for _x, y in edges]]],
+                       np.array([2 * max(bow(x, y), bow(y, x)) + PLANE_TOL for x, y in edges]))
+        return rest[f]
+
+    out = np.full(len(pts), JOIN)
+    # the point and its own limit in the plane or behind it
+    lab_v = same[pts]
+    own = np.einsum("ij,ij->i", co[pts], planes[:, :3]) - planes[:, 3]
+    lim_v = np.einsum("ij,ij->i", lim[lab_v], planes[:, :3]) - planes[:, 3]
+    for i in np.nonzero(np.isnan(lim_v) & (own <= PLANE_TOL))[0].tolist():
+        pl = planes[i]
+        lim_v[i] = offset(control(int(lab_v[i]))).max()
+    cand = np.nonzero((own <= PLANE_TOL) & (lim_v <= PLANE_TOL))[0]
+    # the other island's surface, face by face touched
+    by_face = cand[np.argsort(faces[cand], kind="stable")]
+    cut = np.nonzero(np.diff(faces[by_face]))[0] + 1
+    for rows in np.split(by_face, cut) if len(by_face) else []:
+        pl = planes[rows[0]]
+        got = resting_face(int(faces[rows[0]]))
+        if got is None:
+            continue
+        pa, pb, margin = got
+        out[rows] = REST
+        if len(margin):                             # inside the surface: further than the margin from hard edges
+            q = co[pts[rows]][:, None, :]
+            ab = (pb - pa)[None, :, :]
+            t = np.clip(((q - pa) * ab).sum(axis=2) / np.maximum((ab * ab).sum(axis=2), 1e-18), 0.0, 1.0)
+            near = (np.linalg.norm(pa + t[:, :, None] * ab - q, axis=2) <= margin).any(axis=1)
+            out[rows[near]] = UNSURE
+    return out
 
 
 def _cell_codes(cells):
@@ -465,7 +644,7 @@ def bake_steps(orig, levels):
     """bake as a step generator: yields (fraction, text) after each batch; returns (copies, report)."""
     yield 0.0, "finding the pieces"
     arr = meshparts.mesh_arrays(orig)
-    units, flat = unit_plan(orig, arr)
+    units, flat, skipped = unit_plan(orig, arr)
     # the pieces: each unit, or the cells of a unit too large for a batch (with rings of faces around their cores)
     islands, fulls, corners = [], [], []            # per piece: its core (kept), its faces (baked), a cell's corner
     for u in units:
@@ -562,6 +741,7 @@ def bake_steps(orig, levels):
     rep["batches"] = len(parts)
     rep["batch_faces_max"] = max(len(f) for f, _s, _m in parts)
     rep["islands"], rep["islands_shared"] = len(islands), len(shared)
+    rep["contacts_skipped"] = skipped
     return made, rep
 
 

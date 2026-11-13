@@ -8,7 +8,8 @@ at level 2 no gaps may appear.
     find   the shells of the cage (connected pieces) and its contacts: every point that lies on another shell in the
            import - within CONTACT, a point of an open rim within CONTACT_RIM (the import's own rims lie up to
            0.063 mm off the shell they rest on: 89678, the mantle's rim under the bead) - with every shell it
-           touches; where the face touched is flat, its plane (for batches; a direct run does not use it)
+           touches, its nearest face there and, where that is flat, its plane (for batches.unit_plan; close does not
+           use them)
     close  rounds on the smooth surface at level 2: a contact point with a slit to a shell it touched moves
            CONTACT_STEP x the way to the nearest point of that shell's smooth surface (of several shells towards
            the widest slit), never further than MAX_MOVE from the import in all; ends when no slit is wider than
@@ -55,12 +56,14 @@ def _faces(T):
 def find(wm, T, flat):
     """The contacts of the cage `wm` at its places in `T` (cagegeom.arrays, before any move); `flat` (nf) bool the
     flat faces (cagegeom.flat_faces). Returns a dict: lab (n) the shell of every point (its smallest point number),
-    contacts (m,2) int (point, shell touched) - one row per shell a point touches, plane (m,4) the touched face's
-    plane (normal, normal . point on it) where that face is flat, else nan, resting the shells whose open rim rests
-    on another shell (every rim point within REST). Empty at once when the cage has one shell."""
+    contacts (m,2) int (point, shell touched) - one row per shell a point touches, face (m) the nearest face of the
+    shell touched, plane (m,4) that face's plane (normal, normal . point on it) where it is flat, else nan, resting
+    the shells whose open rim rests on another shell (every rim point within REST). Empty at once when the cage has
+    one shell."""
     n, co, ev = T["n"], T["co"], T["ev"]
     lab = cagegeom._components(n, ev[:, 0], ev[:, 1]) if len(ev) else np.arange(n)
-    out = {"lab": lab, "contacts": np.zeros((0, 2), np.int64), "plane": np.zeros((0, 4)), "resting": []}
+    out = {"lab": lab, "contacts": np.zeros((0, 2), np.int64), "face": np.zeros(0, np.int64), "plane": np.zeros((0, 4)),
+           "resting": []}
     shells, sid = np.unique(lab, return_inverse=True)
     if len(shells) < 2 or not T["nf"]:
         return out
@@ -87,7 +90,7 @@ def find(wm, T, flat):
         return out
     tree = BVHTree.FromPolygons(co.tolist(), _faces(T))
     fshell = lab[T["lv"][T["ls"]]]
-    rows, planes = [], []
+    rows, planes, nearest = [], [], []
     rests = {}
     fshell_l, lab_l, reach_l = fshell.tolist(), lab.tolist(), reach.tolist()     # Python numbers in the loop (Task 7)
     for v in np.nonzero(cand)[0].tolist():
@@ -102,6 +105,7 @@ def find(wm, T, flat):
         for s in sorted(best):
             f = best[s][1]
             rows.append((v, s))
+            nearest.append(f)
             if flat[f]:
                 nrm = T["fn"][f]
                 planes.append((nrm[0], nrm[1], nrm[2], float(nrm @ co[T["lv"][T["ls"][f]]])))
@@ -114,6 +118,7 @@ def find(wm, T, flat):
         out["resting"] = sorted(int(s) for s in np.unique(lab[rim_pts]) if s not in set(bad.tolist()))
     if rows:
         out["contacts"] = np.array(rows, np.int64)
+        out["face"] = np.array(nearest, np.int64)
         out["plane"] = np.array(planes, np.float64)
     return out
 
@@ -152,36 +157,16 @@ def _evaluate(work, level, topology, quality=None):
     return co.reshape(-1, 3), topo
 
 
-def _on_segments(p, a, b):
-    """Distance of the point p to the nearest of the segments a-b (k,3)."""
-    ab = b - a
-    t = np.clip(((p - a) * ab).sum(axis=1) / np.maximum((ab * ab).sum(axis=1), 1e-30), 0.0, 1.0)
-    return float(np.linalg.norm(a + ab * t[:, None] - p, axis=1).min()) if len(a) else np.inf
-
-
 def _tol(loc):
     """RIM_TOL at the place `loc`: relative to its largest coordinate from 1 mm on."""
     return RIM_TOL * max(1.0, float(np.abs(loc).max()))
 
 
-def _behind(tree, p, loc, nrm, dist):
-    """Whether the point `p` lies behind the shell of `tree` whose nearest point to it is `loc` (normal `nrm` of the
-    face the tree gave, distance `dist`): behind every face whose closure holds the nearest point - on an edge or a
-    corner all faces that share it (the normal cone; with one face of them the tree's choice decided, 89678's rib
-    corner at 2.3 / 0.5 / 0.8 was behind and its mirror twin beside). More than BESIDE x its distance behind."""
-    if float((p - loc) @ nrm) > -BESIDE * dist:
-        return False
-    if not CONE:
-        return True
-    for _l, n_f, _f, d_f in tree.find_nearest_range(loc.tolist(), ASK_EDGE):
-        if d_f <= _tol(loc) and float((p - loc) @ np.array(n_f)) > -BESIDE * dist:
-            return False
-    return True
-
-
 def _behind_cone(tree, p, loc, dist):
-    """_behind's normal cone for a point already behind the face the tree gave: behind every face that shares the
-    nearest point `loc`."""
+    """The normal cone for a point `p` already behind the face the tree gave (nearest point `loc`, distance `dist`):
+    behind every face whose closure holds the nearest point - on an edge or a corner all faces that share it (with
+    the one face the tree gave its choice decided, 89678's rib corner at 2.3 / 0.5 / 0.8 was behind and its mirror
+    twin beside), more than BESIDE x its distance."""
     for _l, n_f, _f, d_f in tree.find_nearest_range(loc.tolist(), ASK_EDGE):
         if d_f <= _tol(loc) and float((p - loc) @ np.array(n_f)) > -BESIDE * dist:
             return False
@@ -189,7 +174,7 @@ def _behind_cone(tree, p, loc, dist):
 
 
 def _to_segments(p, a, b, chunk=2_000_000):
-    """_on_segments for many points p (k,3) at once: the distance of each to the nearest of the segments a-b."""
+    """The distance of each point p (k,3) to the nearest of the segments a-b."""
     ab = b - a
     ab2 = np.maximum((ab * ab).sum(axis=1), 1e-30)
     out = np.empty(len(p))
@@ -285,8 +270,7 @@ def close(work, wm, K, free, q, d, quality=None):
             # faces with 97 shells touched) - the same faces in the same order, the same tree
             tree = BVHTree.FromPolygons(co2[pts].tolist(), faces)
             a, b = co2[seg[:, 0]], co2[seg[:, 1]]
-            # the rows of the shell at once (Task 7: per row in Python it cost as much as the subdivisions) - the
-            # measure of _behind and _on_segments, the same numbers
+            # the rows of the shell at once (Task 7: per row in Python it cost as much as the subdivisions)
             pp = p[todo]
             hits = [tree.find_nearest(x) for x in pp.tolist()]
             got = [k for k, h in enumerate(hits) if h[0] is not None]
