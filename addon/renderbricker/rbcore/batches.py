@@ -238,7 +238,8 @@ def _rests_flat(T, flat, same, pts, faces, planes):
     lim_v = np.einsum("ij,ij->i", lim[lab_v], planes[:, :3]) - planes[:, 3]
     for i in np.nonzero(np.isnan(lim_v) & (own <= PLANE_TOL))[0].tolist():
         pl = planes[i]
-        lim_v[i] = offset(control(int(lab_v[i]))).max()
+        ctl = control(int(lab_v[i]))               # a point without faces has none (3947.002: max of an empty array)
+        lim_v[i] = offset(ctl).max() if len(ctl) else own[i]
     cand = np.nonzero((own <= PLANE_TOL) & (lim_v <= PLANE_TOL))[0]
     # the other island's surface, face by face touched
     by_face = cand[np.argsort(faces[cand], kind="stable")]
