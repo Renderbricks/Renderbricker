@@ -47,8 +47,8 @@ def unit_plan(orig, arr):
     more than that (welding: seams, `_t_vertices`, both within config.MERGE_DIST), so every unit is whole welded
     islands, and a batch of units welds as the whole mesh would - without welding the whole mesh first (the 48 x 48
     baseplate: 44 s, run 287). Joined too: islands whose W24 contacts need each other's smooth surface (rules 3.16,
-    _contact_links). Also returns the flat share of the whole mesh (welding, stage 1) and the contacts left out
-    (_contact_links)."""
+    _contact_links). Also returns the flat share of the whole mesh (welding, stage 1), the contacts left out and the
+    contacts a unit needs, (k,2) (point, face touched) (_contact_links)."""
     import types
     w = types.SimpleNamespace(orig=orig)
     welding._islands(w)
@@ -68,7 +68,7 @@ def unit_plan(orig, arr):
         links.append(np.column_stack((ev[open_e[e], 0], open_v[j])))
     lab = meshparts.point_islands(orig, np.concatenate(links).tolist() if links else [])
     same = cagegeom._components(len(co), links[0][:, 0], links[0][:, 1]) if links else np.arange(len(co))
-    pairs, skipped = _contact_links(orig, same, lab)
+    pairs, skipped, needed = _contact_links(orig, same, lab)
     if len(pairs):
         lab = cagegeom._components(len(co), pairs[:, 0], pairs[:, 1])[lab]
     ls = np.concatenate(([0], np.cumsum(lt)[:-1]))
@@ -76,7 +76,7 @@ def unit_plan(orig, arr):
     order = np.argsort(unit_of, kind="stable")
     _keys, starts = np.unique(unit_of[order], return_index=True)
     units = sorted((np.sort(g) for g in np.split(order, starts[1:])), key=lambda g: int(g[0]))
-    return units, flat, skipped
+    return units, flat, skipped, needed
 
 
 PLANE_TOL = contacts.SLIT_MIN / 2   # mm: in the plane - a limit point and the surface it rests on each this close
@@ -89,7 +89,8 @@ REST, JOIN, UNSURE = 0, 1, 2    # _rests_flat's verdicts
 def _contact_links(orig, same, unit):
     """The pairs of units (`unit` (n): the unit of every point, its smallest point) that W24's contacts join (rules
     3.16; contacts.find, on the import - its islands are the cage's or smaller, its open rims the cage's or more, so
-    every contact of the cage is one here too), and the number of contacts left out. W24 measures a contact's slit on
+    every contact of the cage is one here too), the number of contacts left out and the contacts the units need
+    whole ((k,2): point, face touched). W24 measures a contact's slit on
     the smooth surfaces of both islands: apart in two batches the contact is not seen, and the copy is not the direct
     one (Task 8: the crab in batches of 400 faces, 0.21 mm off where its stud rests on the body's curved top and where
     the letters stand on the stud). So a contact joins its two units, unless it rests flat (_rests_flat: REST - W24
@@ -103,19 +104,25 @@ def _contact_links(orig, same, unit):
     T = cagegeom.arrays(orig)
     none = np.zeros((0, 2), np.int64)
     if not T["nf"]:
-        return none, 0
+        return none, 0, none
     flat = cagegeom.flat_faces(T)[1]
     K = contacts.find(orig, T, flat)
     rows = K["contacts"]
-    across = np.nonzero(unit[rows[:, 0]] != unit[rows[:, 1]])[0] if len(rows) else np.zeros(0, np.int64)
-    if not len(across):
-        return none, 0
-    rows, plane, face = rows[across], K["plane"][across], K["face"][across]
-    verdict = np.full(len(rows), JOIN)              # on a face that is not flat: joined
+    if not len(rows):
+        return none, 0, none
+    inside = unit[rows[:, 0]] == unit[rows[:, 1]]
+    across = np.nonzero(~inside)[0]
+    rows_a, plane, face = rows[across], K["plane"][across], K["face"][across]
+    verdict = np.full(len(rows_a), JOIN)            # on a face that is not flat: joined
     k = np.nonzero(~np.isnan(plane[:, 0]))[0]
     if len(k):
-        verdict[k] = _rests_flat(T, flat, same, rows[k, 0], face[k], plane[k])
-    return unit[rows[verdict == JOIN]], int((verdict == UNSURE).sum())
+        verdict[k] = _rests_flat(T, flat, same, rows_a[k, 0], face[k], plane[k])
+    join = verdict == JOIN
+    # the contacts each unit needs whole: those in one unit already and those joined (bake_steps counts the ones a
+    # cut into cells loses)
+    needed = np.concatenate((np.column_stack((rows[inside, 0], K["face"][inside])),
+                             np.column_stack((rows_a[join, 0], face[join]))))
+    return unit[rows_a[join]], int((verdict == UNSURE).sum()), needed
 
 
 def _rests_flat(T, flat, same, pts, faces, planes):
@@ -155,8 +162,8 @@ def _rests_flat(T, flat, same, pts, faces, planes):
         hard_nb.setdefault(x, []).append(y)
         hard_nb.setdefault(y, []).append(x)
     hard_set = {(x, y) for x, y in ends.tolist()} | {(y, x) for x, y in ends.tolist()}
-    rep = np.full(n, -1)                            # a point of every label (its place)
-    rep[same[::-1]] = np.arange(n)[::-1]
+    rep = np.full(n, n)                             # a point of every label (its place): the smallest
+    np.minimum.at(rep, same, np.arange(n))
     corner_lab = same[lv]
     order = np.argsort(corner_lab, kind="stable")
     sorted_lab = corner_lab[order]
@@ -644,7 +651,7 @@ def bake_steps(orig, levels):
     """bake as a step generator: yields (fraction, text) after each batch; returns (copies, report)."""
     yield 0.0, "finding the pieces"
     arr = meshparts.mesh_arrays(orig)
-    units, flat, skipped = unit_plan(orig, arr)
+    units, flat, skipped, needed = unit_plan(orig, arr)
     # the pieces: each unit, or the cells of a unit too large for a batch (with rings of faces around their cores)
     islands, fulls, corners = [], [], []            # per piece: its core (kept), its faces (baked), a cell's corner
     for u in units:
@@ -657,6 +664,7 @@ def bake_steps(orig, levels):
     face_in_island = np.full(n, -1, np.int64)
     for k, g in enumerate(islands):
         face_island[g], face_in_island[g] = k, np.arange(len(g))
+    cut = _contacts_cut(arr, face_island, needed)
     passive = {name for name, (d, _t, _v) in arr["attrs"].items()
                if d == 'FACE' and name not in GEOMETRIC_FACE and not name.startswith(".")}
     # piece -> (the piece of its shape that is baked, its core in the order of that one's, its offset, UV shifts)
@@ -742,7 +750,22 @@ def bake_steps(orig, levels):
     rep["batch_faces_max"] = max(len(f) for f, _s, _m in parts)
     rep["islands"], rep["islands_shared"] = len(islands), len(shared)
     rep["contacts_skipped"] = skipped
+    rep["contacts_cut"] = cut
+    rep["unit_faces_max"] = max((len(u) for u in units), default=0)
     return made, rep
+
+
+def _contacts_cut(arr, face_island, needed):
+    """How many of the contacts a unit needs (`needed`: (point, face touched)) a unit cut into cells loses: no face at
+    the point has its core in the piece of the face touched - the contact lies in other batches' rings or not at all
+    (a unit over CELL_FACES; review of Task 8). `face_island`: the piece of every face."""
+    if not len(needed):
+        return 0
+    k = int(face_island.max()) + 1
+    corner_face = np.repeat(np.arange(len(arr["lt"])), arr["lt"])
+    have = np.unique(arr["lv"].astype(np.int64) * k + face_island[corner_face])     # (point, piece of a face at it)
+    want = needed[:, 0].astype(np.int64) * k + face_island[needed[:, 1]]
+    return int((~np.isin(want, have)).sum())
 
 
 def _guard(orig, levels, islands, ids, quality):
