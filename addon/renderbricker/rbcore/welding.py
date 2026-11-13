@@ -1160,10 +1160,14 @@ def repair_work(orig, work, wm, tv, rep):
 
 
 def _bake_work(orig, work, levels, tv):
-    """The copies of the given levels from the finished work object, marked as made by the weld."""
+    """The copies of the given levels from the finished work object, marked as made by the weld; on each the seams
+    closed on the copy itself (W26, contacts.snap - with the contacts of the cage's last compensation, _fit)."""
     made = {}
+    fit = FITTED.get(work.data.name)
     for lv in sorted(levels):
         cp = copies.bake_copy(orig, work, lv)
+        if fit is not None and fit["snap"] is not None:
+            shrink.contacts.snap(cp, fit["snap"][0], lv, fit["snap"][1], fit["snap"][2])
         cp["rb_method"] = "weld"
         cp["rb_tv"] = [x for pair in tv for x in pair]      # T vertices for the check (vertex, host face)
         made[lv] = cp
@@ -1180,14 +1184,22 @@ def baked_folds(orig, cp, level):
         config.LEVELS = keep
 
 
-def _fit(work, wm, rep, orig=None):
+FITTED = {}              # work mesh name -> what its last _fit was given and found: free, apart (the report's lists),
+                         # snap (shrink.compensate's, for W26 in _bake_work); _bake_weld drops it at its end
+
+
+def _fit(work, wm, rep, orig=None, still=None):
     """The shrink compensation of the cage (UPDATES #51; rules 3.16: W19, W22, W23, W24), its numbers into the
     report. W24 measures its slits at the quality the copies of `orig` are baked at (without `orig`: the cage's
     own count of faces decides it, as bake_quality): at the modifier's quality 3 the limit places lay up to
-    0.0047 mm off, 89678 kept 4 slits of 0.0057 in the copy (review of Task 6). The points that stay apart (the
-    weld's stage 9) are held by W24 (W24a)."""
-    free, apart = rep.pop(shrink.SHRINK_FREE, []), rep.pop(shrink.SHRINK_APART, [])
-    res = shrink.compensate(work, wm, free, copies.bake_quality(orig if orig is not None else wm), apart)
+    0.0047 mm off, 89678 kept 4 slits of 0.0057 in the copy (review of Task 6). `still` (W25, _unbow): the same cage
+    once more, these points held for W22 and W23 - with the free and apart points of its first fit."""
+    if still is None:
+        free, apart = rep.pop(shrink.SHRINK_FREE, []), rep.pop(shrink.SHRINK_APART, [])
+    else:
+        free, apart = FITTED[wm.name]["free"], FITTED[wm.name]["apart"]
+    res = shrink.compensate(work, wm, free, copies.bake_quality(orig if orig is not None else wm), apart, still or ())
+    FITTED[wm.name] = {"free": free, "apart": apart, "snap": res.get("snap")}
     rep["shrink_points"], rep["shrink_max"], rep["shrink_left"], rep["shrink_cylinders"] = (
         res["points"], res["max"], res["left"], res["cylinders"])
     for k in ("chain_points", "surface_points", "coarse_left", "contact_points", "contact_moved"):
@@ -1230,6 +1242,106 @@ def _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=False, memo=
     return _bake_work(orig, work, levels, tv)
 
 
+BOW = 0.002              # mm: W25 - an overlapping child this far out of flat shows (6002: 0.0015 did not, 0.013 did)
+
+
+def bowties(wm, cp, level, places):
+    """W25: the flat cage faces of `wm` (four corners or more, in one plane at the import's `places`) that the
+    compensation bent - it moved their corners out of that plane by amounts more than BOW apart - and that have a
+    folded child in the copy `cp` of `level`: a quad whose two triangles (the renderer's: loop_triangles) face against
+    each other, its corners more than BOW apart along the cage face's normal. Flat, such a child is invisible (rules
+    3.15 have them on 6002's top: W14c's slide along the smooth surface pulls the children of a long flat face over
+    each other); bent, its small triangle shows its back - a dark wedge. The fold check does not see it: the child's
+    mean normal still faces the right way; nor does a BVH of the quads (it splits a bent quad the other way). Returns
+    the set of those cage faces."""
+    lt = np.empty(len(wm.polygons), np.int64); wm.polygons.foreach_get("loop_total", lt)
+    kids = lt * 4 ** (level - 1)
+    if int(kids.sum()) != len(cp.polygons):
+        return set()
+    owner = np.repeat(np.arange(len(lt)), kids)
+    q = places
+    wl = np.empty(len(wm.loops), np.int64); wm.loops.foreach_get("vertex_index", wl)
+    lf = np.repeat(np.arange(len(lt)), lt)
+    ls = np.cumsum(lt) - lt
+    nxt = np.arange(len(wl)) + 1
+    nxt[ls + lt - 1] = ls
+    fn = np.zeros((len(lt), 3))                 # Newell normals at the import's places
+    np.add.at(fn, lf, np.cross(q[wl], q[wl[nxt]]))
+    fn /= np.maximum(np.linalg.norm(fn, axis=1), 1e-12)[:, None]
+
+    def spread(h):
+        top, low = np.full(len(lt), -np.inf), np.full(len(lt), np.inf)
+        np.maximum.at(top, lf, h)
+        np.minimum.at(low, lf, h)
+        return top - low
+
+    now = np.empty(len(wm.vertices) * 3); wm.vertices.foreach_get("co", now)
+    now = now.reshape(-1, 3)
+    flat = (lt >= 4) & (spread(np.einsum("ij,ij->i", q[wl], fn[lf])) < 1e-3)
+    flat &= spread(np.einsum("ij,ij->i", now[wl] - q[wl], fn[lf])) > BOW        # ... and bent by the compensation
+    if not flat.any():
+        return set()
+    cp.calc_loop_triangles()
+    nt = len(cp.loop_triangles)
+    tv_ = np.empty(nt * 3, np.int64); cp.loop_triangles.foreach_get("vertices", tv_)
+    tp = np.empty(nt, np.int64); cp.loop_triangles.foreach_get("polygon_index", tp)
+    co = np.empty(len(cp.vertices) * 3); cp.vertices.foreach_get("co", co)
+    p = co.reshape(-1, 3)[tv_.reshape(-1, 3)]
+    tn = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
+    area = np.linalg.norm(tn, axis=1)
+    tn /= np.maximum(area, 1e-30)[:, None]
+    order = np.argsort(tp, kind="stable")
+    same = np.nonzero(tp[order][1:] == tp[order][:-1])[0]
+    t1, t2 = order[same], order[same + 1]
+    bad = ((tn[t1] * tn[t2]).sum(axis=1) < 0.0) & (np.minimum(area[t1], area[t2]) > 1e-10) & flat[owner[tp[t1]]]
+    out = set()
+    for x, y in zip(t1[bad].tolist(), t2[bad].tolist(), strict=True):
+        f = int(owner[tp[x]])
+        h = np.r_[p[x], p[y]] @ fn[f]           # the child's corners along the cage face's normal
+        if float(h.max() - h.min()) > BOW:
+            out.add(f)
+    return out
+
+
+def _unbow(orig, work, wm, tv, rep, made, levels, lv, memo=None):
+    """W25: the shrink compensation must not bend an overlapping child of a flat face out of flat (bowties, on the
+    copy of level `lv`): the cage goes back to the import's places and is compensated again with the points of those
+    faces held for W22 and W23 (W24 then closes on what stands), the copies are baked again and the compensation's
+    folds undone as before (_shrink_back); if children still show, once more with the points of the faces around
+    them too. rep["shrink_unbowed"]: the points held. Rejected (run 306 rework): undoing the whole island (6002's
+    stud feet back to rules 3.15), putting the points back after W24 (the seams W24 had closed opened again).
+    Returns the copies."""
+    was = shrink.WAS.get(wm.name)
+    if not rep.get("shrink_points") or lv not in made or was is None or len(was[0]) != len(wm.vertices):
+        return made
+    q = was[0].copy()
+    still = set()
+    for attempt in (0, 1):
+        faces = bowties(wm, made[lv], lv, q)
+        if not faces:
+            return made
+        pts = {v for f in faces for v in wm.polygons[f].vertices}
+        if attempt:                             # the faces around them
+            pts = {v for p in wm.polygons if pts.intersection(p.vertices) for v in p.vertices}
+        if pts <= still:
+            return made
+        still |= pts
+        shrink.undo_shrink(work, wm)
+        for name in (reparam.PARAM, reparam.EDGE, reparam.SHELL):      # W14c's marks: made again (as _shrink_back)
+            at = wm.attributes.get(name)
+            if at is not None:
+                wm.attributes.remove(at)
+        for cp in made.values():
+            copies.discard_copy(orig, cp)
+        _fit(work, wm, rep, orig, still=sorted(still))
+        rep["shrink_unbowed"] = len(still)
+        made = _bake_work(orig, work, levels, tv)
+        if memo is not None:
+            memo.clear()
+        made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
+    return made
+
+
 def _bake_weld(orig, levels, method_rep=None):
     from . import batches
     if batches.wanted(orig):                    # a large mesh: batch by batch of islands (UPDATES #54, run 287)
@@ -1237,6 +1349,7 @@ def _bake_weld(orig, levels, method_rep=None):
     # run 59 tried baking first and checking folds on the copy: 306 of Ratatouille's 667
     # meshes need the repair anyway and were then baked twice - slower (349 -> 396 s)
     work, wm, tv, rep = weld_work(orig)
+    FITTED.pop(wm.name, None)                   # (a _fit of a test before: not this bake's)
     try:
         _fit(work, wm, rep, orig)
         if bevel.signature():                   # Edges: Bevel - the part's own sharp edges, as bevel weight on
@@ -1250,6 +1363,7 @@ def _bake_weld(orig, levels, method_rep=None):
         lv = config.RENDER_LEVEL if config.RENDER_LEVEL in made else max(made)
         memo = {}
         made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
+        made = _unbow(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
         close_off = None
         folded = _folds(orig, made, lv, memo) if rep.get("outlines_closed") else ()
         if folded:
@@ -1262,7 +1376,7 @@ def _bake_weld(orig, levels, method_rep=None):
             close_off = set(own[meshparts.island_faces(wm, folded)].tolist())
             for cp in made.values():
                 copies.discard_copy(orig, cp)
-            bpy.data.objects.remove(work); bpy.data.meshes.remove(wm)
+            FITTED.pop(wm.name, None); bpy.data.objects.remove(work); bpy.data.meshes.remove(wm)
             outlines.NO_CLOSE[0] = close_off
             undone = bool(rep.get("shrink_dropped"))
             try:
@@ -1288,7 +1402,7 @@ def _bake_weld(orig, levels, method_rep=None):
             off = set(own[meshparts.island_faces(wm, folded)].tolist())
             for cp in made.values():
                 copies.discard_copy(orig, cp)
-            bpy.data.objects.remove(work); bpy.data.meshes.remove(wm)
+            FITTED.pop(wm.name, None); bpy.data.objects.remove(work); bpy.data.meshes.remove(wm)
             NO_ENDS[0] = off
             outlines.NO_CLOSE[0] = close_off            # the outlines dropped above stay dropped
             try:
@@ -1321,6 +1435,7 @@ def _bake_weld(orig, levels, method_rep=None):
                 made[lv] = new
     finally:
         bpy.data.objects.remove(work)
+        FITTED.pop(wm.name, None)
         bpy.data.meshes.remove(wm)
         workscene.drop_work_scene()
     return made, rep

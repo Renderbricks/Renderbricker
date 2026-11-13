@@ -106,7 +106,7 @@ def _contact_links(orig, same, unit):
     if not T["nf"]:
         return none, 0, none
     flat = cagegeom.flat_faces(T)[1]
-    K = contacts.find(orig, T, flat)
+    K = contacts.find(orig, T, flat, edges=False)
     rows = K["contacts"]
     if not len(rows):
         return none, 0, none

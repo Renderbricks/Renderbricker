@@ -10,11 +10,14 @@ at level 2 no gaps may appear.
            0.063 mm off the shell they rest on: 89678, the mantle's rim under the bead) - with every shell it
            touches, its nearest face there and, where that is flat, its plane (for batches.unit_plan; close does not
            use them)
-           - not a joint (W24e) and at a pole one row per place touched (W24d)
+           - not a joint (W24e) and at a pole one row per place touched (W24d) - and the open edges both of whose
+           ends touch one shell and that lie on it in between too (edge_rows, for snap)
     close  rounds on the smooth surface at level 2: a contact point with a slit to a shell it touched moves
            CONTACT_STEP x the way to the nearest point of that shell's smooth surface (of several shells towards
            the widest slit), never further than MAX_MOVE from the import in all, never a point that stays apart
            (W24a) and never off the flat faces it lies on (W24b); ends when no slit is wider than SLIT_MIN
+    snap   W26: the seams closed on the baked copy itself - its contact points and the points of the open edges
+           between them put on the copy of the shell they touch
     gaps   the gap measure of a copy (resting rims, points that share a place, contact slits) - the measure of the
            test shrink_fit
 
@@ -24,10 +27,10 @@ faces at it). A nearest point on the shell's open rim is beside it, a slit. 8967
 its nearest point lies on an edge between two faces of the body, and with the normal of the one face the tree gave
 the prototype took it for behind and left 0.044 mm, its mirror twin closed.
 
-Read only except close, which moves the points of the cage it is given.
+Read only except close, which moves the points of the cage it is given, and snap, which moves points of the copy.
 
 Rework of run 306 (13.11.2026; the diagnosis found every hole of rules 3.16 in W24 or in the baked copy, where no
-rule looked): W24a, W24b, W24d, W24e restrain close as W22 / W23 are restrained.
+rule looked): W24a - W24e restrain close as W22 / W23 are restrained, W26 measures the copy that is rendered.
 """
 import numpy as np
 from mathutils.bvhtree import BVHTree
@@ -53,6 +56,9 @@ ASK_EDGE = 1e-3             # mm: the faces at the nearest point - asked this wi
 JOINT_COS = 0.996           # W24e: two flat faces within 5 degrees lie in one plane ...
 JOINT_OFF = 0.01            # mm: ... when the point is no further than this off the other's plane
 MANY = 8                    # W24d: a point touching more shells than this - they count once per place touched
+SNAP_MAX = 0.3              # mm: W26 - a slit of the copy wider than this is left (= MAX_MOVE)
+SNAP_TURN = 0.5             # W26: a quad of the copy turns by no more than this cosine (60 degrees) when a point moves
+SNAP_HALVES = 3             # W26: ... the point then goes half the way, this often; then it stays
 
 
 def _faces(T):
@@ -60,13 +66,15 @@ def _faces(T):
     return [f.tolist() for f in np.split(T["lv"], T["ls"][1:])] if T["nf"] else []
 
 
-def find(wm, T, flat, planes=None):
+def find(wm, T, flat, planes=None, edges=True):
     """The contacts of the cage `wm` at its places in `T` (cagegeom.arrays, before any move); `flat` (nf) bool the
     flat faces (cagegeom.flat_faces); `planes` the flat planes of every point (cagegeom._flat_planes; None: made
     here). Returns a dict: lab (n) the shell of every point (its smallest point number), contacts (m,2) int (point,
     shell touched) - one row per shell a point touches, face (m) the nearest face of the shell touched, plane (m,4)
     that face's plane (normal, normal . point on it) where it is flat, else nan, resting the shells whose open rim
-    rests on another shell (every rim point within REST). Empty at once when the cage has one shell.
+    rests on another shell (every rim point within REST), edge_rows (k,3) int (open edge, place 0..2, shell) - with
+    `edges`: the open edges both of whose ends touch one shell and whose level-2 places 1/4, 1/2, 3/4 lie within
+    CONTACT_RIM of it in the import (W26 reads them). Empty at once when the cage has one shell.
       W24e  a row that only the wide reach makes (a rim point further than CONTACT off the shell) is no contact when
             that shell has, within the point's reach, a flat face in the plane of one of the point's own flat faces
             (normals within JOINT_COS, the point within JOINT_OFF of its plane): the two lie side by side with a
@@ -78,7 +86,7 @@ def find(wm, T, flat, planes=None):
     n, co, ev = T["n"], T["co"], T["ev"]
     lab = cagegeom._components(n, ev[:, 0], ev[:, 1]) if len(ev) else np.arange(n)
     out = {"lab": lab, "contacts": np.zeros((0, 2), np.int64), "face": np.zeros(0, np.int64), "plane": np.zeros((0, 4)),
-           "resting": []}
+           "resting": [], "edge_rows": np.zeros((0, 3), np.int64)}
     shells, sid = np.unique(lab, return_inverse=True)
     if len(shells) < 2 or not T["nf"]:
         return out
@@ -155,7 +163,29 @@ def find(wm, T, flat, planes=None):
         out["contacts"] = np.array(rows, np.int64)
         out["face"] = np.array(nearest, np.int64)
         out["plane"] = np.array(row_planes, np.float64)
+        if edges:
+            out["edge_rows"] = _edge_rows(T, tree, fshell_l, rows)
     return out
+
+
+def _edge_rows(T, tree, fshell_l, rows):
+    """For W26: the open edges of the cage both of whose ends touch the same shell (`rows` of find) and that lie on
+    it in the import between their ends too - at the level-2 places 1/4, 1/2, 3/4, within CONTACT_RIM: rows (edge,
+    place 0..2, shell). Without them the seam between two contact points is a chord the copy does not close (61487:
+    0.121 mm between two points that had closed)."""
+    co, ev = T["co"], T["ev"]
+    touch = {}
+    for v, s in rows:
+        touch.setdefault(v, set()).add(s)
+    out = []
+    for e in np.nonzero(T["efaces"] == 1)[0].tolist():
+        a, b = int(ev[e, 0]), int(ev[e, 1])
+        for s in sorted(touch.get(a, set()) & touch.get(b, set())):
+            for k in range(3):
+                p = co[a] + (co[b] - co[a]) * ((k + 1) / 4.0)
+                if any(fshell_l[h[2]] == s for h in tree.find_nearest_range(p.tolist(), CONTACT_RIM)):
+                    out.append((e, k, s))
+    return np.array(out, np.int64).reshape(-1, 3)
 
 
 def _evaluate(work, level, topology, quality=None):
@@ -270,7 +300,7 @@ def close(work, wm, K, free, q, d, quality=None, hold=(), planes=None):
       W24b  `planes` (cagegeom._flat_planes: the count and the first two planes per point): a move keeps to the flat
             faces the point lies on, as W22 and W23 do - one plane: in it, two: along their line, three: none (con1:
             the slots' corners moved 0.063 mm off their walls). A flat piece whose corner would have to sink into a
-            curved face keeps its slit there (13767: 0.095 mm at 4 points, rules 3.15 0.110)
+            curved face keeps its slit there - W26 closes it on the copy
     Leaves the cage at q + the moves. Returns (the moves (n,3), points moved by the contacts, largest slit left)."""
     HISTORY.clear()
     d = np.asarray(d, np.float64).copy()
@@ -381,6 +411,120 @@ def _in_planes(step, planes):
 
 
 HISTORY = []                # (largest slit, slits over 0.005) per round of the last close call - read by the tests
+SNAPPED = [0, 0.0]          # W26 on the last copy: the points moved, the widest slit closed - read by the tests
+
+
+def snap(cp, K, level, ev, hold=()):
+    """W26: the seams of the baked copy `cp` (of `level`) closed on the copy itself. W24 closes its contacts on the
+    smooth surface as the modifier makes it - the copy is another surface: W14c slides its points along it (43712:
+    the top under a stud's foot lies 0.024 mm lower in the copy, the foot 0.018 mm above it), an open edge between
+    two contact points bridges a hollow surface (61487: 0.121 mm between two points that had closed), a point at
+    MAX_MOVE (89678, 11214) or held (W24a, W24b) keeps a rest. So what is seen is measured where it is seen: every
+    contact point of `K` (find's dict) and, on the open edges between two contact points of one shell
+    (K["edge_rows"]), the points the level gives them - the copy keeps the cage's numbers: cage point v is copy
+    point v, the places on edge e are n + 3 e + k at level 2, n + e (the middle one) at level 1 - against the copy of
+    the shell touched, as close measures (in front of it or beside it: a slit; behind it: none). A point with a slit
+    from SLIT_MIN to SNAP_MAX goes onto the nearest point of that shell (of several shells the widest slit's). Then
+    no quad of the copy may turn by more than SNAP_TURN: such a point goes half the way, up to SNAP_HALVES times,
+    then it stays (as W14c's slide, reparam.FOLD_STEPS; 92092 folded 4 quads without it). Only points of the copy
+    move; the cage and the copy's corner normals stay. `ev`: the cage's edges; `hold`: the points that stay apart
+    (W24a) - they and the edges that end in one are left: their twin would not follow (92092: the T gap came back
+    with 0.027 mm). Returns the number of points moved (SNAPPED: and the widest slit closed)."""
+    SNAPPED[0], SNAPPED[1] = 0, 0.0
+    if K is None:
+        return 0
+    rows = np.asarray(K["contacts"], np.int64).reshape(-1, 2)
+    n = len(K["lab"])
+    if not len(rows) or len(cp.vertices) < n + len(ev) * (2 ** level - 1):
+        return 0
+    still = np.zeros(n, bool)
+    if len(hold):
+        still[np.asarray(sorted(int(v) for v in hold), np.int64)] = True
+    rows = rows[~still[rows[:, 0]]]
+    at, touched = rows[:, 0], rows[:, 1]
+    erows = np.asarray(K.get("edge_rows", np.zeros((0, 3))), np.int64).reshape(-1, 3)
+    if len(erows):
+        ends = np.asarray(ev, np.int64)[erows[:, 0]]
+        erows = erows[~(still[ends[:, 0]] | still[ends[:, 1]])]
+    if len(erows) and level in (1, 2):         # (other levels: the contact points only)
+        if level == 1:
+            erows = erows[erows[:, 1] == 1]
+            e_at = n + erows[:, 0]
+        else:
+            e_at = n + erows[:, 0] * 3 + erows[:, 1]
+        at, touched = np.r_[at, e_at], np.r_[touched, erows[:, 2]]
+    co = np.zeros(len(cp.vertices) * 3); cp.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    lv = np.zeros(len(cp.loops), np.int64); cp.loops.foreach_get("vertex_index", lv)
+    le = np.zeros(len(cp.loops), np.int64); cp.loops.foreach_get("edge_index", le)
+    e2 = np.zeros(len(cp.edges) * 2, np.int64); cp.edges.foreach_get("vertices", e2)
+    if len(lv) % 4:
+        return 0
+    shells = sorted(set(touched.tolist()))
+    parts = _shell_parts(co, (lv.reshape(-1, 4), e2.reshape(-1, 2), np.bincount(le, minlength=len(cp.edges))), shells)
+    order = np.argsort(touched, kind="stable")
+    slit = np.zeros(len(at))
+    target = co[at].copy()
+    for s, todo in zip(*_groups(touched[order], order), strict=True):
+        pts, faces, seg = parts[s]
+        if not len(pts):
+            continue
+        tree = BVHTree.FromPolygons(co[pts].tolist(), faces)
+        pp = co[at[todo]]
+        hits = [tree.find_nearest(x, SNAP_MAX) for x in pp.tolist()]
+        got = [k for k, h in enumerate(hits) if h[0] is not None]
+        if not got:
+            continue
+        rows_s = todo[got]
+        pp = pp[got]
+        loc = np.array([hits[k][0] for k in got], np.float64)
+        nrm = np.array([hits[k][1] for k in got], np.float64)
+        dist = np.array([hits[k][3] for k in got], np.float64)
+        behind = np.einsum("ij,ij->i", pp - loc, nrm) <= -BESIDE * dist
+        if CONE:
+            for k in np.nonzero(behind)[0].tolist():
+                behind[k] = _behind_cone(tree, pp[k], loc[k], dist[k])
+        if len(seg) and behind.any():           # the nearest point on the shell's open rim: beside it, a slit
+            k = np.nonzero(behind)[0]
+            behind[k[_to_segments(loc[k], co[seg[:, 0]], co[seg[:, 1]]) <= _tols(loc[k])]] = False
+        slit[rows_s] = np.where(behind, 0.0, dist)
+        target[rows_s] = loc
+    new = co.copy()
+    widest = np.zeros(len(co))
+    for i in np.nonzero((slit > SLIT_MIN) & (slit <= SNAP_MAX))[0].tolist():
+        v = at[i]
+        if slit[i] > widest[v]:                 # of several shells touched: onto the widest slit's
+            new[v], widest[v] = target[i], slit[i]
+    quads = lv.reshape(-1, 4)
+    near = quads[(widest[quads] > 0).any(axis=1)]
+    if len(near):                               # the fold guard
+        def normal(x):
+            nn = np.cross(x[near[:, 2]] - x[near[:, 0]], x[near[:, 3]] - x[near[:, 1]])
+            return nn / np.maximum(np.linalg.norm(nn, axis=1), 1e-30)[:, None]
+
+        before = normal(co)
+        for step in range(SNAP_HALVES + 1):
+            bad = np.einsum("ij,ij->i", before, normal(new)) < SNAP_TURN
+            if not bad.any():
+                break
+            vs = np.unique(near[bad])
+            vs = vs[widest[vs] > 0]
+            if step < SNAP_HALVES:
+                new[vs] = co[vs] + 0.5 * (new[vs] - co[vs])
+            else:
+                new[vs], widest[vs] = co[vs], 0.0
+    moved = int((widest > 0).sum())
+    if moved:
+        custom = cp.has_custom_normals
+        normals = np.zeros(len(cp.loops) * 3, np.float32)
+        if custom:
+            cp.corner_normals.foreach_get("vector", normals)
+        cp.vertices.foreach_set("co", new.astype(np.float32).ravel())
+        cp.update()
+        if custom:
+            cp.normals_split_custom_set(normals.reshape(-1, 3))
+        SNAPPED[0], SNAPPED[1] = moved, float(widest.max())
+    return moved
 
 
 def _copy_shells(cage_lab, cp):
