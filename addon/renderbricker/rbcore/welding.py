@@ -1,6 +1,6 @@
 """The conversion of one part: weld the islands in a work copy, set the creases (W rules), repair
 folds, bake the copies (process)."""
-import bpy, bmesh, math, types
+import bpy, bmesh, copy, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
@@ -1346,6 +1346,65 @@ def ties_any(orig, wm, cp, level):
     return faces, float(area[small[bad]].sum())
 
 
+_TOPOLOGY = (".edge_verts", ".corner_vert", ".corner_edge")     # the compensation moves points only
+_ATTR = {"FLOAT_VECTOR": ("vector", 3, np.float32), "FLOAT2": ("vector", 2, np.float32),
+         "FLOAT_COLOR": ("color", 4, np.float32), "BYTE_COLOR": ("color", 4, np.float32),
+         "QUATERNION": ("value", 4, np.float32), "FLOAT4X4": ("value", 16, np.float32),
+         "INT16_2D": ("value", 2, np.int32), "INT32_2D": ("value", 2, np.int32), "INT8_2D": ("value", 2, np.int32),
+         "INT": ("value", 1, np.int32), "INT8": ("value", 1, np.int32), "BOOLEAN": ("value", 1, bool),
+         "FLOAT": ("value", 1, np.float32)}       # data type -> foreach key, width, buffer type
+
+
+def _snapshot(work, wm, rep, made, memo):
+    """W25c: the state a trial hold starts from - the cage's attributes (its places, the custom normals, W14c's marks;
+    every attribute but the topology, raw), the report, what the last compensation left (FITTED, shrink.WAS), the
+    copies, the memo of _folds and the measures of the last close / snap / sink (the tests read them)."""
+    attrs = []
+    for a in wm.attributes:
+        if a.name in _TOPOLOGY:
+            continue
+        key, width, dtype = _ATTR[a.data_type]
+        buf = np.empty(len(a.data) * width, dtype)
+        a.data.foreach_get(key, buf)
+        attrs.append((a.name, a.domain, a.data_type, key, buf))
+    return {"attrs": attrs, "rep": copy.deepcopy(rep), "fitted": FITTED.get(wm.name),
+            "was": shrink.WAS.get(wm.name), "made": dict(made), "memo": dict(memo) if memo is not None else None,
+            "globals": [(g, list(g)) for g in (shrink.contacts.SNAPPED, shrink.contacts.HISTORY, cover.SUNK)]}
+
+
+def _restore(work, wm, rep, memo, snap):
+    """Put the state of _snapshot back: the cage's attributes as they were (those made since removed, those removed
+    since made again), the report, FITTED, shrink.WAS, the memo. Returns the copies of the snapshot."""
+    keep = {x[0] for x in snap["attrs"]}
+    for name in [a.name for a in wm.attributes if a.name not in keep and a.name not in _TOPOLOGY]:
+        wm.attributes.remove(wm.attributes[name])
+    for name, domain, data_type, key, buf in snap["attrs"]:
+        a = wm.attributes.get(name)
+        if a is None or a.domain != domain or a.data_type != data_type:
+            if a is not None:
+                wm.attributes.remove(a)
+            a = wm.attributes.new(name, data_type, domain)
+        a.data.foreach_set(key, buf)
+    wm.update()
+    workscene.depsgraph_of(work).update()
+    rep.clear()
+    rep.update(snap["rep"])
+    if snap["fitted"] is None:
+        FITTED.pop(wm.name, None)
+    else:
+        FITTED[wm.name] = snap["fitted"]
+    if snap["was"] is None:
+        shrink.WAS.pop(wm.name, None)
+    else:
+        shrink.WAS[wm.name] = snap["was"]
+    if memo is not None:
+        memo.clear()
+        memo.update(snap["memo"] or {})
+    for g, was in snap["globals"]:
+        g[:] = was
+    return dict(snap["made"])
+
+
 def _untie(orig, work, wm, tv, rep, made, levels, lv, memo=None):
     """W25c (rework 3, run 306; in place of W25): a visible bow tie of the copy of level `lv` (ties_any) - the points
     of its cage faces are held for W22 and W23 and the cage compensated again (_refit, then _shrink_back: W25b's
@@ -1367,7 +1426,8 @@ def _untie(orig, work, wm, tv, rep, made, levels, lv, memo=None):
         if pts <= still:
             break
         trial = still | pts
-        made = _refit(orig, work, wm, tv, rep, made, levels, trial)
+        snap = _snapshot(work, wm, rep, made, memo)
+        made = _refit(orig, work, wm, tv, rep, {}, levels, trial)      # the copies before stay for a restore
         if memo is not None:
             memo.clear()
         made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
@@ -1375,13 +1435,15 @@ def _untie(orig, work, wm, tv, rep, made, levels, lv, memo=None):
         if a1 < a0:
             still, a0, faces = trial, a1, f1
             rep["shrink_untied"] = len(still)
+            for level, cp in snap["made"].items():          # the copies before go; the new ones take their names
+                copies.discard_copy(orig, cp)
+                made[level].name = f"{orig.name} L{level}"
             if not f1:
                 return made
-        else:                                   # no better: the set before
-            made = _refit(orig, work, wm, tv, rep, made, levels, still)
-            if memo is not None:
-                memo.clear()
-            made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
+        else:                                   # no better: the state before, from the snapshot (it was compensating
+            for cp in made.values():            # and baking the set before again - 21301.002: 25 -> 69 s)
+                copies.discard_copy(orig, cp)
+            made = _restore(work, wm, rep, memo, snap)
             break
     if not still and not before:
         rep.pop(STILL, None)
