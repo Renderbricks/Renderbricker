@@ -197,7 +197,7 @@ def _edge_rows(T, tree, fshell_l, rows):
 
 def _evaluate(work, level, topology, quality=None):
     """The points of the smooth surface of `work` at `level` (limit surface on); with `topology` also its quads, its
-    edges and the number of faces per edge."""
+    edges and the number of faces per edge - with topology="quads" its quads only."""
     mod = work.modifiers["Subdivision"]
     keep, keep_q, keep_uv = mod.levels, mod.quality, mod.uv_smooth
     mod.levels = level
@@ -214,10 +214,16 @@ def _evaluate(work, level, topology, quality=None):
         ev = work.evaluated_get(dg)
         me = ev.to_mesh()
         try:
-            co = np.zeros(len(me.vertices) * 3)
-            me.vertices.foreach_get("co", co)
+            # read in the type the mesh keeps (float32, int32): foreach_get converts item by item into any other
+            # (run 306 w24_speed: 4x on the points) - float32 -> float64 is exact
+            co32 = np.zeros(len(me.vertices) * 3, np.float32)
+            me.vertices.foreach_get("co", co32)
+            co = co32.astype(np.float64)
             topo = None
-            if topology:
+            if topology == "quads":
+                lv = np.zeros(len(me.loops), np.int32); me.loops.foreach_get("vertex_index", lv)
+                topo = lv.reshape(-1, 4).astype(np.int64)
+            elif topology:
                 lv = np.zeros(len(me.loops), np.int64); me.loops.foreach_get("vertex_index", lv)
                 le = np.zeros(len(me.loops), np.int64); me.loops.foreach_get("edge_index", le)
                 e2 = np.zeros(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", e2)
@@ -294,6 +300,49 @@ def _shell_parts(co2, topo, shells):
     return out
 
 
+def _copy_parts(wm, lab, quads, shells, level):
+    """_shell_parts without the copy's edges (run 306 w24_speed): the copy's quads are its cage faces' in their order -
+    a quad of the cage makes 4^level of them, a face of k sides k x 4^(level-1) (Blender, subdiv_foreach.cc,
+    subdiv_foreach_ctx_init_offsets), so a copy quad's shell is its cage face's (`lab`: find's shells of the cage, its
+    smallest point number - the copy's first points are the cage's, so the copy's labels are the same). The open rim
+    of a shell: the edges of its quads used once. The same points, quads and order as _shell_parts; the rim edges in
+    another order and direction (only their nearest distance is read). None when the counts do not agree."""
+    nf = len(wm.polygons)
+    ls = np.zeros(nf, np.int32); wm.polygons.foreach_get("loop_start", ls)
+    lt = np.zeros(nf, np.int32); wm.polygons.foreach_get("loop_total", lt)
+    lv = np.zeros(len(wm.loops), np.int32); wm.loops.foreach_get("vertex_index", lv)
+    many = np.where(lt == 4, 4 ** level, lt * 4 ** (level - 1))
+    if int(many.sum()) != len(quads):
+        return None
+    lab = np.asarray(lab)
+    qshell = np.repeat(lab[lv[ls]], many)
+    nv = int(quads.max()) + 1 if len(quads) else 0
+    lab2 = np.full(nv, -1, np.int64)
+    lab2[quads] = qshell[:, None]
+    order = np.argsort(qshell, kind="stable")
+    qs = qshell[order]
+    vorder = np.argsort(lab2, kind="stable")
+    vl = lab2[vorder]
+    rank = np.empty(nv, np.int64)
+    rank[vorder] = np.arange(nv) - np.searchsorted(vl, vl, "left")
+    touched = np.isin(qshell, np.asarray(shells, np.int64))
+    tq = quads[touched]
+    ends = np.stack([tq, np.roll(tq, -1, axis=1)], axis=2).reshape(-1, 2)
+    ends.sort(axis=1)
+    key = ends[:, 0] * nv + ends[:, 1]
+    _k, first, count = np.unique(key, return_index=True, return_counts=True)
+    open_e = ends[first[count == 1]]
+    es_lab = lab2[open_e[:, 0]]
+    eorder = np.argsort(es_lab, kind="stable")
+    es = es_lab[eorder]
+    out = {}
+    for s in shells:
+        sel = quads[order[np.searchsorted(qs, s):np.searchsorted(qs, s, "right")]]
+        out[s] = (vorder[np.searchsorted(vl, s):np.searchsorted(vl, s, "right")], rank[sel].tolist(),
+                  open_e[eorder[np.searchsorted(es, s):np.searchsorted(es, s, "right")]])
+    return out
+
+
 def close(work, wm, K, free, q, d, quality=None, hold=(), planes=None):
     """W24 on the cage `wm` of `work`, which stands at q + d (q the import's places, d the moves so far). `K`: find's
     dict; `free`: points left as they are (W17). Rounds: the smooth surface at LEVEL; every contact point with a slit
@@ -334,9 +383,12 @@ def close(work, wm, K, free, q, d, quality=None, hold=(), planes=None):
     dirty = None                                # the shells whose points moved in the last round (None: all)
     was = (q + d).astype(np.float32)            # the cage as it stands
     for round_ in range(CONTACT_ROUNDS + 1):
-        co2, topo = _evaluate(work, LEVEL, topology=per is None, quality=quality)
+        co2, topo = _evaluate(work, LEVEL, topology="quads" if per is None else False, quality=quality)
         if topo is not None:                    # the copy's shells: its first points are the cage's
-            per = _shell_parts(co2, topo, shells)
+            per = _copy_parts(wm, K["lab"], topo, shells, LEVEL)
+            if per is None:                     # not the face counts of subdiv_foreach: the copy's own edges
+                co2, topo = _evaluate(work, LEVEL, topology=True, quality=quality)
+                per = _shell_parts(co2, topo, shells)
         p = co2[rows[:, 0]]
         # a row neither of whose two shells moved keeps its measure: the smooth surface of a shell depends on its own
         # points only (Task 7: the same numbers, a second measure of every row cost a second on a plate 6 x 16)
