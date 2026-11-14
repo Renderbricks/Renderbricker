@@ -60,6 +60,7 @@ EDGE = "rb_rim"       # point attribute: 1 on the import's boundary vertices (op
 
 
 TIES = config.opt("--reparam-ties", "1") == "1"   # W27 (rework 2, run 306): "0" - the slide as before, for comparisons
+COMPANY = 16          # W27f (rework 4, run 306): rounds of companions at most (measured: 2 on the targets, 3 on 13765)
 
 
 def bow_ties(q):
@@ -99,10 +100,10 @@ def _smaller_ties(new, moving, new0, moving0, quads, tied, n):
     wins (3474: 1933 red pixels -> 66, 57792, 85974). Per group of the points the two runs place differently - joined
     by the quads that hold them, so every quad touching a group is wholly of one run - the run with the smaller sum of
     tie_area over the group's quads. Quads of a group taken from the plain slide are added to `tied`: the final check
-    must not pull them back again. Returns new, moving, tied."""
+    must not pull them back again. Returns new, moving, tied and the number of groups taken from new0."""
     diff = np.abs(new - new0).max(1) > 0
     if not diff.any():
-        return new, moving, tied
+        return new, moving, tied, 0
     k = np.nonzero(diff[quads].any(1))[0]
     lab = np.arange(n)
 
@@ -122,6 +123,7 @@ def _smaller_ties(new, moving, new0, moving0, quads, tied, n):
     a1 = tie_area(new[quads[k]])
     a0 = tie_area(new0[quads[k]])
     tied = tied.copy()
+    taken = 0
     for g in np.unique(group).tolist():
         sel = group == g
         if a0[sel].sum() < a1[sel].sum():
@@ -129,7 +131,8 @@ def _smaller_ties(new, moving, new0, moving0, quads, tied, n):
             vs = vs[diff[vs]]
             new[vs], moving[vs] = new0[vs], moving0[vs]
             tied[k[sel]] = True
-    return new, moving, tied
+            taken += 1
+    return new, moving, tied, taken
 
 
 def part_size(me):
@@ -387,35 +390,45 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
             t = own_trees[s]
             out.append(canonical(t[0], t[1], p, who[j]) if t is not None else (None, None, None, None))
         return out
-    res = find_own(Pl[todo].tolist(), todo)                         # the only per-point Python work
-    found = np.array([r[2] is not None for r in res])              # no hit (4856, catalog 1.2.5): the point stays
-    loc = np.array([r[0] if r[2] is not None else (0.0, 0.0, 0.0) for r in res], np.float64).reshape(-1, 3)
-    hit = np.array([r[2] if r[2] is not None else 0 for r in res], np.int64)
-    # along the smooth normal field instead of to the nearest point of the faceted copy (run 222): near a facet edge
-    # many points share one nearest point and swap order there (folds at level 3); the foot of the interpolated normal
-    # through the point moves on continuously. A few fixed-point steps: foot -> its normal -> drop the point onto it.
-    for _ in range(PROJECT_ITER):
-        Wq = _bary(loc, Ps[tri[hit, 0]], Ps[tri[hit, 1]], Ps[tri[hit, 2]])
-        nq = (Wq[:, :, None] * vn[tri[hit]]).sum(1)
-        nq /= np.maximum(np.linalg.norm(nq, axis=1), 1e-12)[:, None]
-        tgt = Pl[todo] - ((Pl[todo] - loc) * nq).sum(1)[:, None] * nq
-        res = find_own(tgt.tolist(), todo)
-        got = np.array([r[2] is not None for r in res])
-        loc = np.where(got[:, None], np.array([r[0] if r[2] is not None else (0.0, 0.0, 0.0) for r in res], np.float64).reshape(-1, 3), loc)
-        hit = np.where(got, np.array([r[2] if r[2] is not None else 0 for r in res], np.int64), hit)
-    ok = found & ((fn[tf[hit]] * vn[todo]).sum(1) >= np.cos(np.radians(SHARP_DEG)))   # same side of a sharp edge
-    # no slide onto a strongly curved facet (run 224, stud rims at level 1): the flat facet lies below the rounding and
-    # the slid point dents the shading - such a point stays exact on the surface and gets surface-fixed UVs
-    Nt = vn[tri[hit]]
-    spread = np.minimum(np.minimum((Nt[:, 0] * Nt[:, 1]).sum(1), (Nt[:, 1] * Nt[:, 2]).sum(1)), (Nt[:, 0] * Nt[:, 2]).sum(1))
-    ok &= spread >= np.cos(np.radians(CURVE_DEG))
-    if shell is not None:                                          # only on its own shell (run 224)
-        ok &= shell[tri[hit, 0]] == shell[todo]
-    # no jumps (catalog 1.2.5, 15462: 6.3 mm): the nearest point may lie across a thin wall or in a hole - a vertex
-    # only goes about as far as its parametric point is away
-    ok &= np.linalg.norm(loc - Ps[todo], axis=1) <= JUMP * np.linalg.norm(Pl[todo] - Ps[todo], axis=1) + 1e-9
+    def land(pts, corner=False):
+        """Where the points `pts` slide to and whether they may: the nearest place on their own shell to their
+        parametric point, then along the smooth normal field; the tests of the slide. `corner`: the curve test with
+        the facet's corner normals (the split normals of the smooth copy - W27f's companions: a flat-shaded facet at a
+        sharp edge is not curved) instead of its vertex normals. Returns places, triangles, ok."""
+        res = find_own(Pl[pts].tolist(), pts)                       # the only per-point Python work
+        found = np.array([r[2] is not None for r in res])          # no hit (4856, catalog 1.2.5): the point stays
+        loc = np.array([r[0] if r[2] is not None else (0.0, 0.0, 0.0) for r in res], np.float64).reshape(-1, 3)
+        hit = np.array([r[2] if r[2] is not None else 0 for r in res], np.int64)
+        # along the smooth normal field instead of to the nearest point of the faceted copy (run 222): near a facet
+        # edge many points share one nearest point and swap order there (folds at level 3); the foot of the
+        # interpolated normal through the point moves on continuously. A few fixed-point steps: foot -> its normal ->
+        # drop the point onto it.
+        for _ in range(PROJECT_ITER):
+            Wq = _bary(loc, Ps[tri[hit, 0]], Ps[tri[hit, 1]], Ps[tri[hit, 2]])
+            nq = (Wq[:, :, None] * vn[tri[hit]]).sum(1)
+            nq /= np.maximum(np.linalg.norm(nq, axis=1), 1e-12)[:, None]
+            tgt = Pl[pts] - ((Pl[pts] - loc) * nq).sum(1)[:, None] * nq
+            res = find_own(tgt.tolist(), pts)
+            got = np.array([r[2] is not None for r in res])
+            loc = np.where(got[:, None], np.array([r[0] if r[2] is not None else (0.0, 0.0, 0.0) for r in res], np.float64).reshape(-1, 3), loc)
+            hit = np.where(got, np.array([r[2] if r[2] is not None else 0 for r in res], np.int64), hit)
+        ok = found & ((fn[tf[hit]] * vn[pts]).sum(1) >= np.cos(np.radians(SHARP_DEG)))   # same side of a sharp edge
+        # no slide onto a strongly curved facet (run 224, stud rims at level 1): the flat facet lies below the rounding
+        # and the slid point dents the shading - such a point stays exact on the surface and gets surface-fixed UVs
+        Nt = cn[trl[hit]] if corner else vn[tri[hit]]
+        spread = np.minimum(np.minimum((Nt[:, 0] * Nt[:, 1]).sum(1), (Nt[:, 1] * Nt[:, 2]).sum(1)), (Nt[:, 0] * Nt[:, 2]).sum(1))
+        ok &= spread >= np.cos(np.radians(CURVE_DEG))
+        if shell is not None:                                      # only on its own shell (run 224)
+            ok &= shell[tri[hit, 0]] == shell[pts]
+        # no jumps (catalog 1.2.5, 15462: 6.3 mm): the nearest point may lie across a thin wall or in a hole - a
+        # vertex only goes about as far as its parametric point is away
+        ok &= np.linalg.norm(loc - Ps[pts], axis=1) <= JUMP * np.linalg.norm(Pl[pts] - Ps[pts], axis=1) + 1e-9
+        return loc, hit, ok
+
+    loc, hit, ok = land(todo)
     todo, loc, hit = todo[ok], loc[ok], hit[ok]
     new = Ps.copy(); new[todo] = loc
+    raw = new.copy()                                     # W27f: the slide before the fold loops
 
     # no folds (run 222): at a convex rounding the points of both neighbouring faces land on the same narrow strip and
     # can swap their order - a quad that turns against the smooth copy's face pulls its slid points back halfway,
@@ -433,8 +446,9 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
         if int((lt0 * 4 ** (level - 1)).sum()) == nf:
             on = ofn[np.repeat(own_face, lt0 * 4 ** (level - 1))]
     tied = bow_ties(Ps[quads]) if TIES else None
+    tied0 = tied                                         # the smooth copy's own bow ties
 
-    def fold_loop(new, moving, ties):
+    def fold_loop(new, moving, ties, sn=sn):
         for step in range(FOLD_STEPS + 1):
             q = new[quads]
             qn = np.cross(q[:, 2] - q[:, 0], q[:, 3] - q[:, 1])
@@ -458,7 +472,58 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
         new0, moving0 = fold_loop(new.copy(), moving.copy(), False)
     new, moving = fold_loop(new, moving, TIES)
     if TIES:
-        new, moving, tied = _smaller_ties(new, moving, new0, moving0, quads, tied, n)
+        new, moving, tied, _taken = _smaller_ties(new, moving, new0, moving0, quads, tied, n)
+
+    def companions():
+        """W27f: the points that stayed for the texture's sake only (MIN_SLIDE, or the curve test misreading a flat
+        facet at a sharp edge) in the quads the slide `raw` turns into bow ties the smooth copy did not have - round by
+        round, at most COMPANY, each with the ties left or made by the round before. Landed as the slide lands its
+        points (land, the curve test with corner normals; no MIN_SLIDE); a point is asked once. Returns the points,
+        their places and triangles, the slide with them, the rounds."""
+        raw_c = raw.copy()
+        asked = fixed.copy(); asked[todo] = True
+        went = np.linalg.norm(dt, axis=1) > 1e-6                 # has somewhere to go
+        tc, lc, hc, rounds = [], [], [], 0
+        for _ in range(COMPANY):
+            cand = np.unique(quads[bow_ties(raw_c[quads]) & ~tied0].ravel())
+            cand = cand[~asked[cand] & went[cand]]
+            if not len(cand):
+                break
+            rounds += 1
+            asked[cand] = True
+            loc2, hit2, ok2 = land(cand, corner=True)
+            if not ok2.any():
+                continue
+            tc.append(cand[ok2]); lc.append(loc2[ok2]); hc.append(hit2[ok2])
+            raw_c[cand[ok2]] = loc2[ok2]
+        if not tc:
+            return np.zeros(0, np.int64), np.zeros((0, 3)), np.zeros(0, np.int64), raw_c, rounds
+        return np.concatenate(tc), np.concatenate(lc), np.concatenate(hc), raw_c, rounds
+
+    # W27f (rework 4, run 306): a bow tie of the slide is made by a slid point passing a neighbour that stayed - where
+    # the neighbour stayed only for the texture's sake, let it slide too (all points at their import places, no tie):
+    # a third run with these companions, taken per group where its bow-tie area is smaller (as W27c). Gate: only where
+    # W27 / W27c leave a bow tie in a quad with a slid point - elsewhere nothing changes (30376, 94318, 53460uv, 3474,
+    # 57792, 85974; rework4/DESIGN.md)
+    company = (0, 0, 0)
+    if TIES and len(todo):
+        slid = np.zeros(n, bool); slid[todo] = True
+        if (bow_ties(new[quads]) & slid[quads].any(1)).any():
+            tc, lc, hc, raw_c, rounds = companions()
+            taken = 0
+            if len(tc):
+                sn_c = sn.copy()                         # where a companion lands: its flat facet's corner normals
+                Wc = _bary(lc, Ps[tri[hc, 0]], Ps[tri[hc, 1]], Ps[tri[hc, 2]])
+                sn_c[tc] = (Wc[:, :, None] * cn[trl[hc]]).sum(1)
+                mov_c = np.zeros(n, bool); mov_c[todo] = True; mov_c[tc] = True
+                new_c, mov_c1 = fold_loop(raw_c.copy(), mov_c.copy(), True, sn_c)
+                new_p, mov_p = fold_loop(raw_c.copy(), mov_c.copy(), False, sn_c)
+                new_c, mov_c1, _t, _g = _smaller_ties(new_c, mov_c1, new_p, mov_p, quads, tied0, n)
+                new, moving, tied, taken = _smaller_ties(new, moving, new_c, mov_c1, quads, tied, n)
+                todo, loc, hit = np.concatenate([todo, tc]), np.concatenate([loc, lc]), np.concatenate([hit, hc])
+                go = tc[moving[tc]]
+                sn[go] = sn_c[go]
+            company = (len(tc), rounds, taken)
     keep_ = moving[todo]
     todo, hit = todo[keep_], hit[keep_]
     pulled = np.abs(new[todo] - loc[keep_]).max(1) > 0
@@ -530,4 +595,5 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
         cp.normals_split_custom_set(ln)
     mv = np.linalg.norm(new - Ps, axis=1)
     return {"moved": int(len(todo)), "kept": int((~ok).sum() + fixed.sum()), "uv_fixed_corners": int(nfix),
-            "max_slide": float(mv.max()) if n else 0.0}
+            "max_slide": float(mv.max()) if n else 0.0,
+            "companions": company}            # W27f: (companions, rounds, groups taken)
