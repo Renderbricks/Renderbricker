@@ -1213,7 +1213,7 @@ def _fit(work, wm, rep, orig=None, still=None):
     """The shrink compensation of the cage (UPDATES #51; rules 3.16: W19, W22, W23, W24), its numbers into the
     report. W24 measures its slits at the quality the copies of `orig` are baked at (without `orig`: the cage's
     own count of faces decides it, as bake_quality): at the modifier's quality 3 the limit places lay up to
-    0.0047 mm off, 89678 kept 4 slits of 0.0057 in the copy (review of Task 6). `still` (W25, _unbow): the same cage
+    0.0047 mm off, 89678 kept 4 slits of 0.0057 in the copy (review of Task 6). `still` (W25b, W25c): the same cage
     once more, these points held for W22 and W23 - with the free and apart points of its first fit."""
     if still is None:
         free, apart = rep.pop(shrink.SHRINK_FREE, []), rep.pop(shrink.SHRINK_APART, [])
@@ -1240,12 +1240,12 @@ def _folds(orig, made, lv, memo):
     return folded
 
 
-STILL = "_shrink_still"  # report key: the cage points W25 and W25b hold (one set for both; _bake_weld drops it)
+STILL = "_shrink_still"  # report key: the cage points W25b and W25c hold (one set for both; _bake_weld drops it)
 
 
 def _refit(orig, work, wm, tv, rep, made, levels, still):
     """The cage back at the import's places and compensated again with the points `still` held for W22 and W23
-    (W25, W25b; W24 then closes on what stands): W14c's marks made again (as _shrink_back), the copies baked again.
+    (W25b, W25c; W24 then closes on what stands): W14c's marks made again (as _shrink_back), the copies baked again.
     Returns the copies."""
     rep[STILL] = sorted(still)
     shrink.undo_shrink(work, wm)
@@ -1270,8 +1270,8 @@ def _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=False, memo=
     if not folded:
         return made
     # W25b (rework 2, run 306): first only the points of the faces whose children fold are left where the import
-    # has them (and, if that is not enough, the faces around them), the cage is compensated again - as W25 does
-    # for a flat face that was bent, with one set of held points for both (STILL). Taking the compensation back
+    # has them (and, if that is not enough, the faces around them), the cage is compensated again - as W25c does
+    # for a visible bow tie, with one set of held points for both (STILL). Taking the compensation back
     # on the whole island for one fold opened what it had closed elsewhere on it (99012uv: one concave flat quad
     # on the back wall folds - all 458 points of the shell went back, the cone shrank and the wing's tip stood
     # 0.085 mm before it).
@@ -1289,7 +1289,7 @@ def _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=False, memo=
         if not folded:
             rep["shrink_held"] = len(still)
             return made
-    if before is None:                          # it did not help: the island goes back (W25 starts from its own)
+    if before is None:                          # it did not help: the island goes back (W25c starts from its own)
         rep.pop(STILL, None)
     else:
         rep[STILL] = before
@@ -1307,45 +1307,25 @@ def _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=False, memo=
     return _bake_work(orig, work, levels, tv)
 
 
-BOW = 0.002              # mm: W25 - an overlapping child this far out of flat shows (6002: 0.0015 did not, 0.013 did)
+TIE_MIN = 1e-3           # mm2: W25c - a bow tie of the copy whose smaller render triangle is larger shows (the
+                         # subdivision's own ties in the stud letters are 0.0004; 0.0005 also fires on the crab's 0.0008)
 
 
-def bowties(wm, cp, level, places):
-    """W25: the flat cage faces of `wm` (four corners or more, in one plane at the import's `places`) that the
-    compensation bent - it moved their corners out of that plane by amounts more than BOW apart - and that have a
-    folded child in the copy `cp` of `level`: a quad whose two triangles (the renderer's: loop_triangles) face against
-    each other, its corners more than BOW apart along the cage face's normal. Flat, such a child is invisible (rules
-    3.15 have them on 6002's top: W14c's slide along the smooth surface pulls the children of a long flat face over
-    each other); bent, its small triangle shows its back - a dark wedge. The fold check does not see it: the child's
-    mean normal still faces the right way; nor does a BVH of the quads (it splits a bent quad the other way). Returns
-    the set of those cage faces."""
+def ties_any(orig, wm, cp, level):
+    """W25c (rework 3, run 306): the cage faces of `wm` with a child in the copy `cp` of `level` that is a bow tie -
+    its two render triangles (loop_triangles) face against each other - whose smaller triangle is larger than TIE_MIN
+    and faces against the child's import face; and the sum of those triangles' areas. Returns (faces, area)."""
     lt = np.empty(len(wm.polygons), np.int64); wm.polygons.foreach_get("loop_total", lt)
     kids = lt * 4 ** (level - 1)
     if int(kids.sum()) != len(cp.polygons):
-        return set()
+        return set(), 0.0
     owner = np.repeat(np.arange(len(lt)), kids)
-    q = places
-    wl = np.empty(len(wm.loops), np.int64); wm.loops.foreach_get("vertex_index", wl)
-    lf = np.repeat(np.arange(len(lt)), lt)
-    ls = np.cumsum(lt) - lt
-    nxt = np.arange(len(wl)) + 1
-    nxt[ls + lt - 1] = ls
-    fn = np.zeros((len(lt), 3))                 # Newell normals at the import's places
-    np.add.at(fn, lf, np.cross(q[wl], q[wl[nxt]]))
-    fn /= np.maximum(np.linalg.norm(fn, axis=1), 1e-12)[:, None]
-
-    def spread(h):
-        top, low = np.full(len(lt), -np.inf), np.full(len(lt), np.inf)
-        np.maximum.at(top, lf, h)
-        np.minimum.at(low, lf, h)
-        return top - low
-
-    now = np.empty(len(wm.vertices) * 3); wm.vertices.foreach_get("co", now)
-    now = now.reshape(-1, 3)
-    flat = (lt >= 4) & (spread(np.einsum("ij,ij->i", q[wl], fn[lf])) < 1e-3)
-    flat &= spread(np.einsum("ij,ij->i", now[wl] - q[wl], fn[lf])) > BOW        # ... and bent by the compensation
-    if not flat.any():
-        return set()
+    lt0, own_face = checks.cage_faces(orig, cp)
+    k0 = lt0 * 4 ** (level - 1)
+    on = None
+    if int(k0.sum()) == len(cp.polygons):
+        fn = np.zeros(len(orig.polygons) * 3); orig.polygons.foreach_get("normal", fn)
+        on = fn.reshape(-1, 3)[np.repeat(own_face, k0)]
     cp.calc_loop_triangles()
     nt = len(cp.loop_triangles)
     tv_ = np.empty(nt * 3, np.int64); cp.loop_triangles.foreach_get("vertices", tv_)
@@ -1353,63 +1333,72 @@ def bowties(wm, cp, level, places):
     co = np.empty(len(cp.vertices) * 3); cp.vertices.foreach_get("co", co)
     p = co.reshape(-1, 3)[tv_.reshape(-1, 3)]
     tn = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
-    area = np.linalg.norm(tn, axis=1)
-    tn /= np.maximum(area, 1e-30)[:, None]
+    area = np.linalg.norm(tn, axis=1) / 2
+    tn /= np.maximum(2 * area, 1e-30)[:, None]
     order = np.argsort(tp, kind="stable")
     same = np.nonzero(tp[order][1:] == tp[order][:-1])[0]
     t1, t2 = order[same], order[same + 1]
-    bad = ((tn[t1] * tn[t2]).sum(axis=1) < 0.0) & (np.minimum(area[t1], area[t2]) > 1e-10) & flat[owner[tp[t1]]]
-    out = set()
-    for x, y in zip(t1[bad].tolist(), t2[bad].tolist(), strict=True):
-        f = int(owner[tp[x]])
-        h = np.r_[p[x], p[y]] @ fn[f]           # the child's corners along the cage face's normal
-        if float(h.max() - h.min()) > BOW:
-            out.add(f)
-    return out
+    small = np.where(area[t1] < area[t2], t1, t2)
+    bad = ((tn[t1] * tn[t2]).sum(axis=1) < 0.0) & (area[small] > TIE_MIN)
+    if on is not None:
+        bad &= (tn[small] * on[tp[small]]).sum(axis=1) < 0.0
+    faces = {int(owner[tp[x]]) for x in small[bad].tolist()}
+    return faces, float(area[small[bad]].sum())
 
 
-def _unbow(orig, work, wm, tv, rep, made, levels, lv, memo=None):
-    """W25: the shrink compensation must not bend an overlapping child of a flat face out of flat (bowties, on the
-    copy of level `lv`): the cage goes back to the import's places and is compensated again with the points of those
-    faces held for W22 and W23 (W24 then closes on what stands), the copies are baked again and the compensation's
-    folds undone as before (_shrink_back); if children still show, once more with the points of the faces around
-    them too. rep["shrink_unbowed"]: the points held. Rejected (run 306 rework): undoing the whole island (6002's
-    stud feet back to rules 3.15), putting the points back after W24 (the seams W24 had closed opened again).
-    Returns the copies."""
-    was = shrink.WAS.get(wm.name)
-    if not rep.get("shrink_points") or lv not in made or was is None or len(was[0]) != len(wm.vertices):
+def _untie(orig, work, wm, tv, rep, made, levels, lv, memo=None):
+    """W25c (rework 3, run 306; in place of W25): a visible bow tie of the copy of level `lv` (ties_any) - the points
+    of its cage faces are held for W22 and W23 and the cage compensated again (_refit, then _shrink_back: W25b's
+    route), then also the points of the faces around them. A hold is kept only if the bow ties' area went down, else
+    the set before is restored (16175, 2400, 8009: W22 / W23 folded a child). W25 (_unbow: bent flat faces only)
+    went - W27 removed the faces it was made for, and on 65253 it made the fold. rep["shrink_untied"]: the points
+    held. Returns the copies."""
+    if lv not in made or not rep.get("shrink_points"):
         return made
-    q = was[0].copy()
-    still = set(rep.get(STILL, ()))             # with the points W25b holds
+    faces, a0 = ties_any(orig, wm, made[lv], lv)
+    if not faces:
+        return made
+    before = set(rep.get(STILL, ()))
+    still = set(before)
     for attempt in (0, 1):
-        faces = bowties(wm, made[lv], lv, q)
-        if not faces:
-            return made
         pts = {v for f in faces for v in wm.polygons[f].vertices}
         if attempt:                             # the faces around them
             pts = {v for p in wm.polygons if pts.intersection(p.vertices) for v in p.vertices}
         if pts <= still:
-            return made
-        still |= pts
-        made = _refit(orig, work, wm, tv, rep, made, levels, still)
-        rep["shrink_unbowed"] = len(still)
+            break
+        trial = still | pts
+        made = _refit(orig, work, wm, tv, rep, made, levels, trial)
         if memo is not None:
             memo.clear()
         made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
+        f1, a1 = ties_any(orig, wm, made[lv], lv)
+        if a1 < a0:
+            still, a0, faces = trial, a1, f1
+            rep["shrink_untied"] = len(still)
+            if not f1:
+                return made
+        else:                                   # no better: the set before
+            made = _refit(orig, work, wm, tv, rep, made, levels, still)
+            if memo is not None:
+                memo.clear()
+            made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
+            break
+    if not still and not before:
+        rep.pop(STILL, None)
     return made
 
 
 def _refit_new(orig, work, wm, tv, rep, levels, lv, dropped, memo):
     """A cage welded again (W21's or W18's fallback) is compensated and baked as the first one: _fit, the bevel
-    marks, the copies, the compensation's folds held or undone (_shrink_back) and bent flat faces held (W25,
-    _unbow) - the re-welds went without W25 (W21) and without either (W18; review of the run 306 rework). `dropped`:
+    marks, the copies, the compensation's folds held or undone (_shrink_back) and visible bow ties held (W25c,
+    _untie) - the re-welds went without W25 (W21) and without either (W18; review of the run 306 rework). `dropped`:
     an undo of the weld before counts in the report. Returns the copies."""
     _fit(work, wm, rep, orig)
     if bevel.signature():
         rep["bevel_edges"] = bevel.mark_edges(orig, wm)
     made = _bake_work(orig, work, levels, tv)
     made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, dropped=dropped, memo=memo)
-    return _unbow(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
+    return _untie(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
 
 
 def _bake_weld(orig, levels, method_rep=None):
@@ -1433,7 +1422,7 @@ def _bake_weld(orig, levels, method_rep=None):
         lv = config.RENDER_LEVEL if config.RENDER_LEVEL in made else max(made)
         memo = {}
         made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
-        made = _unbow(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
+        made = _untie(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
         close_off = None
         folded = _folds(orig, made, lv, memo) if rep.get("outlines_closed") else ()
         if folded:
