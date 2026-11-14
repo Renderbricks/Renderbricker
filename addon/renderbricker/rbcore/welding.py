@@ -1182,6 +1182,128 @@ def _bake_work(orig, work, levels, tv):
     return made
 
 
+SLIT_W = 0.08               # mm: W29 (rework 4, run 306) - two rims of one loop of open edges this close are one slit
+                            # of the import (85974: 0.062; the widest closed on the 62 parts: 0.076)
+ZIP_ACROSS = 3.0            # ... and the place across lies this many times further along the rim than straight
+ZIP_ON = 0.002              # ... a rim point this close to a face it does not belong to lies on something: it stays
+ZIPPED = [0, 0.0]           # W29 on the last copy: points moved, the widest slit closed - for the tests
+
+
+def zip_slits(cp):
+    """W29 (rework 4, run 306): the slits of the import closed on the copy `cp` (all quads) - two open rims of one
+    welded shell that run 0 ... SLIT_W apart are a slit the import has; its flat faces hide it from the front, the
+    copy's rounding shows it (85974's spot 1), and no rule sees it (no contact row within one shell). Per simple closed
+    loop of the copy's open edges (4 points or more), per point the nearest place on the loop's other edges within
+    SLIT_W that lies across (further along the rim than ZIP_ACROSS x straight); the point goes half the way - both rims
+    end on their middle line. Guard: a point within ZIP_ON of a face it does not belong to stays (it rests on another
+    shell - W24 / W26 put it there; 92092). Corner normals kept. Not in the batch path (batches.bake). Returns the
+    number of points moved."""
+    from mathutils.bvhtree import BVHTree
+    from mathutils.kdtree import KDTree
+    ZIPPED[0], ZIPPED[1] = 0, 0.0
+    n, nl = len(cp.vertices), len(cp.loops)
+    if nl != 4 * len(cp.polygons) or not n:
+        return 0
+    lv = np.empty(nl, np.int64); cp.loops.foreach_get("vertex_index", lv)
+    q = lv.reshape(-1, 4)
+    a, b = q.ravel(), np.roll(q, -1, axis=1).ravel()
+    key = np.minimum(a, b) * n + np.maximum(a, b)
+    uk, cnt = np.unique(key, return_counts=True)
+    rk = uk[cnt == 1]                           # the open edges
+    if not len(rk):
+        return 0
+    adj = {}
+    for x, y in zip((rk // n).tolist(), (rk % n).tolist(), strict=True):
+        adj.setdefault(x, []).append(y); adj.setdefault(y, []).append(x)
+    co = np.empty(n * 3); cp.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
+    new = co.copy()
+    seen = set()
+    moved, widest = 0, 0.0
+    tree = None                                 # the copy's faces, built when a loop has something to zip
+    for start in adj:
+        if start in seen:
+            continue
+        comp, stack = [], [start]               # the rim's connected piece
+        seen.add(start)
+        while stack:
+            v = stack.pop()
+            comp.append(v)
+            for w in adj[v]:
+                if w not in seen:
+                    seen.add(w); stack.append(w)
+        m = len(comp)
+        if m < 4 or any(len(adj[v]) != 2 for v in comp):
+            continue                            # only simple closed loops
+        loop, prev, cur = [start], None, start
+        while True:
+            x, y = adj[cur]
+            nxt = x if x != prev else y
+            if nxt == start:
+                break
+            loop.append(nxt); prev, cur = cur, nxt
+        if len(loop) != m:
+            continue
+        L = np.asarray(loop, np.int64)
+        P = co[L]
+        A, B = P, np.roll(P, -1, axis=0)
+        seg = np.linalg.norm(B - A, axis=1)
+        at = np.cumsum(seg) - seg                # where along the rim every point lies
+        total = float(seg.sum())
+        ab = B - A
+        # the pairs (point, edge) worth measuring: an edge with an end within SLIT_W + the longest edge of the point
+        # (a k-d tree of the loop's points - a table of all points x all edges is quadratic in the rim's length)
+        kd = KDTree(m)
+        pts = P.tolist()
+        for k, pt in enumerate(pts):
+            kd.insert(pt, k)
+        kd.balance()
+        reach = SLIT_W + float(seg.max())
+        pi, pj = [], []
+        for k, pt in enumerate(pts):
+            near = kd.find_range(pt, reach)
+            if len(near) > 1:
+                pi.extend([k] * len(near)); pj.extend(x[1] for x in near)
+        if not pi:
+            continue
+        pi, pj = np.asarray(pi, np.int64), np.asarray(pj, np.int64)
+        I, E = np.concatenate([pi, pi]), np.concatenate([pj, (pj - 1) % m])      # the two edges at a near point
+        keep = (E != I) & (E != (I - 1) % m)                         # not the point's own two edges
+        I, E = I[keep], E[keep]
+        t = np.clip(((P[I] - A[E]) * ab[E]).sum(1) / np.maximum((ab[E] * ab[E]).sum(1), 1e-30), 0.0, 1.0)
+        Q = A[E] + t[:, None] * ab[E]                                # the nearest place on the edge
+        d = np.linalg.norm(Q - P[I], axis=1)
+        along = np.abs(at[E] + t * seg[E] - at[I])
+        along = np.minimum(along, total - along)
+        ok = (d <= SLIT_W) & (along > ZIP_ACROSS * d) & (d > 1e-6)
+        I, E, Q, d = I[ok], E[ok], Q[ok], d[ok]
+        if not len(I):
+            continue
+        order = np.lexsort((E, d, I))                                # per point its nearest place (then the first edge)
+        I, Q, d = I[order], Q[order], d[order]
+        first = np.ones(len(I), bool); first[1:] = I[1:] != I[:-1]
+        I, Q, d = I[first], Q[first], d[first]
+        # a rim point that lies on a face it does not belong to is closed already (another shell under it - W24 /
+        # W26 put it there; 92092: the zip lifted two such points 0.038 mm off and opened what was closed)
+        if tree is None:
+            tree = BVHTree.FromPolygons(co.tolist(), q.tolist())
+        hit = np.ones(len(I), bool)
+        for k, v in enumerate(L[I].tolist()):
+            if any(v not in q[f] for _loc, _n, f, _d in tree.find_nearest_range(co[v].tolist(), ZIP_ON)):
+                hit[k] = False
+        if not hit.any():
+            continue
+        new[L[I[hit]]] = 0.5 * (P[I[hit]] + Q[hit])
+        moved += int(hit.sum())
+        widest = max(widest, float(d[hit].max()))
+    if moved:
+        cp.vertices.foreach_set("co", new.ravel())
+        cp.update()
+    ZIPPED[0], ZIPPED[1] = moved, widest
+    return moved
+
+
+
+
 def _sink_covers(orig, cp, own):
     """W28 (rework 2, run 306): two faces of the import in one plane, one over the other - the copy of the smaller
     one goes COVER_SINK behind (cover.sink; `own`: per face of the copy its import face, or None; with the import
@@ -1538,6 +1660,10 @@ def _bake_weld(orig, levels, method_rep=None):
             for cp in made.values():
                 copies.discard_copy(orig, cp)
             made = _bake_work(orig, work, levels, tv)
+        for cp in made.values():                # W29: the import's slits zipped, on the finished copies (after the
+            zipped = zip_slits(cp)              # folds, W25b, W25c and the re-welds - inside _bake_work it changed
+            if zipped:                          # W25c's verdict on 65253; before the bevel: the subdivision's quads)
+                cp["rb_slits_zipped"] = zipped
         if bevel.signature():
             # the checks read a copy by the layout of the subdivision; the bevel changes it. So the verdict is
             # taken now and kept on the copy, then the copy is bevelled (copy_folds, weld_gap read the verdict).
