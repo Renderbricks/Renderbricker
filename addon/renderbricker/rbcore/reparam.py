@@ -79,6 +79,59 @@ def bow_ties(q):
     return ((a * b).sum(1) < 0.0) & (small > 2e-10)
 
 
+def tie_area(q):
+    """W27c: per quad of `q` (m,4,3) the area of its smaller render triangle if it is a bow tie (split as bow_ties),
+    else 0."""
+    d1, d2, d3 = q[:, 1] - q[:, 0], q[:, 2] - q[:, 0], q[:, 3] - q[:, 0]
+    a, b = np.cross(d1, d2), np.cross(d2, d3)
+    flip = (a * b).sum(1) < 0.0
+    if flip.any():
+        f = q[flip]
+        a[flip] = np.cross(f[:, 1] - f[:, 0], f[:, 3] - f[:, 0])
+        b[flip] = np.cross(f[:, 2] - f[:, 1], f[:, 3] - f[:, 1])
+    small = np.minimum(np.linalg.norm(a, axis=1), np.linalg.norm(b, axis=1)) / 2
+    return np.where((a * b).sum(1) < 0.0, small, 0.0)
+
+
+def _smaller_ties(new, moving, new0, moving0, quads, tied, n):
+    """W27c (rework 3, run 306): W27 pulls slid points back towards the smooth copy - where that brings back a bow tie
+    of the smooth copy (exempt as `tied`) larger than what the plain slide (new0, without W27) leaves, the plain slide
+    wins (3474: 1933 red pixels -> 66, 57792, 85974). Per group of the points the two runs place differently - joined
+    by the quads that hold them, so every quad touching a group is wholly of one run - the run with the smaller sum of
+    tie_area over the group's quads. Quads of a group taken from the plain slide are added to `tied`: the final check
+    must not pull them back again. Returns new, moving, tied."""
+    diff = np.abs(new - new0).max(1) > 0
+    if not diff.any():
+        return new, moving, tied
+    k = np.nonzero(diff[quads].any(1))[0]
+    lab = np.arange(n)
+
+    def root(x):
+        while lab[x] != x:
+            lab[x] = lab[lab[x]]
+            x = lab[x]
+        return x
+    for qq in quads[k].tolist():                        # the groups: the differing points joined over their quads
+        vs = [v for v in qq if diff[v]]
+        r0 = root(vs[0])
+        for v in vs[1:]:
+            r = root(v)
+            if r != r0:
+                lab[r] = r0
+    group = np.array([root(next(v for v in qq if diff[v])) for qq in quads[k].tolist()])
+    a1 = tie_area(new[quads[k]])
+    a0 = tie_area(new0[quads[k]])
+    tied = tied.copy()
+    for g in np.unique(group).tolist():
+        sel = group == g
+        if a0[sel].sum() < a1[sel].sum():
+            vs = np.unique(quads[k[sel]].ravel())
+            vs = vs[diff[vs]]
+            new[vs], moving[vs] = new0[vs], moving0[vs]
+            tied[k[sel]] = True
+    return new, moving, tied
+
+
 def part_size(me):
     """The largest side of the bounding box of `me` - the scale of MIN_SLIDE."""
     co = _arr(me.vertices, "co", len(me.vertices), 3)
@@ -380,23 +433,32 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
         if int((lt0 * 4 ** (level - 1)).sum()) == nf:
             on = ofn[np.repeat(own_face, lt0 * 4 ** (level - 1))]
     tied = bow_ties(Ps[quads]) if TIES else None
-    for step in range(FOLD_STEPS + 1):
-        q = new[quads]
-        qn = np.cross(q[:, 2] - q[:, 0], q[:, 3] - q[:, 1])
-        qn /= np.maximum(np.linalg.norm(qn, axis=1), 1e-30)[:, None]
-        ref = sn[quads].sum(1); ref /= np.maximum(np.linalg.norm(ref, axis=1), 1e-30)[:, None]
-        bad = (qn * ref).sum(1) < FOLD_COS
-        if on is not None:                               # nor turned against its original face (the fold check, W10b)
-            bad |= (qn * on).sum(1) < 0.0
-        if TIES:                                         # W27: nor a bow tie the smooth copy did not have
-            bad |= bow_ties(q) & ~tied
-        vb = np.zeros(n, bool); vb[quads[bad].ravel()] = True
-        vb &= moving
-        if not vb.any():
-            break
-        new[vb] = Ps[vb] if step == FOLD_STEPS else Ps[vb] + 0.5 * (new[vb] - Ps[vb])
-        if step == FOLD_STEPS:
-            moving[vb] = False
+
+    def fold_loop(new, moving, ties):
+        for step in range(FOLD_STEPS + 1):
+            q = new[quads]
+            qn = np.cross(q[:, 2] - q[:, 0], q[:, 3] - q[:, 1])
+            qn /= np.maximum(np.linalg.norm(qn, axis=1), 1e-30)[:, None]
+            ref = sn[quads].sum(1); ref /= np.maximum(np.linalg.norm(ref, axis=1), 1e-30)[:, None]
+            bad = (qn * ref).sum(1) < FOLD_COS
+            if on is not None:                           # nor turned against its original face (the fold check, W10b)
+                bad |= (qn * on).sum(1) < 0.0
+            if ties:                                     # W27: nor a bow tie the smooth copy did not have
+                bad |= bow_ties(q) & ~tied
+            vb = np.zeros(n, bool); vb[quads[bad].ravel()] = True
+            vb &= moving
+            if not vb.any():
+                break
+            new[vb] = Ps[vb] if step == FOLD_STEPS else Ps[vb] + 0.5 * (new[vb] - Ps[vb])
+            if step == FOLD_STEPS:
+                moving[vb] = False
+        return new, moving
+
+    if TIES:                                             # W27c: the plain slide too, the smaller bow ties win
+        new0, moving0 = fold_loop(new.copy(), moving.copy(), False)
+    new, moving = fold_loop(new, moving, TIES)
+    if TIES:
+        new, moving, tied = _smaller_ties(new, moving, new0, moving0, quads, tied, n)
     keep_ = moving[todo]
     todo, hit = todo[keep_], hit[keep_]
     pulled = np.abs(new[todo] - loc[keep_]).max(1) > 0
