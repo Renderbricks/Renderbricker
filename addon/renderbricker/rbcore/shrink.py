@@ -314,7 +314,7 @@ def _guard(T, C, idx, dc):
     return clamped
 
 
-def fit_chains(T, C, d, moved):
+def fit_chains(T, C, d, moved, contact=None):
     """W22 (rules 3.16, run 303 stage 1): the points of hard chains move square to their chain - the directions `u` of
     cagegeom.classes - until their limit point (x[a] + 4 x[i] + x[b]) / 6 (a point with two hard edges, the creases
     infinitely sharp) lies on the import point q[i] in those directions; x = q + d. `T`, `C`: cagegeom.arrays /
@@ -323,6 +323,10 @@ def fit_chains(T, C, d, moved):
     W22a (Task 8, design w22_guard): a point with a half-creased edge (_half_creased) does not take part - held, a fixed
     neighbour; W17's free points that would be chain points (C["ku_free"]) take part as coarse corners, moving in
     their would-be chain directions (C["u_free"]).
+    W22k (rework 3, run 306): a point of an open rim (an edge with one face) without a contact row (`contact`: per
+    point, has a row in contacts.find's contacts - W24 / W26 move both sides of a touching rim together) does not take
+    part: lifted, an open rim lying on something - its own shell (4599v2, 7102) or across a slit of the import (75485,
+    97793) - stands off the surface under it, which does not follow. `contact` None: no such hold.
     Solved exactly per connected run of moving chain points. A coarse corner (residual before the solve larger than
     COARSE x its shortest edge, or a free point) keeps its unknowns and loses its equations; a run with one is solved
     damped, |M a - b|^2 + CHAIN_LAM |a|^2. No point further than SHRINK_GROW x its own residual and SHRINK_MAX (cut);
@@ -337,6 +341,10 @@ def fit_chains(T, C, d, moved):
     nb, u = C["nb"], C["u"]
     moved = np.asarray(moved, bool)
     act = (C["kind"] == 2) & (C["ku"] > 0) & ~moved & ~_half_creased(T)
+    if contact is not None:                                             # W22k: a rim no contact closes again stays
+        rim = np.zeros(n, bool)
+        rim[T["ev"][T["efaces"] == 1].ravel()] = True
+        act &= ~(rim & ~np.asarray(contact, bool))
     free = (C["ku_free"] > 0) & ~moved                                 # W17's points, as coarse corners
     if free.any():
         u = np.where(free[:, None, None], C["u_free"], u)
@@ -515,7 +523,10 @@ def _compensate(work, wm, free, quality, apart=(), still=()):
     x19 = x.reshape(-1, 3).copy()                   # the cage as W19 left it (with its normals set, if it moved any)
     d = x19 - q
     moved = np.linalg.norm(d, axis=1) > 1e-6        # W19's points: done, the others build on their places
-    d, out["chain_points"], coarse_c, _cut = fit_chains(T, C, d, moved)
+    contact = np.zeros(n, bool)                     # W22k: the points with a contact row
+    if len(K["contacts"]):
+        contact[np.asarray(K["contacts"][:, 0], np.int64)] = True
+    d, out["chain_points"], coarse_c, _cut = fit_chains(T, C, d, moved, contact)
     d, out["surface_points"], coarse_s, left_s = fit_surface(work, wm, T, C, d, moved)
     out["coarse_left"] = coarse_c + coarse_s
     far = np.linalg.norm(d, axis=1)
