@@ -20,12 +20,21 @@ from . import rbcore as core
 # showed 1.5.4 while the rules of 1.5.3 ran (run 42). So every module is reloaded explicitly.
 if "props" in locals():
     import importlib
+    import sys as _sys
+    # the vendored Physicalbricks library is never reloaded in place (its registry's handler would stay behind): its
+    # modules are dropped, so the import below loads it anew (the tested way of the library, handover §2); the
+    # package's attribute goes too - `from . import` takes an attribute that is there without importing
+    for _name in [n for n in _sys.modules if n == __name__ + ".physicalbricks"
+                  or n.startswith(__name__ + ".physicalbricks.")]:
+        del _sys.modules[_name]
+    globals().pop("physicalbricks", None)
     core.reload_all()
     for _m in (collection_list, common, hyphens, importer, props, render, camera_ui, logfile, widgets, convert,
                operators, guide, panels, edit):
         importlib.reload(_m)
 from . import (collection_list, common, hyphens, import_watch, importer, props, render, camera_ui, logfile, widgets, convert,
                operators, guide, panels, edit)
+from . import physicalbricks        # the vendored library (UPDATES #59): not in the reload list, not in OWNER
 
 # the package reads and writes like one module: renderbricker.NAME finds NAME in the module that holds it,
 # renderbricker.NAME = value sets it there (the tests replace open_file and start_script)
@@ -178,9 +187,12 @@ def register():
         kmi.properties.use_viewport = True
         render._keymaps.append((km, kmi))
     edit.register_keymap()                   # Tab on a converted part edits its import (UPDATES #18)
+    # last: the library's load_post handler after import_watch.on_load; one acting copy among all loaded ones
+    physicalbricks.registry.register('Renderbricker')
 
 
 def unregister():
+    physicalbricks.registry.unregister()     # first: the other copies elect again
     import bpy.utils.previews
     for pc in panels._icons.values():
         bpy.utils.previews.remove(pc)
