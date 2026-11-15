@@ -10,6 +10,7 @@
 *.blend
 *.blend1
 !/addon/renderbricker/setup/*.blend
+!/addon/renderbricker/physicalbricks/data/physical.blend
 *.zmbx
 
 # Local R&D work folder (journals, runs, logs; has its own local git history)
