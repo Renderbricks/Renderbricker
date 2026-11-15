@@ -1,0 +1,4 @@
+# Quick tests run by the shared pre-commit check (F:/_GitHub_/_tools_/git-hooks) - one command per line, from the
+# repository root; each must finish in seconds. The full platform tests: python _dev/ci/run_all.py (_dev/README.md).
+# The vendored Physicalbricks library byte for byte as its source commit; SKIP where there is no _dev (a worktree)
+python -c "import os, subprocess, sys; t = os.path.join('_dev', 'tests', 'vendor_check.py'); sys.exit(subprocess.call([sys.executable, t, 'addon']) if os.path.isfile(t) else print('SKIP vendor_check: no _dev'))"

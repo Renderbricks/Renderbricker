@@ -3,3 +3,5 @@
 *.md text eol=lf
 *.zip binary
 *.png binary
+# the vendored Physicalbricks library stays byte for byte as its source commit (vendor_check, UPDATES #59)
+addon/renderbricker/physicalbricks/** -text
