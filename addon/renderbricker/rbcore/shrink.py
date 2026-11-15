@@ -41,10 +41,13 @@ SHRINK_FREE = "_shrink_free"        # report key: points of the cage that are le
 SHRINK_APART = "_shrink_apart"      # report key: points of the cage that stay apart (welding, stage 9; W24a)
 
 
-def _regions(wm):
+def _regions(wm, lv=None, lt=None):
     """The smooth regions of `wm`: faces joined by edges that are not fully creased. Returns a list of face index
-    arrays."""
+    arrays. (A6, run 306 perf_build: from the corner arrays - the edge keys in the order the faces' edge_keys gave
+    them, the same unions in the same order, so the same roots and the same order of the regions.)"""
     nf = len(wm.polygons)
+    if not nf:
+        return []
     parent = list(range(nf))
 
     def find(i):
@@ -57,33 +60,54 @@ def _regions(wm):
     crease = np.zeros(len(wm.edges), np.float32)
     if ce is not None:
         ce.data.foreach_get("value", crease)
-    key_index = {e.key: e.index for e in wm.edges}
-    edge_faces = {}
-    for p in wm.polygons:
-        for k in p.edge_keys:
-            edge_faces.setdefault(k, []).append(p.index)
-    for k, fs in edge_faces.items():
-        if len(fs) == 2 and crease[key_index[k]] < 0.99:
-            a, b = find(fs[0]), find(fs[1])
-            if a != b:
-                parent[a] = b
-    roots = np.array([find(i) for i in range(nf)])
-    return [np.nonzero(roots == r)[0] for r in np.unique(roots)]
+    nv = len(wm.vertices)
+    if lv is None:
+        lv = meshparts.corner_verts(wm)
+        lt = meshparts.fget(wm.polygons, "loop_total", nf, np.int64)
+    ls = np.cumsum(lt) - lt
+    nxt = np.arange(len(lv)) + 1
+    nxt[ls + lt - 1] = ls
+    a, b = lv, lv[nxt]
+    key = np.minimum(a, b) * nv + np.maximum(a, b)      # MeshPolygon.edge_keys: corner i to corner i + 1, sorted
+    face = np.repeat(np.arange(nf), lt)
+    ev = meshparts.edge_verts(wm)
+    ekey = ev.min(axis=1) * nv + ev.max(axis=1)
+    eorder = np.argsort(ekey, kind="stable")             # {e.key: e.index}: the last edge of a key wins
+    es = ekey[eorder]
+    last = np.r_[es[1:] != es[:-1], True]
+    ukey, uidx = es[last], eorder[last]
+    order = np.argsort(key, kind="stable")               # the faces of a key in the order they gave it
+    ks = key[order]
+    start = np.nonzero(np.r_[True, ks[1:] != ks[:-1]])[0]
+    count = np.diff(np.r_[start, len(ks)])
+    two = start[count == 2]                              # keys of two faces, in the order of their first corner
+    two = two[np.argsort(order[two], kind="stable")]
+    f0, f1 = face[order[two]], face[order[two + 1]]
+    soft = crease[uidx[np.searchsorted(ukey, ks[two])]] < 0.99
+    for fa, fb in zip(f0[soft].tolist(), f1[soft].tolist(), strict=True):
+        ra, rb = find(fa), find(fb)
+        if ra != rb:
+            parent[ra] = rb
+    roots = np.array([find(i) for i in range(nf)], np.int64)
+    by = np.argsort(roots, kind="stable")                # per root its faces ascending, the roots ascending
+    cut = np.nonzero(np.diff(roots[by]))[0] + 1
+    return np.split(by, cut) if nf else []
 
 
-def _cylinder(wm, faces, co):
-    """(point on the axis, axis) of the region `faces` if it is a whole cylinder, else None."""
+def _cylinder(wm, faces, co, fn_all=None, area_all=None, pts=None):
+    """(point on the axis, axis) of the region `faces` if it is a whole cylinder, else None. (A6: the face normals
+    and areas of all faces and the region's points can be given as arrays - the same values.)"""
     if len(faces) < 4:
         return None
-    fn = np.array([wm.polygons[i].normal[:] for i in faces])
-    area = np.array([wm.polygons[i].area for i in faces])
+    fn = fn_all[faces] if fn_all is not None else np.array([wm.polygons[i].normal[:] for i in faces])
+    area = area_all[faces] if area_all is not None else np.array([wm.polygons[i].area for i in faces])
     if area.sum() <= 0:
         return None
     _w, vec = np.linalg.eigh((fn * area[:, None]).T @ fn)
     axis = vec[:, 0]
     if np.abs(fn @ axis).max() > SHRINK_SQUARE:
         return None
-    pts = co[np.unique([v for i in faces for v in wm.polygons[i].vertices])]
+    pts = co[pts if pts is not None else np.unique([v for i in faces for v in wm.polygons[i].vertices])]
     u = np.cross(axis, [1.0, 0.0, 0.0] if abs(axis[0]) < 0.9 else [0.0, 1.0, 0.0])
     u /= np.linalg.norm(u)
     w = np.cross(axis, u)
@@ -134,13 +158,27 @@ def compensate_shrink(work, wm, free=()):
     centre, axis = np.zeros((n, 3)), np.zeros((n, 3))
     on = np.zeros(n, bool)
     found = 0
-    for faces in _regions(wm):
-        cyl = _cylinder(wm, faces, target)
+    nf = len(wm.polygons)
+    lv = meshparts.corner_verts(wm)                     # A6: the faces' points, normals and areas as arrays
+    lt = meshparts.fget(wm.polygons, "loop_total", nf, np.int64)
+    fn_all = meshparts.fget(wm.polygons, "normal", nf * 3).reshape(-1, 3)
+    area_all = meshparts.fget(wm.polygons, "area", nf)
+    regs = _regions(wm, lv, lt)
+    freg = np.zeros(nf, np.int64)                       # the region of every face, the corners by region
+    if regs:
+        freg[np.concatenate(regs)] = np.repeat(np.arange(len(regs)), [len(f) for f in regs])
+    creg = np.repeat(freg, lt)
+    corder = np.argsort(creg, kind="stable")
+    cut = np.searchsorted(creg[corder], np.arange(len(regs) + 1))
+    for r, faces in enumerate(regs):
+        if len(faces) < 4:                              # (_cylinder's first test, before the points are asked)
+            continue
+        fpts = np.unique(lv[corder[cut[r]:cut[r + 1]]])
+        cyl = _cylinder(wm, faces, target, fn_all, area_all, fpts)
         if cyl is None:
             continue
         found += 1
-        pts = np.unique([v for i in faces for v in wm.polygons[i].vertices])
-        pts = pts[~on[pts]]
+        pts = fpts[~on[fpts]]
         centre[pts], axis[pts], on[pts] = cyl[0], cyl[1], True
     on[list(free)] = False
     if not on.any():
@@ -156,6 +194,7 @@ def compensate_shrink(work, wm, free=()):
     _ids, isl = np.unique(meshparts.point_islands(wm), return_inverse=True)
     k = len(_ids)
     co, best, best_left, reach = target.copy(), target.copy(), np.full(k, np.inf), None
+    best_out = np.zeros(n)                              # A6: the shrink left measured in each island's best round
     active = np.ones(k, bool)
     for round_ in range(SHRINK_ROUNDS + 1):
         out = ((target - _limit_points(work, n)) * radial).sum(axis=1)     # > 0: the surface lies nearer the axis
@@ -169,6 +208,7 @@ def compensate_shrink(work, wm, free=()):
         better = active & (left < best_left)
         take = better[isl]
         best[take], best_left[better] = co[take], left[better]
+        best_out[take] = out[take]
         if round_:
             active &= better                        # a round that leaves more than the one before ends the island
         active &= ~((round_ == SHRINK_ROUNDS) | (left < SHRINK_MIN))
@@ -188,7 +228,9 @@ def compensate_shrink(work, wm, free=()):
     moved = np.linalg.norm(co - target, axis=1)
     if not (moved > SHRINK_MIN).any():
         return 0, 0.0, 0.0, found
-    rest = np.maximum(((target - _limit_points(work, n)) * radial).sum(axis=1), 0.0)[on]
+    # the shrink left on the final cage: each island stands as in its best round, and an island's smooth surface
+    # depends on its own points only - the measure of that round (A6: one subdivision less)
+    rest = best_out[on]
     WAS[wm.name] = (target, normals)
     return (int((moved > SHRINK_MIN).sum()), round(float(moved.max()), 5),
             round(float(rest.max()) if len(rest) else 0.0, 5), found)
