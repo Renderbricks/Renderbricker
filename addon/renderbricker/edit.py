@@ -69,12 +69,12 @@ def finish_one(context, name):
     # the links switched by Tab; none when the import was edited with Subdivision OFF - they stay OFF
     obs = [bpy.data.objects[n] for n in names if n in bpy.data.objects and bpy.data.objects[n].data == me]
     s = context.scene.mecsub
+    _settings(context)          # before the check: a new session's core holds its defaults (UPDATES #64)
     if core.up_to_date(me, s.view_level, s.render_level):     # not changed: back on its copies
         if obs:
             core.point_links(obs, me, "view")
         return f"{me.name}: not changed" if obs else ""
     t = time.time()
-    _settings(context)
     rep = core.process(me, obs)
     folds = rep.get("flipped", 0)
     return f"{me.name}: converted again ({time.time() - t:.1f} s{f', {folds} folds left' if folds else ''})"
