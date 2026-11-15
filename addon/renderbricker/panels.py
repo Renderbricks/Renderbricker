@@ -1,7 +1,7 @@
 """The sidebar panel Renderbricker and its sub-panel About (logo, links, legal text)."""
 import bpy
 from . import rbcore as core
-from . import camera_ui, common, edit, guide, logfile, props, widgets
+from . import camera_ui, common, edit, guide, logfile, materials_ui, props, widgets
 
 
 _icons = {}                     # the Renderbricks logo (bpy.utils.previews), loaded in register()
@@ -44,6 +44,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
             guide.draw_guide(L, context)
             return
         camera_ui.draw_import(L, context)       # at the very top (user, 2026-09-30)
+        materials_ui.draw_materials(L, context)     # Mecabricks | Physicalbricks, right after an import (#59)
         row = L.row()
         row.scale_y = 1.3
         row.operator("mecsub.guide_start", icon='HELP')
@@ -185,6 +186,7 @@ class MECSUB_PT_about(bpy.types.Panel):
     bl_category = "Renderbricker"
     bl_parent_id = "MECSUB_PT_panel"
     bl_options = {'DEFAULT_CLOSED'}
+    bl_order = 3                            # last, after Print and Parts Jitter (materials_ui)
 
     def draw(self, context):
         L = self.layout

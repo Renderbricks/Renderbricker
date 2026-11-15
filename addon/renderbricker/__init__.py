@@ -30,10 +30,10 @@ if "props" in locals():
     globals().pop("physicalbricks", None)
     core.reload_all()
     for _m in (collection_list, common, hyphens, importer, props, render, camera_ui, logfile, widgets, convert,
-               operators, guide, panels, edit):
+               operators, guide, materials_ui, panels, edit):  # noqa: F821 bound by the import below on the first run
         importlib.reload(_m)
 from . import (collection_list, common, hyphens, import_watch, importer, props, render, camera_ui, logfile, widgets, convert,
-               operators, guide, panels, edit)
+               operators, guide, materials_ui, panels, edit)
 from . import physicalbricks        # the vendored library (UPDATES #59): not in the reload list, not in OWNER
 
 # the package reads and writes like one module: renderbricker.NAME finds NAME in the module that holds it,
@@ -58,7 +58,7 @@ def _owners(modules):
 
 
 OWNER = _owners((collection_list, common, props, render, camera_ui, logfile, widgets, convert, operators, guide,
-                  panels, edit, importer))
+                  materials_ui, panels, edit, importer))
 
 
 class _Package(_types.ModuleType):
@@ -82,7 +82,9 @@ _sys.modules[__name__].__class__ = _Package
 classes = (props.MECSUB_Problem, props.MECSUB_CollectionItem, props.MECSUB_Settings, props.MECSUB_UL_collections,
            props.MECSUB_OT_collection_add, props.MECSUB_OT_collection_remove, props.MECSUB_OT_collection_clear,
            props.MECSUB_MT_collection_add, props.MECSUB_MT_collection_remove, logfile.MECSUB_OT_open_log, convert.MECSUB_OT_apply, convert.MECSUB_OT_check, convert.MECSUB_OT_levels, operators.MECSUB_OT_toggle,
-           operators.MECSUB_OT_remove, operators.MECSUB_OT_select, operators.MECSUB_OT_headless, panels.MECSUB_PT_panel, operators.MECSUB_OT_move_cache, operators.MECSUB_OT_copy_cache, operators.MECSUB_OT_cache_after_save,
+           operators.MECSUB_OT_remove, operators.MECSUB_OT_select, operators.MECSUB_OT_headless,
+           materials_ui.MECSUB_OT_material_system, panels.MECSUB_PT_panel, materials_ui.MECSUB_PT_print,
+           materials_ui.MECSUB_PT_parts_jitter, operators.MECSUB_OT_move_cache, operators.MECSUB_OT_copy_cache, operators.MECSUB_OT_cache_after_save,
            operators.MECSUB_OT_cache_switch, operators.MECSUB_OT_render_scene, render.MECSUB_OT_render, panels.MECSUB_PT_about,
            guide.MECSUB_OT_guide_start, guide.MECSUB_OT_guide_nav, guide.MECSUB_OT_guide_exit, props.MECSUB_OT_level_confirm,
            camera_ui.MECSUB_OT_frame_camera, camera_ui.MECSUB_OT_render_camera, camera_ui.MECSUB_OT_camera_view, camera_ui.MECSUB_OT_samples,
