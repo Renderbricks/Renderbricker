@@ -21,6 +21,8 @@ docs/RULES.md              rule set – every rule with its origin (part, run); 
 _CLAUDE_/                  local R&D: journals, runs, logs, backups, tools (own local git history)
 _dev/                      private test repo Renderbricker-CI (own git): platform tests Linux/macOS/Windows,
                            fixture + fingerprint reference; `python _dev/ci/run_all.py --blender <exe> --addon addon --work <dir>`
+                           `[--only <regex>] --reason "<why>"` - a full run needs its reason and every run goes into the
+                           family's run ledger (tiers: `_dev/README.md`; rule rows also in 4.5.3 when rules change)
 ```
 
 ## Rules of work
