@@ -39,11 +39,11 @@ included. Apply works in either mode. A file saved in Phys­i­cal­bricks opens
 mate­rial that Phys­i­cal­bricks cannot read – one edited by hand, or of a colour it has no record of – is left as it
 is; the panel then says *N edited mate­ri­als left as they are*.
 
+The solid plastic scat­ters light below its surface with Burley – dif­fu­sion, clean on Mecabricks parts. A scene
+that holds Random Walk from another add-on is switched with Burley.
+
 In Phys­i­cal­bricks, below the two buttons:
 
-- **Sub­sur­face** (Burley) – sub­sur­face scat­ter­ing of the solid plastic. *Burley*: dif­fu­sion, clean on Mecabricks
-  parts (open, inter­sect­ing shells); *Random Walk*: volume paths (Cycles' Random Walk Skin), sharper detail than
-  Burley.
 - **Glow in the dark** (on) – phos­pho­res­cent colours (Phos­pho­res­cent White, Phos­pho­res­cent Green, White Glow) shine
   with their after­glow: visible in dark scenes, a faint tint in daylight. Off: their plain day­light look.
   **Strength** (0.1) – bright­ness of the after­glow: 1 is the strength of the mate­rial record.

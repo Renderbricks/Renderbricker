@@ -30,6 +30,20 @@ def settings(scene):
         return None
 
 
+def burley_only(scene):
+    """Physicalbricks in Renderbricker always uses Burley: the choice Burley | Random Walk is out of the panel for now
+    (the maintainer, 15.11.2026: „Vorerst weg“ - Random Walk shows dark rings at the stud feet with Mecabricks' leaning
+    custom normals, Renderbricks run 108, and Renderbricker cannot cut the stud feet). The library's setting stays and
+    is only set here, so the choice can come back by drawing it again. A Random Walk the scene holds (a Dev file
+    opened here) becomes Burley on the switch to Physicalbricks - with no choice shown it would be a hidden state
+    with those rings. Only Renderbricker's own settings (scene.rb_phys): with Dev enabled the settings are Dev's
+    mb_fx, whose panel offers the choice and which cuts the stud feet itself - left as they are."""
+    s = settings(scene)
+    own = getattr(scene, "rb_phys", None)
+    if s is not None and own is not None and s == own and s.physical_subsurface != 'BURLEY':
+        s.physical_subsurface = 'BURLEY'
+
+
 class MECSUB_OT_material_system(bpy.types.Operator):
     bl_idname = "mecsub.material_system"
     bl_label = "Materials"
@@ -51,6 +65,8 @@ class MECSUB_OT_material_system(bpy.types.Operator):
         if not L.switch.has_import():
             self.report({'WARNING'}, NO_MODEL)
             return {'CANCELLED'}
+        if self.mode == 'PHYSICAL':
+            burley_only(context.scene)
         networks, skipped = L.registry.switch(self.mode)
         if self.mode == 'PHYSICAL':
             text = f"Physicalbricks: {networks} materials"
@@ -83,7 +99,7 @@ def draw_materials(L, context):
         return
     if s.material_system != 'PHYSICAL':
         return
-    col.row().prop(s, "physical_subsurface", expand=True)
+    # no Burley | Random Walk choice for now (burley_only)
     glow = col.row(align=True)
     glow.prop(s, "glow_in_dark")
     strength = glow.row(align=True)
