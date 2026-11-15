@@ -149,7 +149,7 @@ def write_table(rows):
 
 
 def run(blender, args, log, prog=None, count=None):
-    return run_blender([blender] + args, log, prog, count, "MESHES")
+    return run_blender([blender, "--disable-crash-handler"] + args, log, prog, count, "MESHES")   # a crash ends the job, no dialog
 
 
 # Mecabricks Advanced writes each texture into its own add-on folder, loads it and deletes
