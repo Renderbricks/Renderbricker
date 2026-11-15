@@ -482,8 +482,9 @@ def compensate(work, wm, free=(), quality=None, apart=(), still=()):
     W24 (contacts.close - the contacts found by contacts.find in the import's places). `free`: points left as they
     are (W17); `quality`: the subdivision quality W24 measures its slits at - the copies' bake quality (None: the
     modifier's own); `apart`: the points that stay apart (welding, stage 9) - W24 does not move them (W24a); `still`:
-    points W22 and W23 leave at the import's places (W25b / W25c: the points of a cage face whose child folds or
-    shows a bow tie - W24 then closes on what stands). No point moves further than SHRINK_MAX in all. The cage's
+    points that keep the import's places - W19's move undone too, W22 and W23 leave them (W25b / W25c: the points of
+    a cage face whose child folds or shows a bow tie - W24 then closes on what stands; branch review 15.11.: keeping
+    W19's move on them brought the folds back, 65253 0 -> 45 red pixels, 8009 0 -> 58). No point moves further than SHRINK_MAX in all. The cage's
     custom normals are set again once at the end, as they were, if W22 to W24 moved a point (W19 sets them itself);
     WAS keeps the places and normals before W19 for undo_shrink. Returns a dict: points, max (mm), left (mm: the
     largest residual left - W19's shrink, W23's residual), cylinders, chain_points, surface_points, coarse_left,
@@ -532,7 +533,8 @@ def _compensate(work, wm, free, quality, apart=(), still=()):
     far = np.linalg.norm(d, axis=1)
     d *= np.minimum(1.0, SHRINK_MAX / np.maximum(far, 1e-12))[:, None]       # no point further than SHRINK_MAX
     _set_points(wm, q + d)
-    if len(still):                                  # W25b / W25c: the points of faces whose children showed
+    if len(still):                                  # W25b / W25c: the points of faces whose children showed - W19's
+                                                    # move undone too (keeping it reopened 65253's and 8009's folds)
         d[np.asarray(sorted(int(v) for v in still), np.int64)] = 0.0
         _set_points(wm, q + d)
     if len(K["contacts"]):                          # W24 last, inside the same SHRINK_MAX in all

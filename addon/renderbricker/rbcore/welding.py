@@ -1189,15 +1189,18 @@ ZIP_ON = 0.002              # ... a rim point this close to a face it does not b
 ZIPPED = [0, 0.0]           # W29 on the last copy: points moved, the widest slit closed - for the tests
 
 
-def zip_slits(cp):
+def zip_slits(cp, on=None):
     """W29 (rework 4, run 306): the slits of the import closed on the copy `cp` (all quads) - two open rims of one
     welded shell that run 0 ... SLIT_W apart are a slit the import has; its flat faces hide it from the front, the
     copy's rounding shows it (85974's spot 1), and no rule sees it (no contact row within one shell). Per simple closed
     loop of the copy's open edges (4 points or more), per point the nearest place on the loop's other edges within
     SLIT_W that lies across (further along the rim than ZIP_ACROSS x straight); the point goes half the way - both rims
     end on their middle line. Guard: a point within ZIP_ON of a face it does not belong to stays (it rests on another
-    shell - W24 / W26 put it there; 92092). Corner normals kept. Not in the batch path (batches.bake). Returns the
-    number of points moved."""
+    shell - W24 / W26 put it there; 92092). Turn guard, as W26's (contacts.snap): a quad with a moved point that would
+    turn by more than SNAP_TURN (60 degrees), or that faced its import face's way (`on`: per copy face the normal of its
+    import face, or None) and would face against it, makes its moved points go half the way, SNAP_HALVES times, then
+    they stay (branch review 15.11.: nothing checked the copy for folds after the zip). Corner normals kept. Not in the
+    batch path (_bake_weld skips it while batches.ACTIVE). Returns the number of points moved."""
     from mathutils.bvhtree import BVHTree
     from mathutils.kdtree import KDTree
     ZIPPED[0], ZIPPED[1] = 0, 0.0
@@ -1217,8 +1220,8 @@ def zip_slits(cp):
         adj.setdefault(x, []).append(y); adj.setdefault(y, []).append(x)
     co = np.empty(n * 3); cp.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
     new = co.copy()
+    zw = np.zeros(n)                            # per point moved: the width of its slit
     seen = set()
-    moved, widest = 0, 0.0
     tree = None                                 # the copy's faces, built when a loop has something to zip
     for start in adj:
         if start in seen:
@@ -1293,8 +1296,35 @@ def zip_slits(cp):
         if not hit.any():
             continue
         new[L[I[hit]]] = 0.5 * (P[I[hit]] + Q[hit])
-        moved += int(hit.sum())
-        widest = max(widest, float(d[hit].max()))
+        zw[L[I[hit]]] = d[hit]
+    near = np.nonzero((zw[q] > 0).any(axis=1))[0]
+    if len(near):                               # the turn guard (as W26's)
+        qn = q[near]
+
+        def normal(x):
+            nn = np.cross(x[qn[:, 2]] - x[qn[:, 0]], x[qn[:, 3]] - x[qn[:, 1]])
+            return nn / np.maximum(np.linalg.norm(nn, axis=1), 1e-30)[:, None]
+
+        before = normal(co)
+        own = None
+        if on is not None and len(on) == len(q):
+            own = np.asarray(on, np.float64)[near]
+            faced = np.einsum("ij,ij->i", before, own) >= 0.0
+        for step in range(shrink.contacts.SNAP_HALVES + 1):
+            now = normal(new)
+            bad = np.einsum("ij,ij->i", before, now) < shrink.contacts.SNAP_TURN
+            if own is not None:
+                bad |= faced & (np.einsum("ij,ij->i", now, own) < 0.0)
+            if not bad.any():
+                break
+            vs = np.unique(qn[bad])
+            vs = vs[zw[vs] > 0]
+            if step < shrink.contacts.SNAP_HALVES:
+                new[vs] = co[vs] + 0.5 * (new[vs] - co[vs])
+            else:
+                new[vs], zw[vs] = co[vs], 0.0
+    moved = int((zw > 0).sum())
+    widest = float(zw.max()) if moved else 0.0
     if moved:
         cp.vertices.foreach_set("co", new.ravel())
         cp.update()
@@ -1527,6 +1557,15 @@ def _restore(work, wm, rep, memo, snap):
     return dict(snap["made"])
 
 
+def _copies_of(orig):
+    """The copies of `orig` in the file (the copy index of the run if there is one) - a failed W25c trial removes those
+    it made."""
+    idx = copies._COPY_INDEX[0]
+    if idx is not None:
+        return list(idx.get(orig.name, []))
+    return [m for m in bpy.data.meshes if m.library is None and m.get("rb_original") == orig.name]
+
+
 def _untie(orig, work, wm, tv, rep, made, levels, lv, memo=None):
     """W25c (rework 3, run 306; in place of W25): a visible bow tie of the copy of level `lv` (ties_any) - the points
     of its cage faces are held for W22 and W23 and the cage compensated again (_refit, then _shrink_back: W25b's
@@ -1549,11 +1588,21 @@ def _untie(orig, work, wm, tv, rep, made, levels, lv, memo=None):
             break
         trial = still | pts
         snap = _snapshot(work, wm, rep, made, memo)
-        made = _refit(orig, work, wm, tv, rep, {}, levels, trial)      # the copies before stay for a restore
-        if memo is not None:
-            memo.clear()
-        made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
-        f1, a1 = ties_any(orig, wm, made[lv], lv)
+        known = {m.as_pointer() for m in _copies_of(orig)}
+        try:
+            made = _refit(orig, work, wm, tv, rep, {}, levels, trial)  # the copies before stay for a restore
+            if memo is not None:
+                memo.clear()
+            made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
+            f1, a1 = ties_any(orig, wm, made[lv], lv)
+        except Exception:
+            # the trial failed: the state before comes back, and no copy of this bake is left in the file - neither
+            # the trial's nor the snapshot's (the error ends the mesh's bake; branch review 15.11.)
+            _restore(work, wm, rep, memo, snap)
+            for cp in _copies_of(orig):
+                if cp.as_pointer() not in known or any(cp is c for c in snap["made"].values()):
+                    copies.discard_copy(orig, cp)
+            raise
         if a1 < a0:
             still, a0, faces = trial, a1, f1
             rep["shrink_untied"] = len(still)
@@ -1660,9 +1709,18 @@ def _bake_weld(orig, levels, method_rep=None):
             for cp in made.values():
                 copies.discard_copy(orig, cp)
             made = _bake_work(orig, work, levels, tv)
-        for cp in made.values():                # W29: the import's slits zipped, on the finished copies (after the
-            zipped = zip_slits(cp)              # folds, W25b, W25c and the re-welds - inside _bake_work it changed
-            if zipped:                          # W25c's verdict on 65253; before the bevel: the subdivision's quads)
+        for lv_, cp in (() if batches.ACTIVE[0] else made.items()):
+            # W29: the import's slits zipped, on the finished copies (after the folds, W25b, W25c and the re-welds -
+            # inside _bake_work it changed W25c's verdict on 65253; before the bevel: the subdivision's quads); not in
+            # the batch path: a unit does not see the shells its rims rest on, and a cell cut's rims are W26's
+            on = None
+            lt0, own_face = checks.cage_faces(orig, cp)
+            kids = lt0 * 4 ** (lv_ - 1)
+            if int(kids.sum()) == len(cp.polygons):
+                fn = np.zeros(len(orig.polygons) * 3); orig.polygons.foreach_get("normal", fn)
+                on = fn.reshape(-1, 3)[np.repeat(own_face, kids)]
+            zipped = zip_slits(cp, on)
+            if zipped:
                 cp["rb_slits_zipped"] = zipped
         if bevel.signature():
             # the checks read a copy by the layout of the subdivision; the bevel changes it. So the verdict is
