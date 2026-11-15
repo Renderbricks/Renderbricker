@@ -146,15 +146,10 @@ def _limit_points(work, n):
     return co[:n]
 
 
-def compensate_shrink(work, wm, free=()):
-    """Widen the whole cylinders of the cage `wm` (on the object `work` with its Subdivision modifier) square to
-    their axes until the smooth surface has the import's distance from the axis again. `free`: indices of points
-    left as they are. Returns (points moved, largest move in mm, largest shrink left on them in mm, cylinders);
-    keeps the old places for undo_shrink."""
+def _cylinders(wm, target):
+    """The whole cylinders of the cage `wm` at the places `target`: per point the point on its axis and the axis
+    (the first cylinder that holds it), whether it is on one, and how many there are."""
     n = len(wm.vertices)
-    if not n or not len(wm.polygons) or work.modifiers.get("Subdivision") is None:
-        return 0, 0.0, 0.0, 0
-    target = meshparts.positions(wm)
     centre, axis = np.zeros((n, 3)), np.zeros((n, 3))
     on = np.zeros(n, bool)
     found = 0
@@ -180,6 +175,26 @@ def compensate_shrink(work, wm, free=()):
         found += 1
         pts = fpts[~on[fpts]]
         centre[pts], axis[pts], on[pts] = cyl[0], cyl[1], True
+    return centre, axis, on, found
+
+
+def compensate_shrink(work, wm, free=(), known=None):
+    """Widen the whole cylinders of the cage `wm` (on the object `work` with its Subdivision modifier) square to
+    their axes until the smooth surface has the import's distance from the axis again. `free`: indices of points
+    left as they are; `known` (a dict, B2): what this same cage gave before - its cylinders are read from it if there
+    and kept in it if not. Returns (points moved, largest move in mm, largest shrink left on them in mm, cylinders);
+    keeps the old places for undo_shrink."""
+    n = len(wm.vertices)
+    if not n or not len(wm.polygons) or work.modifiers.get("Subdivision") is None:
+        return 0, 0.0, 0.0, 0
+    target = meshparts.positions(wm)
+    if known is not None and "cylinders" in known:      # B2: the same cage to the bit - the same cylinders
+        centre, axis, on, found = known["cylinders"]
+        on = on.copy()
+    else:
+        centre, axis, on, found = _cylinders(wm, target)
+        if known is not None:
+            known["cylinders"] = (centre, axis, on.copy(), found)
     on[list(free)] = False
     if not on.any():
         return 0, 0.0, 0.0, found
@@ -541,6 +556,41 @@ def compensate(work, wm, free=(), quality=None, apart=(), still=()):
             mod.use_custom_normals = keep
 
 
+_KNOWN = {}                 # B2: what the last cage compensated gave that depends on its arrays and `free` only
+
+
+def _same(a, b, skip=()):
+    """The arrays of two cages (cagegeom.arrays) the same to the bit - but for the keys `skip`."""
+    if a.keys() != b.keys():
+        return False
+    for k, x in a.items():
+        if k in skip:
+            continue
+        y = b[k]
+        if isinstance(x, np.ndarray) or isinstance(y, np.ndarray):
+            x, y = np.asarray(x), np.asarray(y)
+            if x.dtype != y.dtype or x.shape != y.shape or x.tobytes() != y.tobytes():
+                return False
+        elif x != y:
+            return False
+    return True
+
+
+def _known(T, free, flat):
+    """B2 (run 306 perf_build): a refit (W25b, W25c) compensates the cage again from the import's places. classes,
+    contacts.find and W19's cylinders are pure functions of the cage's arrays, `free` and the flat faces; the shading
+    normals (T["cn"]) enter them only through `flat` (cagegeom.flat_faces) - undo_shrink encodes them again and they
+    change in the last bits (13765, 20595: up to 0.0005), so `flat` is made each time and compared instead. Kept for
+    the last cage: the same dict when the arrays but the shading normals, `free` and `flat` are the same to the bit."""
+    free = list(free)
+    if (_KNOWN.get("free") == free and "T" in _KNOWN and _same(_KNOWN["T"], T, skip=("cn",))
+            and np.array_equal(_KNOWN["flat"], flat)):
+        return _KNOWN
+    _KNOWN.clear()
+    _KNOWN.update({"T": T, "free": free, "flat": flat})
+    return _KNOWN
+
+
 def _compensate(work, wm, free, quality, apart=(), still=()):
     out = {"points": 0, "max": 0.0, "left": 0.0, "cylinders": 0, "chain_points": 0, "surface_points": 0,
            "coarse_left": 0, "contact_points": 0, "contact_moved": 0, "snap": None}
@@ -552,10 +602,13 @@ def _compensate(work, wm, free, quality, apart=(), still=()):
     normals = np.zeros(len(wm.loops) * 3, np.float32)
     wm.corner_normals.foreach_get("vector", normals)
     _roots, flat = cagegeom.flat_faces(T)
-    C = cagegeom.classes(T, free, flat)
-    K = contacts.find(wm, T, flat, C["planes"])     # W24: who touches whom, in the import's places
+    known = _known(T, free, flat)
+    if "C" not in known:
+        known["C"] = cagegeom.classes(T, free, flat)
+        known["K"] = contacts.find(wm, T, flat, known["C"]["planes"])     # W24: who touches whom, at the import's places
+    C, K = known["C"], known["K"]
     out["snap"] = (K, T["ev"], tuple(apart))        # W26 closes the copies' seams with it
-    _pts19, _max19, left19, out["cylinders"] = compensate_shrink(work, wm, free)
+    _pts19, _max19, left19, out["cylinders"] = compensate_shrink(work, wm, free, known)
     x19 = meshparts.positions(wm)                   # the cage as W19 left it (with its normals set, if it moved any)
     d = x19 - q
     moved = np.linalg.norm(d, axis=1) > 1e-6        # W19's points: done, the others build on their places
