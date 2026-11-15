@@ -696,21 +696,36 @@ def drop_unused_switches(everything=False):
 
 
 # ---------------------------------------------------------------- the shader's radius
+def _material_radius_nodes(mt):
+    if mt is None or mt.node_tree is None:
+        return
+    for n in mt.node_tree.nodes:
+        if n.type == 'GROUP' and n.node_tree is not None and "Bevel" in n.inputs and "Scale" in n.inputs \
+                and not n.inputs["Bevel"].is_linked:
+            yield n
+
+
 def _radius_nodes(orig):
     for mt in orig.materials:
-        if mt is None or mt.node_tree is None:
-            continue
-        for n in mt.node_tree.nodes:
-            if n.type == 'GROUP' and n.node_tree is not None and "Bevel" in n.inputs and "Scale" in n.inputs \
-                    and not n.inputs["Bevel"].is_linked:
-                yield n
+        yield from _material_radius_nodes(mt)
 
 
 def set_shader_radius(orig, radius):
     """Edges: Shader - the importer's Bevel value of this part's materials follows the Radius of the panel. The value
     it had is kept on the node and comes back with restore_shader_radius. Returns the number of nodes changed."""
+    return _set_radius(_radius_nodes(orig), radius)
+
+
+def set_shader_radius_of(origs, radius):
+    """set_shader_radius for several parts, every material once: the parts of a model share their materials (Italian
+    Riviera: 709 materials for 3298 objects)."""
+    materials = {mt for orig in origs for mt in orig.materials if mt is not None}
+    return _set_radius((n for mt in materials for n in _material_radius_nodes(mt)), radius)
+
+
+def _set_radius(nodes, radius):
     changed = 0
-    for n in _radius_nodes(orig):
+    for n in nodes:
         sock = n.inputs["Bevel"]
         if abs(sock.default_value - radius) > 1e-6:
             if RADIUS_WAS not in n:

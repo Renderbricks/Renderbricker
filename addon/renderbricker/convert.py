@@ -308,8 +308,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         common.edge_settings(s)
         items = list(common.by_mesh(common.targets(context)).items())
         if s.edges == 'SHADER' or core.SHADER_TOO:     # the Radius reaches the importer's Bevel value at once: no new copies
-            for me, _obs in items:
-                core.set_shader_radius(core.original_of(me), core.shader_radius())
+            core.set_shader_radius_of([core.original_of(me) for me, _obs in items], core.shader_radius())
         common.shader_too(context)              # copies made before take the test switch Bevel shader too (#52)
         self.scope_items = items
         if self.force:

@@ -79,6 +79,34 @@ def edge_settings(s):
     core.SHADER_TOO = s.edges == 'BEVEL' and s.edge_shader_too
 
 
+def radius_at_once(context):
+    """Edges: Shader - a new Radius goes into the importer's Bevel value of the converted parts in scope at once, with
+    no Apply (the maintainer, 2026-11-15: „Der Wechsel des Radius für den Bevel-Shader muss nicht mit einer Abfrage
+    erfolgen.“), and the last Apply counts as made with it. Only after an Apply in mode Shader: before it Apply sets
+    the Radius, and parts never converted keep the importer's value (Remove gives back only theirs). With Bevel a new
+    Radius needs new copies: Apply. Returns the number of nodes changed."""
+    from . import widgets                   # (widgets reads common)
+    sc = context.scene
+    s = sc.mecsub
+    key = sc.get(widgets.APPLIED_KEY)
+    applied = widgets._edges_of(key)
+    if s.running or s.edges != 'SHADER' or not applied or len(applied) != 3 or applied[0] != 'SHADER':
+        return 0
+    edge_settings(s)
+    began = core._COPY_INDEX[0] is None
+    idx = core.copy_index_begin() if began else core._COPY_INDEX[0]
+    try:
+        origs = [me for me in by_mesh(targets(context)) if idx.get(me.name)]
+    finally:
+        if began:
+            core.copy_index_end()
+    changed = core.set_shader_radius_of(origs, core.shader_radius())
+    fields = key.split("|")
+    fields[-2] = f"{s.edge_radius:.3f}"
+    sc[widgets.APPLIED_KEY] = "|".join(fields)
+    return changed
+
+
 def shader_too(context):
     """Bevel shader too (a test switch, UPDATES #52): every bevelled copy tells the material to keep its own rounding
     (0) or to leave it off (1); with it on, the importer's Bevel value of these parts is the Radius, as with Shader.

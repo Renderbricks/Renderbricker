@@ -11,6 +11,11 @@ def _shader_too(context):
     common.shader_too(context)
 
 
+def _radius_update(self, context):
+    from . import common
+    common.radius_at_once(context)
+
+
 class MECSUB_Problem(bpy.types.PropertyGroup):
     obj: StringProperty()
     part: StringProperty()          # the part the mesh is of (UPDATES #63)
@@ -552,9 +557,11 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         description="How the sharp edges of the parts are rounded. Changing it makes Apply convert the parts again")
     edge_radius: bpy.props.FloatProperty(
         name="Radius (mm)", default=0.1, min=0.001, max=10.0, step=1, precision=3,   # open for the test (2026-10-14)
+        update=_radius_update,
         description="Radius of the rounded edges in millimetres of the real part: how far the rounding reaches on "
                     "each face from the edge. The same for the shader and for the bevel. 0.2 is close to the size "
-                    "the importer shows; smaller values give finer edges")
+                    "the importer shows; smaller values give finer edges. With Shader it takes effect at once on "
+                    "the converted parts, with Bevel Apply makes the copies again")
     bevel_segments: bpy.props.IntProperty(
         name="Segments", default=2, min=1, max=3,      # maintainer 2026-10-14: "Standard für Segments auf 2 setzen."
         description="Facets of the bevel across an edge: 1 is a flat chamfer, 3 rounds the outline. The shading "
