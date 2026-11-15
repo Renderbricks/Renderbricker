@@ -37,7 +37,8 @@ and the two output links restored, so the Mecabricks tree is bit-identical. Blen
                   brings it in line with the file when a file opens
 
 VERSION is the material set's number, the one users see; REVISION (a file beside it, one integer) is the library's
-internal revision, raised with every hand-out of library code, also when VERSION stays (maintainer 10.11.2026).
+internal revision, raised with every hand-out of library code, also when VERSION stays (maintainer 10.11.2026) -
+counted by the build since 15.11.2026 (REVISIONS.tsv beside the package); VERSION equals the website's number.
 
 Physical materials, their records and measuring method: Prof. Michael Klein, Renderbricks®, developed with Claude Code.
 Spec: Renderbricks R&D, docs/specs/2026-11-08-physicalbricks-library-design.md."""
