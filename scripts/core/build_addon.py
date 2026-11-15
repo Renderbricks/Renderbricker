@@ -26,4 +26,12 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for fn in sorted(os.listdir(icons)):
             if fn.endswith(".png"):
                 z.write(f"{icons}/{fn}", f"renderbricker/icons/{fn}")
+    lib = f"{pkg}/physicalbricks"           # the vendored Physicalbricks library, whole (vendor_physicalbricks.py)
+    if os.path.isdir(lib):
+        for dirpath, dirs, files in os.walk(lib):
+            dirs[:] = sorted(d for d in dirs if d != "__pycache__")
+            for fn in sorted(files):
+                if not fn.endswith((".pyc", ".blend1")):
+                    full = os.path.join(dirpath, fn).replace(os.sep, "/")
+                    z.write(full, "renderbricker/" + os.path.relpath(full, pkg).replace(os.sep, "/"))
 print("BUILT", out)

@@ -1,0 +1,500 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Mecabricks physical material records (architecture v2)",
+  "type": "object",
+  "required": [
+    "version",
+    "built",
+    "records"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer"
+    },
+    "built": {
+      "type": "string"
+    },
+    "records": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/record"
+      }
+    },
+    "decoration": {
+      "type": "object",
+      "required": [
+        "ink_roughness",
+        "ink_height_mm",
+        "metal_ink_roughness",
+        "sticker_roughness",
+        "sticker_print_roughness",
+        "sticker_thickness_mm",
+        "foil_roughness",
+        "metal_ink_grain_mm",
+        "metal_ink_relief_mm",
+        "sources"
+      ]
+    },
+    "surface": {
+      "type": "object",
+      "required": [
+        "part_bump_relief_mm",
+        "sources"
+      ],
+      "properties": {
+        "part_bump_relief_mm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "class",
+        "polymer",
+        "ior",
+        "colour",
+        "roughness",
+        "sources"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "solid",
+            "transparent",
+            "rubber",
+            "glitter",
+            "speckle",
+            "pearlescent",
+            "metal",
+            "chrome",
+            "opal",
+            "milky"
+          ]
+        },
+        "polymer": {
+          "description": "The part's plastic (documentation; no code reads it). SAN: early clear parts (Colorstream 10 Clear: some parts in SAN under this id); TPE: soft parts of a thermoplastic elastomer not known more exactly (314 rubbery hair, 354 soft Duplo) - run 142",
+          "enum": [
+            "ABS",
+            "MABS",
+            "PC",
+            "SEBS",
+            "SAN",
+            "TPE"
+          ]
+        },
+        "ior": {
+          "type": "number",
+          "minimum": 1.4,
+          "maximum": 1.7
+        },
+        "colour": {
+          "type": "object",
+          "required": [
+            "rgb",
+            "source"
+          ],
+          "properties": {
+            "rgb": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "acescg": {
+              "description": "a colour beyond Rec.709, linear ACEScg (190 Fire Yellow, user 01.11.2026); rgb holds the same colour clipped to Rec.709 0..1 for readers without it. Shown in full only in an ACEScg working space",
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "source": {
+              "enum": [
+                "measured",
+                "official",
+                "mecabricks",
+                "derived",
+                "photo-matched",
+                "user"
+              ]
+            }
+          }
+        },
+        "roughness": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "sss": {
+          "type": "object",
+          "required": [
+            "method",
+            "depth_mm"
+          ],
+          "properties": {
+            "method": {
+              "enum": [
+                "burley",
+                "random_walk"
+              ]
+            },
+            "depth_mm": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "haze": {
+          "type": "object",
+          "required": [
+            "sigma_mm",
+            "anisotropy"
+          ],
+          "properties": {
+            "sigma_mm": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "anisotropy": {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            }
+          }
+        },
+        "sources": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "effect": {
+          "type": "object",
+          "properties": {
+            "metallic": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "base_roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "specular_tint_acescg": {
+              "type": "array",
+              "description": "pearlescent and metal: the colour of the pigment's highlight, linear ACEScg (Blender mb_phys_pearl Specular Tint since group version 34, Arnold specular_color); white without it. 176 / 178 Flip-Flop, materials version 5 (user 02.11.2026)",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "metal_f82_rgb": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 3,
+              "maxItems": 3,
+              "description": "chrome: the metal's F82 tint, linear Rec.709 (Blender Specular Tint of a metallic Principled, OpenPBR specular_color; run 144)"
+            }
+          }
+        },
+        "transmittance": {
+          "type": "object",
+          "required": [
+            "acescg",
+            "depth_mm"
+          ],
+          "description": "transparent colours: transmittance after depth_mm of material, linear ACEScg (may lie outside Rec.709; colour.rgb holds the same colour clipped to Rec.709 0..1)",
+          "properties": {
+            "acescg": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "depth_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        },
+        "glow": {
+          "type": "object",
+          "required": [
+            "acescg",
+            "strength"
+          ],
+          "description": "fluorescence of the glass volume (colour linear ACEScg, strength). Blender since group version 18 (UPDATES #85): a gain of the scattering that follows the light, coefficient = strength x 0.001 per mm",
+          "properties": {
+            "acescg": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "strength": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "phosphorescence": {
+          "type": "object",
+          "description": "glow-in-the-dark after charging; recorded only, off in the material (stage C2 decision A)",
+          "required": [
+            "acescg",
+            "strength"
+          ],
+          "properties": {
+            "acescg": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "strength": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "iridescence": {
+          "type": "object",
+          "description": "opal platelets (stage C2)",
+          "required": [
+            "size_mm",
+            "density",
+            "film_nm",
+            "film_ior",
+            "tilt_deg"
+          ],
+          "properties": {
+            "size_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "density": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "film_nm": {
+              "type": "number",
+              "minimum": 0
+            },
+            "film_ior": {
+              "type": "number",
+              "minimum": 1
+            },
+            "tilt_deg": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 60
+            }
+          }
+        },
+        "particles": {
+          "type": "object",
+          "description": "speckle particles (stage C2); three fleck layers since UPDATES #84 (size_large_mm ... edge_soft)",
+          "required": [
+            "acescg",
+            "metallic",
+            "roughness",
+            "tilt_deg"
+          ],
+          "properties": {
+            "acescg": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "metallic": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "tilt_deg": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 80
+            },
+            "size_large_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "fraction_large": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "size_medium_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "fraction_medium": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "strength_medium": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "size_small_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "fraction_small": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "edge_soft": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "flakes": {
+          "type": "object",
+          "description": "glitter foil flakes (stage C2)",
+          "required": [
+            "size_mm",
+            "density_mm3",
+            "depth_mm",
+            "tilt_deg",
+            "roughness"
+          ],
+          "properties": {
+            "size_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "density_mm3": {
+              "type": "number",
+              "minimum": 0
+            },
+            "depth_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "tilt_deg": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 90
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "body": {
+          "description": "glitter only: \"opaque\" - the glitter's flakes on an opaque body (subsurface from sss, no transmittance or haze): the colours \u201ewith Glitter\u201c 132, 287-291 (materials version 8, run 142; user 02.11.2026: \u201eDie Sondermaterialien Glitter aus opakem Material geh\u00f6ren doch nicht nach Speckle?\u201c). Without it a glitter record is glass.",
+          "enum": [
+            "opaque"
+          ]
+        },
+        "availability": {
+          "description": "Whether LEGO produced the colour (run 142; user 31.10.2026: AFOL must be able to order the parts; 01.11.2026: official = what LEGO produced): current = LEGO makes it, in a set 2022 or later (new parts); legacy = LEGO made it, no longer (used parts); unofficial = never produced by LEGO. Official = current + legacy",
+          "type": "object",
+          "required": [
+            "status",
+            "lego_id",
+            "years",
+            "sources"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "current",
+                "legacy",
+                "unofficial"
+              ]
+            },
+            "lego_id": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "years": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              ]
+            },
+            "sources": {
+              "type": "string"
+            }
+          }
+        },
+        "abbe": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Abbe number V_d of the transmitting resin - Cycles' Principled dispersion (Blender 5.3+, 0 = none), Arnold OpenPBR transmission_dispersion_abbe_number (run 144)"
+        }
+      }
+    }
+  }
+}
