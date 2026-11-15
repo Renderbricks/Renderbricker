@@ -21,6 +21,55 @@ Below the button the panel names the importer that is enabled – Mecabricks Adv
 Ren­der­bricks – with its version; the log file names it too. If two importers are enabled at the same
 time, the line turns red and says which one imports.
 
+## Materials: Mecabricks or Physicalbricks
+
+The row **Mate­ri­als** below *Import from Mecabricks* switches every Mecabricks mate­rial of the file, with two
+buttons: **Mecabricks** – the orig­i­nal Mecabricks mate­ri­als – and **Phys­i­cal­bricks** – phys­i­cally based LEGO
+mate­ri­als (set 1.3.2): ABS with sub­sur­face scat­ter­ing, glass with absorp­tion in the volume, rubber, pearl, metal,
+glitter, speckle, opal. The button of the current mode is pressed. Phys­i­cal­bricks works for models imported with
+Mecabricks Lite or Advanced, in Cycles and EEVEE, and needs Blender 5.0 or newer; in Blender 4.5 the row is greyed
+out with the note *Phys­i­cal­bricks needs Blender 5.0+*. Nothing switches by itself – after an import the mate­ri­als
+are Mecabricks' until the button is pressed. A file without a Mecabricks model stays at Mecabricks, with the
+message *No Mecabricks model in the file*.
+
+Phys­i­cal­bricks adds its own nodes to each mate­rial and leaves the Mecabricks nodes as they are; **Mecabricks** takes
+its nodes out again, so the mate­ri­als come back exactly as imported – Ren­der­bricker's bevel maps for EEVEE
+included. Apply works in either mode. A file saved in Phys­i­cal­bricks opens in Physicalbricks. A Mecabricks
+mate­rial that Phys­i­cal­bricks cannot read – one edited by hand, or of a colour it has no record of – is left as it
+is; the panel then says *N edited mate­ri­als left as they are*.
+
+In Phys­i­cal­bricks, below the row:
+
+- **Sub­sur­face** (Burley) – sub­sur­face scat­ter­ing of the solid plastic. *Burley*: dif­fu­sion, clean on Mecabricks
+  parts (open, inter­sect­ing shells); *Random Walk*: volume paths (Cycles' Random Walk Skin), sharper detail than
+  Burley.
+- **Glow in the dark** (on) – phos­pho­res­cent colours (Phos­pho­res­cent White, Phos­pho­res­cent Green, White Glow) shine
+  with their after­glow: visible in dark scenes, a faint tint in daylight. Off: their plain day­light look.
+  **Strength** (0.1) – bright­ness of the after­glow: 1 is the strength of the mate­rial record.
+- **Yel­low­ing** (0) – how yellow uncoloured plastic has turned with age and light (20 Nature): 0 the cast of a fresh
+  part, 1 an old one. A model with a 20 Nature part starts at the record's value (0.38) the first time it is
+  switched; a value set by hand stays.
+
+The sub-panel **Print** (closed at first, only in Phys­i­cal­bricks) sets the ink of printed parts:
+
+- **Ink Relief** (1) – how far a print stands out of the surface, as applied ink does: a factor on the ink film's
+  height (1: 0.01 mm). The film rises from the outline of the print inwards.
+- **Ink Grain** (0) – a fine grain in the surface of a print's ink, as a pad print has it (0: smooth).
+- **Ink Contour** (0) – a bead of ink along the outline of a print, as a stamp leaves it (1: 0.01 mm high).
+- **Ink Seed** (0) – another random pattern of the ink.
+
+The sub-panel **Parts Jitter** (closed at first) moves and turns every part a little, so a model looks built by
+hand. It moves the objects, not the mate­ri­als: it works in both modes and in Blender 4.5 too.
+
+- **Trans­late** (0 %) – move every part a little off its place (100 % = up to 0.4 mm along each axis); the field
+  beside it is its **Seed** (0) – another draw of the offsets.
+- **Rotate** (0 %) – turn every part a little (100 % = up to 2 degrees about each axis); beside it its **Seed** (0) –
+  another draw of the turns.
+- **Mute** (off) – every part back on its imported place; the set­tings stay.
+
+Limits: EEVEE glass stays at the mate­ri­als' own settings. A model imported with Mecabricks Lite shows no part
+normal maps in Phys­i­cal­bricks – Lite leaves them out of the file.
+
 ## Start Guide
 
 **Start Guide** at the top of the panel replaces the panel by a guide through the work­flow in eight

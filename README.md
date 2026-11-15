@@ -17,6 +17,7 @@ Renderbricker is an independent add-on, not an official Mecabricks product, and 
 - **Cycles | EEVEE** – either engine in the viewport and for rendering; EEVEE gets a sun lamp that follows the sky and comes close to Cycles.
 - **Edges: Shader or Bevel** – the sharp edges of the parts rounded by the importer's material, or with a real bevel in the smooth copies: a round outline, the same in Cycles and EEVEE, clean in close-ups; one radius for both.
 - **Bevel maps for EEVEE** – an option that bakes the rounded edges of the smooth parts into new maps, so round rims come out clean in EEVEE.
+- **Physicalbricks materials** – one button switches every Mecabricks material of the file to Physicalbricks, physically based LEGO materials (ABS with subsurface scattering, glass with absorption in the volume, rubber, pearl, metal, glitter, speckle, opal), and back to the original materials exactly as imported; Cycles and EEVEE, Blender 5.0 or newer. With it: **Parts Jitter**, every part moved and turned a little.
 - **Real size** – models imported at scale 0.001 (the metric real size) work like those at scale 1; the render camera follows scale changes.
 
 ## Requirements
