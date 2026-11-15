@@ -520,11 +520,19 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                 _reps, rest = self.workers.merge(on_mesh)
                 phase("loading the copies into the scene", t0)
             items = dict(self.items)
-            for me in rest:                  # a worker failed: these meshes are done here
+            short = []
+            for me in rest:                  # a worker failed or retired for memory: these meshes are done here
+                try:                         # with the guard (UPDATES #66: a part too large for the workers)
+                    core.check_memory(me, max(self.levels))
+                except core.MemoryShortage as e:
+                    short.append(str(e))
+                    self.workers.skipped.append(me.name)
+                    continue
                 on_mesh(me, items[me], core.process(me, items[me]))
             if self.workers.skipped:
                 sk = self.workers.skipped
-                self.error = f"{len(sk)} meshes skipped for memory ({', '.join(sk[:3])})"
+                self.error = f"{len(sk)} meshes skipped for memory ({', '.join(sk[:3])})" + (
+                    f" - {short[0]}" if short else "")
         except Exception as e:
             import traceback
             traceback.print_exc()

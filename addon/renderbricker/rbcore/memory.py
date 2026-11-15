@@ -84,12 +84,19 @@ def free_memory_gb():
 
 
 TOTAL_OVERRIDE = [None]     # tests: the memory of another machine (a 16 GB Mac, UPDATES #66)
+_TOTAL = []                 # read once: the reserve asks before every part
 
 
 def total_memory_gb():
     """The computer's memory (RAM) in GB; None if unknown."""
     if TOTAL_OVERRIDE[0] is not None:
         return TOTAL_OVERRIDE[0]
+    if not _TOTAL:
+        _TOTAL.append(_read_total_gb())
+    return _TOTAL[0]
+
+
+def _read_total_gb():
     try:
         if sys.platform.startswith("win"):
             import ctypes
@@ -323,6 +330,21 @@ SLOT_GB = 1.0                # segments: a small part in the works - so a place 
 
 
 RESERVE_GB = 4.0             # memory left free for the rest of the computer (at least, or 10 % of it)
+# ... but not a quarter of a small computer (UPDATES #66: on a 16 GB Mac the 4 GB left 2 GB of 6 free for the workers):
+# at most RESERVE_SHARE of its memory, at least RESERVE_MIN_GB; from about 27 GB on it is RESERVE_GB as before
+RESERVE_SHARE, RESERVE_MIN_GB = 0.15, 2.0
+
+
+def reserve_gb():
+    """The memory left free for the rest of the computer: RESERVE_GB, on a small computer less (UPDATES #66)."""
+    total = None
+    try:
+        total = total_memory_gb()
+    except Exception:
+        pass
+    if not total:
+        return RESERVE_GB
+    return min(RESERVE_GB, max(RESERVE_MIN_GB, RESERVE_SHARE * total))
 
 
 def scene_memory_gb():
@@ -332,17 +354,28 @@ def scene_memory_gb():
     return SCENE_GB_BASE + SCENE_GB_PER_MLOOP * loops / 1e6 + SCENE_GB_PER_IMAGE * len(bpy.data.images)
 
 
-def workers_memory_gb(n, meshes, scene_gb=None):
+def workers_memory_gb(n, meshes, scene_gb=None, room=None):
     """Memory n worker Blenders need together for these meshes (run 121): every worker holds its share
     of the scene and STEADY_GB between its parts; the largest part comes once on top. More large parts at
     the same time only when the ledger (MemoryLedger) finds room for them - so this is what the plan has
-    to fit, not the worst case."""
+    to fit, not the worst case. room: the memory the plan has - a large part (booked by the ledger) that does not
+    fit into it next to the n workers is left out (UPDATES #66: the baseplates of Italian Riviera, 7 to 9 GB, on a 16 GB Mac forbade all
+    parallel work for its hundreds of small parts); the ledger starts such a part when it can book it, else it is
+    done at the end of the run."""
+    return _workers_memory(n, meshes, scene_gb, room)[0]
+
+
+def _workers_memory(n, meshes, scene_gb=None, room=None):
+    """workers_memory_gb, and the number of parts it left out."""
     meshes = list(meshes)
     if scene_gb is None:
         scene_gb = scene_memory_gb()
     scene_gb = SCENE_GB_BASE + (scene_gb - SCENE_GB_BASE) / max(1, n)     # only its share (run 119)
-    largest = max((memory_need_gb(me, max(2, config.RENDER_LEVEL)) for me in meshes), default=0.0)
-    return n * (scene_gb + STEADY_GB) + largest
+    base = n * (scene_gb + STEADY_GB)
+    needs = [memory_need_gb(me, max(2, config.RENDER_LEVEL)) for me in meshes]
+    # only parts the ledger books (more than LEDGER_BIG_GB) can wait for room; a small part must fit next to them
+    kept = needs if room is None else [x for x in needs if x <= LEDGER_BIG_GB or base + x <= room]
+    return base + max(kept, default=0.0), len(needs) - len(kept)
 
 
 JOBS_MAX = 12               # upper bound of worker Blenders (run 59: 8; run 117: Riviera 126 / 87 / 82 s
@@ -357,7 +390,7 @@ SEGMENTED = [False]         # whether the last resolve_jobs chose segments (Work
 
 def resolve_jobs(value, n_meshes, meshes=None, per_process=20, low_memory=None):
     """--jobs: a number, or 'auto': one Blender per 2 cores, at most JOBS_MAX, at least ~20 meshes each,
-    and as many as fit into the free memory less a reserve (RESERVE_GB or 10 %) - estimated per scene
+    and as many as fit into the free memory less a reserve (reserve_gb() or 10 %) - estimated per scene
     from its meshes (run 117); without the meshes one per JOB_GB (run 59)."""
     import os
     if low_memory is None:          # "Low Memory" (run 126): auto, on (always segments) or off (never)
@@ -381,12 +414,14 @@ def resolve_jobs(value, n_meshes, meshes=None, per_process=20, low_memory=None):
         return n
     meshes = list(meshes)
     scene_gb = scene_memory_gb()
-    n = 1
-    room = free - max(RESERVE_GB, 0.1 * free)
-    for k in range(top, 0, -1):
-        if workers_memory_gb(k, meshes, scene_gb) <= room:
-            n = k
-            break
+    room = free - max(reserve_gb(), 0.1 * free)
+
+    def most(parts_room):
+        for k in range(top, 0, -1):
+            if workers_memory_gb(k, meshes, scene_gb, parts_room) <= room:
+                return k
+        return 1
+    n = most(None)            # every part next to the workers: this decides the segments (run 126), as before
     # a large scene (run 126): when its largest part leaves the ledger less than half the places, it is cut
     # into segments - NINJAGO City's 27 GB part left one Blender for 1,079 meshes (674 s; segments 229 s).
     # Otherwise the ledger: segments took Italian Riviera 162 s instead of 84 s and Dungeon 532 s, not 333 s
@@ -398,9 +433,12 @@ def resolve_jobs(value, n_meshes, meshes=None, per_process=20, low_memory=None):
                                f"{largest:.0f} GB, so only {n} Blenders would fit it; segments start when there "
                                f"is room; at most {top} by cores and parts)")
         return places
-    need = workers_memory_gb(n, meshes, scene_gb)
+    n = most(room)            # the ledger: parts too large to go next to the workers wait for room (UPDATES #66)
+    need, big = _workers_memory(n, meshes, scene_gb, room)
     LAST_MEMORY_PLAN[0] = (f"{n} Blenders: about {need:.0f} GB of {free:.0f} GB free "
-                           f"(scene {scene_gb:.1f} GB, shared among them; at most {top} by cores and parts)")
+                           f"(scene {scene_gb:.1f} GB, shared among them; at most {top} by cores and parts)"
+                           + (f"; {big} large part{'s' if big != 1 else ''} when there is room, else at the end"
+                              if big and n > 1 else ""))
     return n
 
 

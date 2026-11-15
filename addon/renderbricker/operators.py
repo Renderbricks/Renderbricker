@@ -707,7 +707,7 @@ def memory_is_short(context):
         level = max(2, context.scene.mecsub.render_level)
         meshes = {core.original_of(o.data) for o in common.targets(context) if o.type == 'MESH'}
         largest = max((core.memory_need_gb(me, level) for me in meshes), default=0.0)
-        return largest + core.RESERVE_GB > free
+        return largest + core.reserve_gb() > free
     except Exception:   # noqa: BLE001 - only a preset: without a reading the tick stays off
         return False
 
