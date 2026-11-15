@@ -83,6 +83,68 @@ def free_memory_gb():
     return None
 
 
+TOTAL_OVERRIDE = [None]     # tests: the memory of another machine (a 16 GB Mac, UPDATES #66)
+
+
+def total_memory_gb():
+    """The computer's memory (RAM) in GB; None if unknown."""
+    if TOTAL_OVERRIDE[0] is not None:
+        return TOTAL_OVERRIDE[0]
+    try:
+        if sys.platform.startswith("win"):
+            import ctypes
+            kb = ctypes.c_ulonglong()
+            if ctypes.windll.kernel32.GetPhysicallyInstalledSystemMemory(ctypes.byref(kb)):
+                return kb.value / 2**20
+            return None
+        if sys.platform.startswith("linux"):
+            for line in open("/proc/meminfo"):
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) / 2**20
+            return None
+        if sys.platform == "darwin":
+            import subprocess
+            out = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=5).stdout
+            return int(out.strip()) / 2**30
+    except (AttributeError, OSError, ValueError, ImportError):
+        return None
+    return None
+
+
+def machine_line():
+    """Operating system, processor, logical processors and memory, for the head of a log (UPDATES #63: a fold is a
+    numeric threshold, the machine can decide a borderline face; the log named only Renderbricker and Blender)."""
+    import os, platform
+    if sys.platform == "darwin":
+        osname = f"macOS {platform.mac_ver()[0]}"
+    elif sys.platform.startswith("win"):
+        osname = f"Windows {platform.release()} ({platform.version()})"
+    else:
+        osname = f"{platform.system()} {platform.release()}"
+    cpu = ""
+    try:
+        if sys.platform.startswith("win"):
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as k:
+                cpu = winreg.QueryValueEx(k, "ProcessorNameString")[0]
+        elif sys.platform == "darwin":
+            import subprocess
+            cpu = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True,
+                                 timeout=5).stdout
+        else:
+            cpu = next((line.split(":", 1)[1] for line in open("/proc/cpuinfo") if line.startswith("model name")), "")
+    except Exception:
+        cpu = ""
+    cpu = " ".join(str(cpu).split()) or platform.processor() or "processor unknown"
+    total, free = total_memory_gb(), None
+    try:
+        free = free_memory_gb()
+    except Exception:
+        pass
+    mem = (f"{total:.0f} GB memory" if total else "memory unknown") + (f" ({free:.1f} GB free now)" if free is not None else "")
+    return f"{osname}, {platform.machine()}, {cpu}, {os.cpu_count() or 0} logical processors, {mem}"
+
+
 def process_memory_gb(peak=False):
     """Memory of this Blender in GB (peak=True: the highest so far); None if unknown.
     Windows: committed memory (private bytes - what counts against the commit limit).

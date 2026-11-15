@@ -11,6 +11,7 @@ def draw_summary(L, s):
     if not s.summary or s.running:
         return
     import bpy as _bpy
+    from . import common
     box = L.box()
     bullets(box, s.summary.split(", "), _bpy.context, gap=POINT_GAP)
     if len(s.problems):
@@ -19,7 +20,7 @@ def draw_summary(L, s):
         for p in list(s.problems)[:12]:
             r = col.row(align=True)
             r.alert = True
-            r.label(text=f"•  {p.obj}: {p.info}")
+            r.label(text=f"•  {common.problem_text(p)}")
             r.operator("mecsub.select", text="", icon='RESTRICT_SELECT_OFF').obj = p.obj
         if len(s.problems) > 12:
             col.label(text=f"   ... {len(s.problems) - 12} more" + (" - all in the log file" if s.use_log else ""))

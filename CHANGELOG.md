@@ -7,6 +7,8 @@ documentation changes are not.
 
 ## [Unreleased]
 
+- **The problem list names the part.** A row of **Apply** or **Check** named only the object – `part.7236`, the name the Mecabricks importer gives every part, counted up by Blender – so nobody could tell which LEGO part had the problem. The row now names the part too: `part.7236 (2452): 2 folded faces left`, in the panel and in the log file.
+- **The log file names the computer:** its head line for every entry now also names the operating system, the processor, the number of logical processors and the memory (and how much was free), in the log of **Apply** and of **Convert headless** – what is needed to follow up a report.
 - **Edit Mode on a reopened scene:** with *Edges: Bevel* or variant B, pressing Tab on a converted part and leaving Edit Mode without a change converted the part again and took it out of the cache file – in a scene opened in a new Blender session. It now says *not changed* and the part stays on its copy, as in the session that ran Apply.
 - **Convert headless can close Blender and open the result when it is done.** A tick in its question: Blender saves and quits, the terminal waits until it has closed, converts, and opens the new scene in the same Blender. On a computer with little memory the open scene no longer holds memory the conversion needs; the tick is set by itself when the free memory is short for the scene. When **Apply** stops for lack of memory, its message now names this way out.
 - **Where to get the Mecabricks add-on:** while neither Mecabricks Lite nor Advanced is enabled, the note below **Import from Mecabricks** links to both in the Mecabricks shop – Lite (free) and Advanced (paid) – and to the shop itself, instead of the Mecabricks home page.

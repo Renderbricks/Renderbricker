@@ -1,5 +1,6 @@
 """The log file next to the scene and saving after the cache was written."""
 import bpy
+from . import rbcore as core
 from . import common, importer, props
 
 
@@ -74,13 +75,14 @@ def write_log(context, label):
     lines = [f"=== {datetime.datetime.now():%Y-%m-%d %H:%M:%S}  {label}  "
              f"(Renderbricker {common.VERSION}, Blender {bpy.app.version_string})",
              f"scene: {bpy.data.filepath}",
+             "system: " + core.machine_line(),           # UPDATES #63
              importer.importer_log(),
              f"settings: {scope}, variant {s.variant}, viewport {s.view_level}, render {s.render_level}, "
              f"several Blender processes {'on' if s.use_cores else 'off'} (Low Memory {s.low_memory.lower()}), cache file {'on' if s.use_cache else 'off'}"]
     lines += [f"  - {part}" for part in s.summary.split(", ")]
     if len(s.problems):
         lines.append(f"problems ({len(s.problems)}):")
-        lines += [f"  - {p.obj}: {p.info}" for p in s.problems]
+        lines += [f"  - {common.problem_text(p)}" for p in s.problems]
     try:
         with open(path, "a", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + "\n\n")

@@ -121,7 +121,8 @@ def _parent(users, weight, total_w):
     """The parent role, in the order a user reads it in the console and the log: head of the log, conversion,
     what was left out, result files."""
     _log(f"=== {datetime.datetime.now():%Y-%m-%d %H:%M:%S}  Convert headless  "
-         f"(Blender {bpy.app.version_string})\nscene: {bpy.data.filepath}\nresult: {config.TARGET}\n"
+         f"(Blender {bpy.app.version_string})\nsystem: {memory.machine_line()}\n"      # UPDATES #63
+         f"scene: {bpy.data.filepath}\nresult: {config.TARGET}\n"
          f"settings: viewport {config.VIEW_LEVEL}, render {config.RENDER_LEVEL}, variant "
          f"{'A' if config.SHADING == 'mecabricks' else 'B'}\n")
     skipped, failed = _convert(users, weight, total_w)

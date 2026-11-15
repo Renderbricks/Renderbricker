@@ -13,6 +13,7 @@ def _shader_too(context):
 
 class MECSUB_Problem(bpy.types.PropertyGroup):
     obj: StringProperty()
+    part: StringProperty()          # the part the mesh is of (UPDATES #63)
     info: StringProperty()
 
 

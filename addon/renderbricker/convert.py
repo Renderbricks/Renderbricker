@@ -498,7 +498,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                 self.tpoints = getattr(self, "tpoints", 0) + rep.get("t_verts", 0)
                 if rep.get("flipped"):
                     self.folds += rep["flipped"]
-                    p = s.problems.add(); p.obj = obs[0].name; p.info = f"{rep['flipped']} folded faces left"
+                    common.add_problem(s, obs[0], me, f"{rep['flipped']} folded faces left")
                 self.done += 1
             t0 = time.time()
             if s.use_cache and bpy.data.filepath:    # straight into the cache, never loaded here (run 66)
@@ -556,7 +556,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         self.tpoints = getattr(self, "tpoints", 0) + rep.get("t_verts", 0)
         if rep.get("flipped"):
             self.folds += rep["flipped"]
-            p = s.problems.add(); p.obj = obs[0].name; p.info = f"{rep['flipped']} folded faces left"
+            common.add_problem(s, obs[0], obs[0].data, f"{rep['flipped']} folded faces left")
         self.done += 1
 
     def finish(self, context):
@@ -631,8 +631,7 @@ class MECSUB_OT_check(_Stepped, bpy.types.Operator):
             gv, ge = common.seam_gaps(me, cp, lv)
         if f or gv > 1e-3 or ge > 1e-3:
             self.bad += 1
-            p = s.problems.add(); p.obj = obs[0].name
-            p.info = f"folds {f}, seam gap {max(gv, ge):.3f}"
+            common.add_problem(s, obs[0], me, f"folds {f}, seam gap {max(gv, ge):.3f}")
 
     def finish(self, context):
         s = context.scene.mecsub
