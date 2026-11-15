@@ -1038,11 +1038,11 @@ def t_gaps(wm, cp, tv, level):
     pass
     config.LEVELS = level
     starts = checks.sub_offsets(wm, cp)
-    co = np.empty(len(cp.vertices) * 3); cp.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
-    ev = np.empty(len(cp.edges) * 2, np.int64); cp.edges.foreach_get("vertices", ev); ev = ev.reshape(-1, 2)
-    le = np.empty(len(cp.loops), np.int64); cp.loops.foreach_get("edge_index", le)
+    co = meshparts.positions(cp)
+    ev = meshparts.edge_verts(cp)
+    le = meshparts.corner_edges(cp)
     cnt = np.bincount(le, minlength=len(cp.edges))
-    lt = np.empty(len(cp.polygons), np.int64); cp.polygons.foreach_get("loop_total", lt)
+    lt = meshparts.fget(cp.polygons, "loop_total", len(cp.polygons), np.int64)
     lface = np.repeat(np.arange(len(cp.polygons)), lt)
     owner = np.repeat(np.arange(len(starts) - 1), np.diff(starts))      # (by cage face: a T point's host is one)
     open_loops = cnt[le] == 1
@@ -1207,7 +1207,7 @@ def zip_slits(cp, on=None):
     n, nl = len(cp.vertices), len(cp.loops)
     if nl != 4 * len(cp.polygons) or not n:
         return 0
-    lv = np.empty(nl, np.int64); cp.loops.foreach_get("vertex_index", lv)
+    lv = meshparts.corner_verts(cp)
     q = lv.reshape(-1, 4)
     a, b = q.ravel(), np.roll(q, -1, axis=1).ravel()
     key = np.minimum(a, b) * n + np.maximum(a, b)
@@ -1218,7 +1218,7 @@ def zip_slits(cp, on=None):
     adj = {}
     for x, y in zip((rk // n).tolist(), (rk % n).tolist(), strict=True):
         adj.setdefault(x, []).append(y); adj.setdefault(y, []).append(x)
-    co = np.empty(n * 3); cp.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
+    co = meshparts.positions(cp)
     new = co.copy()
     zw = np.zeros(n)                            # per point moved: the width of its slit
     seen = set()
@@ -1326,7 +1326,7 @@ def zip_slits(cp, on=None):
     moved = int((zw > 0).sum())
     widest = float(zw.max()) if moved else 0.0
     if moved:
-        cp.vertices.foreach_set("co", new.ravel())
+        cp.vertices.foreach_set("co", new.astype(np.float32).ravel())
         cp.update()
     ZIPPED[0], ZIPPED[1] = moved, widest
     return moved
@@ -1467,7 +1467,7 @@ def ties_any(orig, wm, cp, level):
     """W25c (rework 3, run 306): the cage faces of `wm` with a child in the copy `cp` of `level` that is a bow tie -
     its two render triangles (loop_triangles) face against each other - whose smaller triangle is larger than TIE_MIN
     and faces against the child's import face; and the sum of those triangles' areas. Returns (faces, area)."""
-    lt = np.empty(len(wm.polygons), np.int64); wm.polygons.foreach_get("loop_total", lt)
+    lt = meshparts.fget(wm.polygons, "loop_total", len(wm.polygons), np.int64)
     kids = lt * 4 ** (level - 1)
     if int(kids.sum()) != len(cp.polygons):
         return set(), 0.0
@@ -1476,14 +1476,14 @@ def ties_any(orig, wm, cp, level):
     k0 = lt0 * 4 ** (level - 1)
     on = None
     if int(k0.sum()) == len(cp.polygons):
-        fn = np.zeros(len(orig.polygons) * 3); orig.polygons.foreach_get("normal", fn)
+        fn = meshparts.fget(orig.polygons, "normal", len(orig.polygons) * 3)
         on = fn.reshape(-1, 3)[np.repeat(own_face, k0)]
     cp.calc_loop_triangles()
     nt = len(cp.loop_triangles)
-    tv_ = np.empty(nt * 3, np.int64); cp.loop_triangles.foreach_get("vertices", tv_)
-    tp = np.empty(nt, np.int64); cp.loop_triangles.foreach_get("polygon_index", tp)
-    co = np.empty(len(cp.vertices) * 3); cp.vertices.foreach_get("co", co)
-    p = co.reshape(-1, 3)[tv_.reshape(-1, 3)]
+    tv_ = meshparts.fget(cp.loop_triangles, "vertices", nt * 3, np.int64)
+    tp = meshparts.fget(cp.loop_triangle_polygons, "value", nt, np.int64)
+    co = meshparts.positions(cp)
+    p = co[tv_.reshape(-1, 3)]
     tn = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
     area = np.linalg.norm(tn, axis=1) / 2
     tn /= np.maximum(2 * area, 1e-30)[:, None]

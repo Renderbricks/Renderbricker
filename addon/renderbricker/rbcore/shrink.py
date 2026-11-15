@@ -114,13 +114,12 @@ def _limit_points(work, n):
         ev = work.evaluated_get(dg)
         me = ev.to_mesh()
         try:
-            co = np.zeros(len(me.vertices) * 3, np.float64)
-            me.vertices.foreach_get("co", co)
+            co = meshparts.positions(me)
         finally:
             ev.to_mesh_clear()
     finally:
         mod.levels = keep
-    return co.reshape(-1, 3)[:n]
+    return co[:n]
 
 
 def compensate_shrink(work, wm, free=()):
@@ -131,9 +130,7 @@ def compensate_shrink(work, wm, free=()):
     n = len(wm.vertices)
     if not n or not len(wm.polygons) or work.modifiers.get("Subdivision") is None:
         return 0, 0.0, 0.0, 0
-    target = np.zeros(n * 3, np.float64)
-    wm.vertices.foreach_get("co", target)
-    target = target.reshape(-1, 3)
+    target = meshparts.positions(wm)
     centre, axis = np.zeros((n, 3)), np.zeros((n, 3))
     on = np.zeros(n, bool)
     found = 0
@@ -203,14 +200,12 @@ def undo_shrink(work, wm, faces=None):
     was = WAS.get(wm.name)
     if was is None or len(was[0]) != len(wm.vertices):
         return 0
-    co = np.zeros(len(wm.vertices) * 3, np.float64)
-    wm.vertices.foreach_get("co", co)
-    co = co.reshape(-1, 3)
+    co = meshparts.positions(wm)
     pick = np.ones(len(co), bool)
     if faces is not None:
         lab = meshparts.point_islands(wm)
-        lv = np.empty(len(wm.loops), np.int64); wm.loops.foreach_get("vertex_index", lv)
-        ls = np.empty(len(wm.polygons), np.int64); wm.polygons.foreach_get("loop_start", ls)
+        lv = meshparts.corner_verts(wm)
+        ls = meshparts.fget(wm.polygons, "loop_start", len(wm.polygons), np.int64)
         pick = np.isin(lab, lab[lv[ls[np.asarray(sorted(faces), np.int64)]]])
     back = pick & (np.abs(co - was[0]).max(axis=1) > 0)
     if faces is None or back.all() or pick.all():
@@ -519,9 +514,7 @@ def _compensate(work, wm, free, quality, apart=(), still=()):
     K = contacts.find(wm, T, flat, C["planes"])     # W24: who touches whom, in the import's places
     out["snap"] = (K, T["ev"], tuple(apart))        # W26 closes the copies' seams with it
     _pts19, _max19, left19, out["cylinders"] = compensate_shrink(work, wm, free)
-    x = np.zeros(n * 3, np.float64)
-    wm.vertices.foreach_get("co", x)
-    x19 = x.reshape(-1, 3).copy()                   # the cage as W19 left it (with its normals set, if it moved any)
+    x19 = meshparts.positions(wm)                   # the cage as W19 left it (with its normals set, if it moved any)
     d = x19 - q
     moved = np.linalg.norm(d, axis=1) > 1e-6        # W19's points: done, the others build on their places
     contact = np.zeros(n, bool)                     # W22k: the points with a contact row
@@ -543,9 +536,7 @@ def _compensate(work, wm, free, quality, apart=(), still=()):
         d, out["contact_moved"], _slit = contacts.close(work, wm, K, free, q, d, quality, hold=apart,
                                                         planes=C["planes"])
         _set_points(wm, q + d)
-    x = np.zeros(n * 3, np.float64)
-    wm.vertices.foreach_get("co", x)
-    x = x.reshape(-1, 3)
+    x = meshparts.positions(wm)
     if np.any(x != x19):        # the normals as they were, on the new places - only if W22 to W24 moved a point (an
         wm.normals_split_custom_set(normals.reshape(-1, 3))   # untouched cage gains no custom normals; review, Task 5)
     far = np.linalg.norm(x - q, axis=1)

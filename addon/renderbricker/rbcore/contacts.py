@@ -35,7 +35,7 @@ rule looked): W24a - W24e restrain close as W22 / W23 are restrained, W26 measur
 import numpy as np
 from mathutils.bvhtree import BVHTree
 
-from . import cagegeom, config, workscene
+from . import cagegeom, config, meshparts, workscene
 
 CONTACT = 1e-3              # mm: a point this close to another shell in the import touches it
 CONTACT_RIM = 0.08          # mm: a point of an open rim touches from this far
@@ -216,17 +216,14 @@ def _evaluate(work, level, topology, quality=None):
         try:
             # read in the type the mesh keeps (float32, int32): foreach_get converts item by item into any other
             # (run 306 w24_speed: 4x on the points) - float32 -> float64 is exact
-            co32 = np.zeros(len(me.vertices) * 3, np.float32)
-            me.vertices.foreach_get("co", co32)
-            co = co32.astype(np.float64)
+            co = meshparts.positions(me).ravel()
             topo = None
             if topology == "quads":
-                lv = np.zeros(len(me.loops), np.int32); me.loops.foreach_get("vertex_index", lv)
-                topo = lv.reshape(-1, 4).astype(np.int64)
+                topo = meshparts.corner_verts(me).reshape(-1, 4)
             elif topology:
-                lv = np.zeros(len(me.loops), np.int64); me.loops.foreach_get("vertex_index", lv)
-                le = np.zeros(len(me.loops), np.int64); me.loops.foreach_get("edge_index", le)
-                e2 = np.zeros(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", e2)
+                lv = meshparts.corner_verts(me)
+                le = meshparts.corner_edges(me)
+                e2 = meshparts.edge_verts(me)
                 topo = (lv.reshape(-1, 4), e2.reshape(-1, 2), np.bincount(le, minlength=len(me.edges)))
         finally:
             ev.to_mesh_clear()
@@ -308,9 +305,9 @@ def _copy_parts(wm, lab, quads, shells, level):
     of a shell: the edges of its quads used once. The same points, quads and order as _shell_parts; the rim edges in
     another order and direction (only their nearest distance is read). None when the counts do not agree."""
     nf = len(wm.polygons)
-    ls = np.zeros(nf, np.int32); wm.polygons.foreach_get("loop_start", ls)
-    lt = np.zeros(nf, np.int32); wm.polygons.foreach_get("loop_total", lt)
-    lv = np.zeros(len(wm.loops), np.int32); wm.loops.foreach_get("vertex_index", lv)
+    ls = meshparts.fget(wm.polygons, "loop_start", nf, np.int32)
+    lt = meshparts.fget(wm.polygons, "loop_total", nf, np.int32)
+    lv = meshparts.corner_verts(wm, np.int32)
     many = np.where(lt == 4, 4 ** level, lt * 4 ** (level - 1))
     if int(many.sum()) != len(quads):
         return None
@@ -515,11 +512,10 @@ def snap(cp, K, level, ev, hold=(), on=None):
         else:
             e_at = n + erows[:, 0] * 3 + erows[:, 1]
         at, touched = np.r_[at, e_at], np.r_[touched, erows[:, 2]]
-    co = np.zeros(len(cp.vertices) * 3); cp.vertices.foreach_get("co", co)
-    co = co.reshape(-1, 3)
-    lv = np.zeros(len(cp.loops), np.int64); cp.loops.foreach_get("vertex_index", lv)
-    le = np.zeros(len(cp.loops), np.int64); cp.loops.foreach_get("edge_index", le)
-    e2 = np.zeros(len(cp.edges) * 2, np.int64); cp.edges.foreach_get("vertices", e2)
+    co = meshparts.positions(cp)
+    lv = meshparts.corner_verts(cp)
+    le = meshparts.corner_edges(cp)
+    e2 = meshparts.edge_verts(cp).ravel()
     if len(lv) % 4:
         return 0
     shells = sorted(set(touched.tolist()))

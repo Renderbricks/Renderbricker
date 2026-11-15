@@ -12,6 +12,8 @@ the smaller shell move COVER_SINK along their normal, under the other shell.
 import numpy as np
 from mathutils.bvhtree import BVHTree
 
+from . import meshparts
+
 COVER = 2e-5                # mm: faces this close in one plane cover each other
 COVER_COS = 0.9999          # ... their normals within 0.8 degrees
 COVER_SINK = 0.003          # mm: the covered points of the smaller shell go this far behind
@@ -22,14 +24,12 @@ SUNK = [0]                  # points moved on the last copy - read by the tests
 
 
 def _arrays(cp):
-    n = len(cp.vertices)
-    co = np.zeros(n * 3); cp.vertices.foreach_get("co", co)
-    co = co.reshape(-1, 3)
-    lv = np.zeros(len(cp.loops), np.int64); cp.loops.foreach_get("vertex_index", lv)
+    co = meshparts.positions(cp)
+    lv = meshparts.corner_verts(cp)
     cp.calc_loop_triangles()
     nt = len(cp.loop_triangles)
-    tl = np.zeros(nt * 3, np.int64); cp.loop_triangles.foreach_get("loops", tl)
-    tp = np.zeros(nt, np.int64); cp.loop_triangles.foreach_get("polygon_index", tp)
+    tl = meshparts.fget(cp.loop_triangles, "loops", nt * 3, np.int64)
+    tp = meshparts.fget(cp.loop_triangle_polygons, "value", nt, np.int64)
     tri = lv[tl].reshape(-1, 3)
     tn = np.cross(co[tri[:, 1]] - co[tri[:, 0]], co[tri[:, 2]] - co[tri[:, 0]])
     ta = np.linalg.norm(tn, axis=1) / 2
@@ -69,7 +69,7 @@ def sink(cp, parent=None):
     if not found:
         return 0
     if parent is None:
-        area = np.zeros(len(cp.polygons)); cp.polygons.foreach_get("area", area)
+        area = meshparts.fget(cp.polygons, "area", len(cp.polygons))
         own = np.arange(len(cp.polygons))
     else:
         own, area = parent

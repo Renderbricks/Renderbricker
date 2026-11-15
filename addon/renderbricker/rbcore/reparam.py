@@ -21,7 +21,7 @@ Measures (run 221): 7052 L2/L3 line and corner like the import in Cycles and EEV
 import bpy
 import numpy as np
 from mathutils.bvhtree import BVHTree
-from . import checks, config
+from . import checks, config, meshparts
 
 SHARP_DEG = 30.0      # a nearest point on a face turned further than this lies across a sharp edge: stay
 MIN_SLIDE = float(config.opt("--reparam-min", "2e-3"))   # relative to the part size: smaller slides stay - about one texel of the part's own texture
@@ -29,7 +29,7 @@ MIN_SLIDE = float(config.opt("--reparam-min", "2e-3"))   # relative to the part 
 
 
 def _arr(coll, attr, n, width, dtype=np.float64):
-    a = np.empty(n * width, dtype); coll.foreach_get(attr, a)
+    a = meshparts.fget(coll, attr, n * width, dtype)      # in Blender's own type, widened after (exact)
     return a.reshape(-1, width) if width > 1 else a
 
 
@@ -137,7 +137,7 @@ def _smaller_ties(new, moving, new0, moving0, quads, tied, n):
 
 def part_size(me):
     """The largest side of the bounding box of `me` - the scale of MIN_SLIDE."""
-    co = _arr(me.vertices, "co", len(me.vertices), 3)
+    co = meshparts.positions(me)
     return float(np.ptp(co, 0).max()) or 1.0
 
 
@@ -149,9 +149,9 @@ def mark(work):
     me = work.data
     if me.attributes.get(PARAM) is not None:
         return
-    lv = _arr(me.loops, "vertex_index", len(me.loops), 1, np.int64)
-    co = _arr(me.vertices, "co", len(me.vertices), 3)
-    me.attributes.new(PARAM, 'FLOAT_VECTOR', 'CORNER').data.foreach_set("vector", co[lv].ravel())
+    lv = meshparts.corner_verts(me)
+    co = meshparts.positions(me)
+    me.attributes.new(PARAM, 'FLOAT_VECTOR', 'CORNER').data.foreach_set("vector", co[lv].astype(np.float32).ravel())
     # boundary vertices, once per import instead of per copy (run 222): the subdivision keeps 1 along boundary edges
     lt = _arr(me.polygons, "loop_total", len(me.polygons), 1, np.int64)
     ls = np.cumsum(lt) - lt
@@ -161,7 +161,7 @@ def mark(work):
     rim = np.zeros(n, np.float32); rim[a_[lone]] = 1.0; rim[b_[lone]] = 1.0
     me.attributes.new(EDGE, 'FLOAT', 'POINT').data.foreach_set("value", rim)
     # connected shells (run 224: a point of a stud's fillet slid onto the plate surface 0.01 mm below - another shell)
-    ev = _arr(me.edges, "vertices", len(me.edges), 2, np.int64)
+    ev = meshparts.edge_verts(me)
     lab = np.arange(n)
     while len(ev):
         m = np.minimum(lab[ev[:, 0]], lab[ev[:, 1]])
@@ -180,7 +180,7 @@ def param_positions(cp):
     if a is None:
         return None
     v = _arr(a.data, "vector", len(cp.loops), 3)
-    lv = _arr(cp.loops, "vertex_index", len(cp.loops), 1, np.int64)
+    lv = meshparts.corner_verts(cp)
     P = np.empty((len(cp.vertices), 3)); P[lv] = v
     cp.attributes.remove(cp.attributes[PARAM])
     return P, lv
@@ -197,12 +197,12 @@ def uv_islands(me, layer):
     if key in _ISLANDS:
         return _ISLANDS[key]
     nl, nf = len(me.loops), len(me.polygons)
-    lv = _arr(me.loops, "vertex_index", nl, 1, np.int64)
+    lv = meshparts.corner_verts(me)
     lt = _arr(me.polygons, "loop_total", nf, 1, np.int64)
     ls = np.cumsum(lt) - lt
     face = np.repeat(np.arange(nf), lt)
     nxt = np.arange(nl) + 1; nxt[ls + lt - 1] = ls
-    uv = np.round(_arr(me.uv_layers[layer].data, "uv", nl, 2) * 1e6).astype(np.int64)
+    uv = np.round(meshparts.uvs(me, layer) * 1e6).astype(np.int64)
     a, b = lv, lv[nxt]; ua, ub = uv, uv[nxt]
     swap = a > b
     lo, hi = np.where(swap, b, a), np.where(swap, a, b)
@@ -229,7 +229,7 @@ def fixed_uvs(orig, cp, level, verts, P):
     corner's original face - the texture stays at its import place there although the face did not get back."""
     lt0, own_face = checks.cage_faces(orig, cp)
     owner = np.repeat(own_face, lt0 * 4 ** (level - 1))
-    lv = _arr(cp.loops, "vertex_index", len(cp.loops), 1, np.int64)
+    lv = meshparts.corner_verts(cp)
     L = np.where(verts[lv])[0]
     if not len(L) or len(owner) * 4 != len(cp.loops):
         return 0
@@ -237,16 +237,16 @@ def fixed_uvs(orig, cp, level, verts, P):
     nt = len(orig.loop_triangles)
     tv = _arr(orig.loop_triangles, "vertices", nt, 3, np.int64)
     tl = _arr(orig.loop_triangles, "loops", nt, 3, np.int64)
-    tf = _arr(orig.loop_triangles, "polygon_index", nt, 1, np.int64)
-    vco = _arr(orig.vertices, "co", len(orig.vertices), 3)
+    tf = _arr(orig.loop_triangle_polygons, "value", nt, 1, np.int64)
+    vco = meshparts.positions(orig)
     cf = owner[L // 4]
     X = P[lv[L]]
     for layer in [u.name for u in orig.uv_layers]:
         if layer not in cp.uv_layers:
             continue
         isl = uv_islands(orig, layer)
-        uv0 = _arr(orig.uv_layers[layer].data, "uv", len(orig.loops), 2)
-        uvc = _arr(cp.uv_layers[layer].data, "uv", len(cp.loops), 2)
+        uv0 = meshparts.uvs(orig, layer)
+        uvc = meshparts.uvs(cp, layer)
         k = isl[cf]
         for kk in np.unique(k):
             tris = np.where(isl[tf] == kk)[0]
@@ -273,7 +273,7 @@ def fixed_uvs(orig, cp, level, verts, P):
             T = tris[np.array([r[2] for r in res], np.int64)]
             W = _bary(loc, vco[tv[T, 0]], vco[tv[T, 1]], vco[tv[T, 2]])
             uvc[L[j]] = (W[:, :, None] * uv0[tl[T]]).sum(1)
-        cp.uv_layers[layer].data.foreach_set("uv", uvc.ravel())
+        cp.uv_layers[layer].data.foreach_set("uv", uvc.astype(np.float32).ravel())
     return len(L)
 
 
@@ -285,7 +285,7 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
     n = len(cp.vertices)
     if len(Pl) != n:
         return {"skipped": "topology"}
-    Ps = _arr(cp.vertices, "co", n, 3)
+    Ps = meshparts.positions(cp)
     nl, nf = len(cp.loops), len(cp.polygons)
     vn = _arr(cp.vertex_normals, "vector", n, 3)
 
@@ -581,7 +581,7 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
     ln = cn
     ln[L] = nn
 
-    cp.vertices.foreach_set("co", new.ravel())
+    cp.vertices.foreach_set("co", new.astype(np.float32).ravel())
     if FREE_NORMALS:
         # free custom normals (a float vector per corner): 8x faster to set, but 12 instead of 4 bytes per corner -
         # Optimus 328 -> 508 MB and slower saving (run 222)
