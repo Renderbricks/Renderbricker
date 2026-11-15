@@ -23,12 +23,13 @@ time, the line turns red and says which one imports.
 
 ## Materials: Mecabricks or Physicalbricks
 
-The row **Mate­ri­als** below *Import from Mecabricks* switches every Mecabricks mate­rial of the file, with two
-buttons: **Mecabricks** – the orig­i­nal Mecabricks mate­ri­als – and **Phys­i­cal­bricks** – phys­i­cally based LEGO
-mate­ri­als (set 1.3.2): ABS with sub­sur­face scat­ter­ing, glass with absorp­tion in the volume, rubber, pearl, metal,
-glitter, speckle, opal. The button of the current mode is pressed. Phys­i­cal­bricks works for models imported with
-Mecabricks Lite or Advanced, in Cycles and EEVEE, and needs Blender 5.0 or newer; in Blender 4.5 the row is greyed
-out with the note *Phys­i­cal­bricks needs Blender 5.0+*. Nothing switches by itself – after an import the mate­ri­als
+Below *Import from Mecabricks* stands **Mate­ri­als**, and below it, in a row of their own, two buttons that switch
+every Mecabricks mate­rial of the file: **Mecabricks** – the orig­i­nal Mecabricks mate­ri­als – and **Phys­i­cal­bricks** –
+phys­i­cally based LEGO mate­ri­als (set 1.3.2): ABS with sub­sur­face scat­ter­ing, glass with absorp­tion in the volume,
+rubber, pearl, metal, glitter, speckle, opal. The button of the current mode is pressed. Phys­i­cal­bricks works for
+models imported with Mecabricks Lite or Advanced, in Cycles and EEVEE, and needs Blender 5.0 or newer.
+Ren­der­bricker itself runs from Blender 4.5 LTS; there the two buttons are greyed out with the note
+*Phys­i­cal­bricks needs Blender 5.0+*. Nothing switches by itself – after an import the mate­ri­als
 are Mecabricks' until the button is pressed. A file without a Mecabricks model stays at Mecabricks, with the
 message *No Mecabricks model in the file*.
 
@@ -38,7 +39,7 @@ included. Apply works in either mode. A file saved in Phys­i­cal­bricks opens
 mate­rial that Phys­i­cal­bricks cannot read – one edited by hand, or of a colour it has no record of – is left as it
 is; the panel then says *N edited mate­ri­als left as they are*.
 
-In Phys­i­cal­bricks, below the row:
+In Phys­i­cal­bricks, below the two buttons:
 
 - **Sub­sur­face** (Burley) – sub­sur­face scat­ter­ing of the solid plastic. *Burley*: dif­fu­sion, clean on Mecabricks
   parts (open, inter­sect­ing shells); *Random Walk*: volume paths (Cycles' Random Walk Skin), sharper detail than

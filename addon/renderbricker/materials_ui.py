@@ -63,19 +63,21 @@ class MECSUB_OT_material_system(bpy.types.Operator):
 
 
 def draw_materials(L, context):
-    """The row Materials with Mecabricks | Physicalbricks, and the options of mode Physicalbricks below it."""
+    """The label Materials, below it Mecabricks | Physicalbricks in a row of the full width (the maintainer,
+    15.11.2026: „Eigene Zeile für die beiden Knöpfe“ - beside the label Physicalbricks was cut off), and the options
+    of mode Physicalbricks below them."""
     s = settings(context.scene)
     if s is None:
         return
     available = lib().AVAILABLE
     col = L.column()
-    row = col.row(align=True)
-    row.label(text="Materials")
-    buttons = row.row(align=True)
+    head = col.row()
+    head.label(text="Materials")
+    buttons = col.row(align=True)
     for mode, text, _tip in MODES:
         buttons.operator(MECSUB_OT_material_system.bl_idname, text=text,
                          depress=s.material_system == mode).mode = mode
-    row.enabled = bool(available)
+    head.enabled = buttons.enabled = bool(available)
     if not available:
         col.label(text=NEEDS_5, icon='INFO')
         return
