@@ -76,8 +76,11 @@ def bake_copy(orig, work, level):
     pass
     keep = config.LEVELS
     config.LEVELS = level
+    mod = work.modifiers.get("Subdivision")
+    # UPDATES #70: the bake quality and W14c's linear UVs are for this copy only - put back below, so that whatever
+    # measures the work object after a bake (W19 / W23 in a refit: shrink._limit_points) finds it as the first fit did
+    keep_mod = (mod.quality, mod.uv_smooth) if mod else None
     try:
-        mod = work.modifiers.get("Subdivision")
         if mod:
             creases.add_subsurf(work)                   # level and custom normals for this copy
             # the limit surface near free two-edge boundary vertices is only approximated at
@@ -109,6 +112,8 @@ def bake_copy(orig, work, level):
                     cp[checks.LAYOUT] = lay
     finally:
         config.LEVELS = keep
+        if keep_mod is not None:
+            mod.quality, mod.uv_smooth = keep_mod
     cp.name = f"{orig.name} L{level}"
     cp["rb_original"], cp["rb_level"], cp["rb_variant"] = orig.name, level, config.SHADING
     cp["rb_rules"] = config.RULES_VERSION          # Apply skips meshes whose copies are up to date (user, 2026-09-28)
