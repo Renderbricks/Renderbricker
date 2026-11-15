@@ -474,6 +474,21 @@ def _sun_prop(key, angle=False):
     return get, set
 
 
+def _ink_seed_get(self):
+    """Ink Seed of the Print sub-panel, read from the library's settings (candidate 1.4.0): the library's own tooltip
+    names a Seed below that only Renderbricks Dev's panel has, and the vendored library stays byte for byte."""
+    from .materials_ui import settings
+    s = settings(self.id_data)
+    return s.surface_ink_seed if s is not None else 0
+
+
+def _ink_seed_set(self, value):
+    from .materials_ui import settings
+    s = settings(self.id_data)
+    if s is not None:
+        s.surface_ink_seed = value          # the library's update rebuilds the print's ink
+
+
 class MECSUB_Settings(bpy.types.PropertyGroup):
     # No "All" since 1.2.8 (maintainer, 2026-10-10: it converted other models in the scene by accident). The
     # numbers are those 1.2.7 stored (All 0, Selected 1, Collection 2): a scene saved with All reads as "" and
@@ -486,6 +501,8 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
         default='COLLECTION')     # the list starts empty (user, 2026-09-28)
     collections: CollectionProperty(type=MECSUB_CollectionItem)
     collections_index: IntProperty(default=0)
+    ink_seed: IntProperty(name="Ink Seed", description="Another pattern of the print's ink (0 = the first one)",
+                          min=0, max=9999, get=_ink_seed_get, set=_ink_seed_set)
     collection: PointerProperty(type=bpy.types.Collection, name="Collection",       # scenes from before: taken over
                                 description="Apply, Check, On/Off, Levels and Remove work on the parts in this "
                                             "collection and its child collections")

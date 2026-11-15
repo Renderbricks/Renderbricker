@@ -135,8 +135,9 @@ class MECSUB_PT_print(_Sub, bpy.types.Panel):
         names = ["surface_ink_relief", "surface_ink_grain", "surface_ink_contour"]
         if lib().EFFECTS:
             names += ["surface_ink_wear", "surface_ink_wear_rims"]
-        for name in names + ["surface_ink_seed"]:
+        for name in names:
             col.prop(s, name)
+        col.prop(context.scene.mecsub, "ink_seed")      # the library's own tooltip points to Dev's panel
 
 
 class MECSUB_PT_parts_jitter(_Sub, bpy.types.Panel):
