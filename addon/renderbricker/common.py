@@ -96,7 +96,14 @@ def radius_at_once(context):
     began = core._COPY_INDEX[0] is None
     idx = core.copy_index_begin() if began else core._COPY_INDEX[0]
     try:
-        origs = [me for me in by_mesh(targets(context)) if idx.get(me.name)]
+        # the meshes of the scope without targets()' checks per object: they took half the time on Italian Riviera
+        # (3298 objects: 0.27 of 0.54 s); a mesh not converted has no copy in the index and is left out anyway
+        if s.scope == 'SELECTED':
+            obs = context.selected_objects
+        else:
+            obs = (o for c in props.scope_collections(s) for o in c.all_objects)
+        meshes = {o.data for o in obs if o.type == 'MESH' and o.data is not None}
+        origs = [me for me in {core.original_of(m) for m in meshes} if idx.get(me.name)]
     finally:
         if began:
             core.copy_index_end()
