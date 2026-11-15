@@ -449,17 +449,23 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
     tied0 = tied                                         # the smooth copy's own bow ties
 
     def fold_loop(new, moving, ties, sn=sn):
+        # only a quad with a moving point can put a point back (vb &= moving), and `moving` only shrinks: the tests
+        # on those quads alone, row by row the same arithmetic (run 306 perf_build, A3); `ref` does not change here
+        k = np.nonzero(moving[quads].any(1))[0]
+        qk = quads[k]
+        ref = sn[qk].sum(1); ref /= np.maximum(np.linalg.norm(ref, axis=1), 1e-30)[:, None]
+        on_k = on[k] if on is not None else None
+        free_k = ~tied[k] if ties else None
         for step in range(FOLD_STEPS + 1):
-            q = new[quads]
+            q = new[qk]
             qn = np.cross(q[:, 2] - q[:, 0], q[:, 3] - q[:, 1])
             qn /= np.maximum(np.linalg.norm(qn, axis=1), 1e-30)[:, None]
-            ref = sn[quads].sum(1); ref /= np.maximum(np.linalg.norm(ref, axis=1), 1e-30)[:, None]
             bad = (qn * ref).sum(1) < FOLD_COS
-            if on is not None:                           # nor turned against its original face (the fold check, W10b)
-                bad |= (qn * on).sum(1) < 0.0
+            if on_k is not None:                         # nor turned against its original face (the fold check, W10b)
+                bad |= (qn * on_k).sum(1) < 0.0
             if ties:                                     # W27: nor a bow tie the smooth copy did not have
-                bad |= bow_ties(q) & ~tied
-            vb = np.zeros(n, bool); vb[quads[bad].ravel()] = True
+                bad |= bow_ties(q) & free_k
+            vb = np.zeros(n, bool); vb[qk[bad].ravel()] = True
             vb &= moving
             if not vb.any():
                 break
@@ -485,7 +491,9 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
         went = np.linalg.norm(dt, axis=1) > 1e-6                 # has somewhere to go
         tc, lc, hc, rounds = [], [], [], 0
         for _ in range(COMPANY):
-            cand = np.unique(quads[bow_ties(raw_c[quads]) & ~tied0].ravel())
+            # a quad whose points all stand where the smooth copy has them is tied0's (A3): only the others asked
+            kq = np.nonzero((raw_c != Ps).any(1)[quads].any(1))[0]
+            cand = np.unique(quads[kq[bow_ties(raw_c[quads[kq]]) & ~tied0[kq]]].ravel())
             cand = cand[~asked[cand] & went[cand]]
             if not len(cand):
                 break
@@ -508,7 +516,8 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
     company = (0, 0, 0)
     if TIES and len(todo):
         slid = np.zeros(n, bool); slid[todo] = True
-        if (bow_ties(new[quads]) & slid[quads].any(1)).any():
+        ks = slid[quads].any(1)                          # (A3: the quads with a slid point only)
+        if bow_ties(new[quads[ks]]).any():
             tc, lc, hc, raw_c, rounds = companions()
             taken = 0
             if len(tc):
@@ -536,17 +545,21 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
     # final check, also after the snap back onto the surface: putting a vertex back can fold a quad whose other
     # vertices slid far (2552: 10 mm) - repeat until no quad with a slid vertex folds (each round puts at least one
     # vertex back, so it ends)
+    k = np.nonzero(moving[quads].any(1))[0]             # as fold_loop (A3): the quads with a moving point
+    qk = quads[k]
+    ref = sn[qk].sum(1); ref /= np.maximum(np.linalg.norm(ref, axis=1), 1e-30)[:, None]
+    on_k = on[k] if on is not None else None
+    free_k = ~tied[k] if TIES else None
     while True:
-        q = new[quads]
+        q = new[qk]
         qn = np.cross(q[:, 2] - q[:, 0], q[:, 3] - q[:, 1])
         qn /= np.maximum(np.linalg.norm(qn, axis=1), 1e-30)[:, None]
-        ref = sn[quads].sum(1); ref /= np.maximum(np.linalg.norm(ref, axis=1), 1e-30)[:, None]
         bad = (qn * ref).sum(1) < FOLD_COS
-        if on is not None:
-            bad |= (qn * on).sum(1) < 0.0
+        if on_k is not None:
+            bad |= (qn * on_k).sum(1) < 0.0
         if TIES:
-            bad |= bow_ties(q) & ~tied
-        vb = np.zeros(n, bool); vb[quads[bad].ravel()] = True
+            bad |= bow_ties(q) & free_k
+        vb = np.zeros(n, bool); vb[qk[bad].ravel()] = True
         vb &= moving
         if not vb.any():
             break
