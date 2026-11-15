@@ -1677,16 +1677,20 @@ def _bake_weld(orig, levels, method_rep=None):
         _fit(work, wm, rep, orig)
         if bevel.signature():                   # Edges: Bevel - the part's own sharp edges, as bevel weight on
             rep["bevel_edges"] = bevel.mark_edges(orig, wm)      # the cage; the subdivision carries it along
-        made = _bake_work(orig, work, levels, tv)
+        # B1 (run 306 perf_build): every verdict below (folds, bow ties, W21, W18, W10b) reads the copy of level `lv`
+        # only - the trials, refits and re-welds bake that level alone; the other levels are baked once at the end,
+        # from the cage as it then stands (a copy is a function of the cage, its marks and FITTED)
+        lv = config.RENDER_LEVEL if config.RENDER_LEVEL in levels else max(levels)
+        verdict = {lv}
+        made = _bake_work(orig, work, verdict, tv)
         # W10b (run 211): the repair checks the work object at the modifier's quality 3, the copies are baked at
         # the bake quality (10 / 6) - a fold that only exists from quality 4 up passes the repair (46524: four
         # tiny faces). The baked copy is tested for free; only if it folds is the repair run again at the bake
         # quality and the copies baked again (1 of 1,372 parts in the library; doing every check at the bake
         # quality cost 2.5-3.6x the repair time).
-        lv = config.RENDER_LEVEL if config.RENDER_LEVEL in made else max(made)
         memo = {}
-        made = _shrink_back(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
-        made = _untie(orig, work, wm, tv, rep, made, levels, lv, memo=memo)
+        made = _shrink_back(orig, work, wm, tv, rep, made, verdict, lv, memo=memo)
+        made = _untie(orig, work, wm, tv, rep, made, verdict, lv, memo=memo)
         close_off = None
         folded = _folds(orig, made, lv, memo) if rep.get("outlines_closed") else ()
         if folded:
@@ -1709,7 +1713,7 @@ def _bake_weld(orig, levels, method_rep=None):
             rep["outlines_dropped"] = 1
             # the fresh cage is compensated again: the folds held or undone, bent flat faces held as above (the cage
             # keeps its faces - W21 changes creases only), and the report keeps an undo of the first weld
-            made = _refit_new(orig, work, wm, tv, rep, levels, lv, undone, memo)
+            made = _refit_new(orig, work, wm, tv, rep, verdict, lv, undone, memo)
         folded = _folds(orig, made, lv, memo) if rep.get("rounding_ends") else ()
         if folded:
             # W18 must not cost a fold (library, run 283: con1 folded on two faces with it, on none without): the
@@ -1733,13 +1737,21 @@ def _bake_weld(orig, levels, method_rep=None):
             rep["rounding_ends_dropped"] = 1
             if close_off is not None:
                 rep["outlines_dropped"] = 1
-            made = _refit_new(orig, work, wm, tv, rep, levels, lv, undone, memo)
+            made = _refit_new(orig, work, wm, tv, rep, verdict, lv, undone, memo)
         if _folds(orig, made, lv, memo):
             work.modifiers["Subdivision"].quality = copies.bake_quality(orig)
             rep["repair_bake_quality"] = repair_folds(work, wm)
             for cp in made.values():
                 copies.discard_copy(orig, cp)
-            made = _bake_work(orig, work, levels, tv)
+            made = _bake_work(orig, work, verdict, tv)
+        rest = sorted(set(levels) - verdict)
+        if rest:                                # B1: the other levels, once
+            last = [(g, list(g)) for g in (shrink.contacts.SNAPPED, cover.SUNK)]
+            made.update(_bake_work(orig, work, rest, tv))
+            if lv == max(levels):               # the measures of the last bake stay those of the highest level's
+                for g, was in last:
+                    g[:] = was
+            made = {k: made[k] for k in sorted(made)}
         for lv_, cp in (() if batches.ACTIVE[0] else made.items()):
             # W29: the import's slits zipped, on the finished copies (after the folds, W25b, W25c and the re-welds -
             # inside _bake_work it changed W25c's verdict on 65253; before the bevel: the subdivision's quads); not in
