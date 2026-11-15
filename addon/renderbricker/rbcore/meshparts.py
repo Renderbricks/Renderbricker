@@ -28,22 +28,71 @@ def _read(me, name, n, width, dtype):
     return v
 
 
+# Blender's int as numpy sees it: foreach_get / foreach_set take a buffer at once only when its format is the
+# property's own ('i' for a signed int - bpy_rna.cc, foreach_compat_buffer); np.int32 is 'l' on Windows and goes value
+# by value there like int64
+INT = np.intc
+
+
+def fget(coll, attr, size, dtype=np.float64):
+    """`coll`.foreach_get(`attr`) of `size` values as `dtype`, read in the type Blender keeps - float32 or its C int -
+    and widened afterwards (run 306 perf_build, A1: float64 or int64 buffers went value by value through Python,
+    bpy_rna.cc foreach_getset). float32 -> float64 and int32 -> int64 are exact: the same values."""
+    kind = np.dtype(dtype).kind
+    raw = np.empty(size, INT if kind in "iu" else np.float32 if kind == "f" else dtype)
+    if size:
+        coll.foreach_get(attr, raw)
+    return raw.astype(dtype, copy=False)
+
+
+def positions(me, dtype=np.float64):
+    """The points of `me` (n,3) - the attribute "position" is the array behind vertices.co (rna_mesh.cc,
+    rna_MeshVertex_co_get), read at once."""
+    n = len(me.vertices)
+    return fget(me.attributes["position"].data if n else me.vertices, "vector", n * 3, dtype).reshape(-1, 3)
+
+
+def corner_verts(me, dtype=np.int64):
+    """The point of every corner of `me` - the array behind loops.vertex_index, read at once."""
+    n = len(me.loops)
+    return fget(me.attributes[".corner_vert"].data if n else me.loops, "value", n, dtype)
+
+
+def corner_edges(me, dtype=np.int64):
+    """The edge of every corner of `me` - the array behind loops.edge_index, read at once."""
+    n = len(me.loops)
+    return fget(me.attributes[".corner_edge"].data if n else me.loops, "value", n, dtype)
+
+
+def edge_verts(me, dtype=np.int64):
+    """The two points of every edge of `me` (ne,2) - the array behind edges.vertices, read at once."""
+    n = len(me.edges)
+    return fget(me.attributes[".edge_verts"].data if n else me.edges, "value", n * 2, dtype).reshape(-1, 2)
+
+
+def uvs(me, layer, dtype=np.float64):
+    """The UVs of the UV map `layer` of `me` per corner (nl,2) - the map is a 2D float corner attribute of that name
+    (uv_layers[layer].data's uv goes through Python value by value), read at once."""
+    n = len(me.loops)
+    return fget(me.attributes[layer].data if n else me.loops, "vector", n * 2, dtype).reshape(-1, 2)
+
+
 def topology(me):
     """Positions, edge vertices, corner vertices and edges, face starts and sizes as arrays."""
     nv, ne, nl, nf = len(me.vertices), len(me.edges), len(me.loops), len(me.polygons)
     co = _read(me, "position", nv, 3, np.float32)
-    ev = _read(me, ".edge_verts", ne, 2, np.int32).astype(np.int64)
-    lv = _read(me, ".corner_vert", nl, 1, np.int32).astype(np.int64)
-    le = _read(me, ".corner_edge", nl, 1, np.int32).astype(np.int64)
-    ls = np.empty(nf, np.int32); me.polygons.foreach_get("loop_start", ls)
-    lt = np.empty(nf, np.int32); me.polygons.foreach_get("loop_total", lt)
+    ev = _read(me, ".edge_verts", ne, 2, INT).astype(np.int64)
+    lv = _read(me, ".corner_vert", nl, 1, INT).astype(np.int64)
+    le = _read(me, ".corner_edge", nl, 1, INT).astype(np.int64)
+    ls = np.empty(nf, INT); me.polygons.foreach_get("loop_start", ls)
+    lt = np.empty(nf, INT); me.polygons.foreach_get("loop_total", lt)
     return co.reshape(-1, 3), ev.reshape(-1, 2), lv, le, ls.astype(np.int64), lt.astype(np.int64)
 
 
 def point_islands(me, links=None):
     """The island of every vertex of `me` (joined by edges, and by the vertex pairs `links`): the smallest vertex
     index in it. Label propagation with pointer jumping - a few passes of numpy over the edges."""
-    ev = np.empty(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", ev); ev = ev.reshape(-1, 2)
+    ev = edge_verts(me)
     if links is not None and len(links):
         ev = np.concatenate([ev, np.asarray(links, np.int64).reshape(-1, 2)])
     lab = np.arange(len(me.vertices))
@@ -61,8 +110,8 @@ def point_islands(me, links=None):
 def island_faces(me, faces):
     """All faces of `me` in the islands of `faces`."""
     lab = point_islands(me)
-    ls = np.empty(len(me.polygons), np.int64); me.polygons.foreach_get("loop_start", ls)
-    lv = np.empty(len(me.loops), np.int64); me.loops.foreach_get("vertex_index", lv)
+    ls = fget(me.polygons, "loop_start", len(me.polygons), np.int64)
+    lv = corner_verts(me)
     flab = lab[lv[ls]]
     return np.nonzero(np.isin(flab, flab[np.asarray(sorted(faces), np.int64)]))[0]
 

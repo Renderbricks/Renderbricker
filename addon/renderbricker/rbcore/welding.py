@@ -1,6 +1,6 @@
 """The conversion of one part: weld the islands in a work copy, set the creases (W rules), repair
 folds, bake the copies (process)."""
-import bpy, bmesh, copy, math, types
+import bpy, bmesh, contextlib, copy, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
@@ -1038,11 +1038,11 @@ def t_gaps(wm, cp, tv, level):
     pass
     config.LEVELS = level
     starts = checks.sub_offsets(wm, cp)
-    co = np.empty(len(cp.vertices) * 3); cp.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
-    ev = np.empty(len(cp.edges) * 2, np.int64); cp.edges.foreach_get("vertices", ev); ev = ev.reshape(-1, 2)
-    le = np.empty(len(cp.loops), np.int64); cp.loops.foreach_get("edge_index", le)
+    co = meshparts.positions(cp)
+    ev = meshparts.edge_verts(cp)
+    le = meshparts.corner_edges(cp)
     cnt = np.bincount(le, minlength=len(cp.edges))
-    lt = np.empty(len(cp.polygons), np.int64); cp.polygons.foreach_get("loop_total", lt)
+    lt = meshparts.fget(cp.polygons, "loop_total", len(cp.polygons), np.int64)
     lface = np.repeat(np.arange(len(cp.polygons)), lt)
     owner = np.repeat(np.arange(len(starts) - 1), np.diff(starts))      # (by cage face: a T point's host is one)
     open_loops = cnt[le] == 1
@@ -1059,12 +1059,34 @@ def t_gaps(wm, cp, tv, level):
     return worst
 
 
+@contextlib.contextmanager
+def _points_only(work):
+    """The Subdivision modifier of `work` without its custom normals meanwhile: for evaluations that read points,
+    face normals or areas only (run 306 perf_build, A2 - the face normals and areas of the evaluated mesh are computed
+    from its points: rna_mesh.cc, rna_MeshPolygon_normal_get / _area_get; the custom normals do not move a point, as
+    shrink.compensate measured: the same to the bit, an evaluation costs a third). Back on at the end."""
+    mod = work.modifiers.get("Subdivision")
+    keep = mod.use_custom_normals if mod is not None else None
+    if mod is not None:
+        mod.use_custom_normals = False
+    try:
+        yield
+    finally:
+        if mod is not None:
+            mod.use_custom_normals = keep
+
+
 def bulge_check(work, wm, rungs):
     """Relief tips that bulge: after subdividing, the surface near a freed tip must stay
     within BULGE_MAX (times the step height) of the original. Returns the tips that bulge."""
-    from mathutils.bvhtree import BVHTree
     if not rungs:
         return []
+    with _points_only(work):
+        return _bulge_check(work, wm, rungs)
+
+
+def _bulge_check(work, wm, rungs):
+    from mathutils.bvhtree import BVHTree
     bvh = BVHTree.FromPolygons([v.co.copy() for v in wm.vertices], [tuple(p.vertices) for p in wm.polygons])
     dg = workscene.depsgraph_of(work)
     ev = work.evaluated_get(dg).to_mesh()
@@ -1082,7 +1104,13 @@ def bulge_check(work, wm, rungs):
 
 def repair_folds(work, wm, passes=None):
     """Fold repair as in the rules: edges of folding faces get crease 0.5, then 1.0, then
-    the neighbouring faces too. Returns the number of passes used."""
+    the neighbouring faces too. Returns the number of passes used. Its evaluations read face
+    normals and areas only: without the modifier's custom normals (_points_only)."""
+    with _points_only(work):
+        return _repair_folds(work, wm, passes)
+
+
+def _repair_folds(work, wm, passes=None):
     passes = passes or REPAIR_PASSES
     ce = wm.attributes["crease_edge"].data
     for n in range(passes):
@@ -1139,7 +1167,10 @@ def repair_work(orig, work, wm, tv, rep):
     # W13 fallback (run 58, Bugatti 35188): plane creases can leave folds the repair cannot
     # remove - weld again without the W13 edges at the folding faces. Folds can only be
     # left when the repair used all its passes (run 59: no extra evaluation otherwise).
-    left = checks.flipped_faces(work, me=wm) if PLANE_RATIO and passes >= REPAIR_PASSES else set()
+    left = set()
+    if PLANE_RATIO and passes >= REPAIR_PASSES:
+        with _points_only(work):
+            left = checks.flipped_faces(work, me=wm)
     if left:
         # the crease that makes a face fold may sit a face ring away (35188: 0.35 from it)
         for i in left:
@@ -1207,7 +1238,7 @@ def zip_slits(cp, on=None):
     n, nl = len(cp.vertices), len(cp.loops)
     if nl != 4 * len(cp.polygons) or not n:
         return 0
-    lv = np.empty(nl, np.int64); cp.loops.foreach_get("vertex_index", lv)
+    lv = meshparts.corner_verts(cp)
     q = lv.reshape(-1, 4)
     a, b = q.ravel(), np.roll(q, -1, axis=1).ravel()
     key = np.minimum(a, b) * n + np.maximum(a, b)
@@ -1218,7 +1249,7 @@ def zip_slits(cp, on=None):
     adj = {}
     for x, y in zip((rk // n).tolist(), (rk % n).tolist(), strict=True):
         adj.setdefault(x, []).append(y); adj.setdefault(y, []).append(x)
-    co = np.empty(n * 3); cp.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
+    co = meshparts.positions(cp)
     new = co.copy()
     zw = np.zeros(n)                            # per point moved: the width of its slit
     seen = set()
@@ -1326,7 +1357,7 @@ def zip_slits(cp, on=None):
     moved = int((zw > 0).sum())
     widest = float(zw.max()) if moved else 0.0
     if moved:
-        cp.vertices.foreach_set("co", new.ravel())
+        cp.vertices.foreach_set("co", new.astype(np.float32).ravel())
         cp.update()
     ZIPPED[0], ZIPPED[1] = moved, widest
     return moved
@@ -1467,7 +1498,7 @@ def ties_any(orig, wm, cp, level):
     """W25c (rework 3, run 306): the cage faces of `wm` with a child in the copy `cp` of `level` that is a bow tie -
     its two render triangles (loop_triangles) face against each other - whose smaller triangle is larger than TIE_MIN
     and faces against the child's import face; and the sum of those triangles' areas. Returns (faces, area)."""
-    lt = np.empty(len(wm.polygons), np.int64); wm.polygons.foreach_get("loop_total", lt)
+    lt = meshparts.fget(wm.polygons, "loop_total", len(wm.polygons), np.int64)
     kids = lt * 4 ** (level - 1)
     if int(kids.sum()) != len(cp.polygons):
         return set(), 0.0
@@ -1476,14 +1507,14 @@ def ties_any(orig, wm, cp, level):
     k0 = lt0 * 4 ** (level - 1)
     on = None
     if int(k0.sum()) == len(cp.polygons):
-        fn = np.zeros(len(orig.polygons) * 3); orig.polygons.foreach_get("normal", fn)
+        fn = meshparts.fget(orig.polygons, "normal", len(orig.polygons) * 3)
         on = fn.reshape(-1, 3)[np.repeat(own_face, k0)]
     cp.calc_loop_triangles()
     nt = len(cp.loop_triangles)
-    tv_ = np.empty(nt * 3, np.int64); cp.loop_triangles.foreach_get("vertices", tv_)
-    tp = np.empty(nt, np.int64); cp.loop_triangles.foreach_get("polygon_index", tp)
-    co = np.empty(len(cp.vertices) * 3); cp.vertices.foreach_get("co", co)
-    p = co.reshape(-1, 3)[tv_.reshape(-1, 3)]
+    tv_ = meshparts.fget(cp.loop_triangles, "vertices", nt * 3, np.int64)
+    tp = meshparts.fget(cp.loop_triangle_polygons, "value", nt, np.int64)
+    co = meshparts.positions(cp)
+    p = co[tv_.reshape(-1, 3)]
     tn = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
     area = np.linalg.norm(tn, axis=1) / 2
     tn /= np.maximum(2 * area, 1e-30)[:, None]

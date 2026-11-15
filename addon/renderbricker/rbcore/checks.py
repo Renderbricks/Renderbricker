@@ -2,7 +2,7 @@
 import numpy as np
 from mathutils import Vector
 from mathutils.geometry import intersect_line_line_2d
-from . import config, workscene
+from . import config, meshparts, workscene
 
 
 def self_intersecting(cos):
@@ -100,9 +100,9 @@ def flipped_faces(ob, ev=None, me=None):
     starts = np.concatenate(([0], np.cumsum(sizes * 4 ** (config.LEVELS - 1))))
     n, m = len(me.polygons), len(ev.polygons)
     assert starts[-1] == m, (int(starts[-1]), m)
-    on = np.empty(n * 3); me.polygons.foreach_get("normal", on)
-    en = np.empty(m * 3); ev.polygons.foreach_get("normal", en)
-    ea = np.empty(m); ev.polygons.foreach_get("area", ea)
+    on = meshparts.fget(me.polygons, "normal", n * 3)
+    en = meshparts.fget(ev.polygons, "normal", m * 3)
+    ea = meshparts.fget(ev.polygons, "area", m)
     owner = np.repeat(own_face, np.diff(starts))
     dots = (en.reshape(-1, 3) * on.reshape(-1, 3)[owner]).sum(1)
     bad = set(np.unique(owner[(ea > 1e-12) & (dots < 0.0)]).tolist()) - skip

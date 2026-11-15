@@ -35,7 +35,7 @@ rule looked): W24a - W24e restrain close as W22 / W23 are restrained, W26 measur
 import numpy as np
 from mathutils.bvhtree import BVHTree
 
-from . import cagegeom, config, workscene
+from . import cagegeom, config, meshparts, workscene
 
 CONTACT = 1e-3              # mm: a point this close to another shell in the import touches it
 CONTACT_RIM = 0.08          # mm: a point of an open rim touches from this far
@@ -216,17 +216,14 @@ def _evaluate(work, level, topology, quality=None):
         try:
             # read in the type the mesh keeps (float32, int32): foreach_get converts item by item into any other
             # (run 306 w24_speed: 4x on the points) - float32 -> float64 is exact
-            co32 = np.zeros(len(me.vertices) * 3, np.float32)
-            me.vertices.foreach_get("co", co32)
-            co = co32.astype(np.float64)
+            co = meshparts.positions(me).ravel()
             topo = None
             if topology == "quads":
-                lv = np.zeros(len(me.loops), np.int32); me.loops.foreach_get("vertex_index", lv)
-                topo = lv.reshape(-1, 4).astype(np.int64)
+                topo = meshparts.corner_verts(me).reshape(-1, 4)
             elif topology:
-                lv = np.zeros(len(me.loops), np.int64); me.loops.foreach_get("vertex_index", lv)
-                le = np.zeros(len(me.loops), np.int64); me.loops.foreach_get("edge_index", le)
-                e2 = np.zeros(len(me.edges) * 2, np.int64); me.edges.foreach_get("vertices", e2)
+                lv = meshparts.corner_verts(me)
+                le = meshparts.corner_edges(me)
+                e2 = meshparts.edge_verts(me)
                 topo = (lv.reshape(-1, 4), e2.reshape(-1, 2), np.bincount(le, minlength=len(me.edges)))
         finally:
             ev.to_mesh_clear()
@@ -245,10 +242,23 @@ def _behind_cone(tree, p, loc, dist):
     behind every face whose closure holds the nearest point - on an edge or a corner all faces that share it (with
     the one face the tree gave its choice decided, 89678's rib corner at 2.3 / 0.5 / 0.8 was behind and its mirror
     twin beside), more than BESIDE x its distance."""
+    tol, way, beside = _tol(loc), p - loc, -BESIDE * dist     # once, not per face (the same values; A4)
     for _l, n_f, _f, d_f in tree.find_nearest_range(loc.tolist(), ASK_EDGE):
-        if d_f <= _tol(loc) and float((p - loc) @ np.array(n_f)) > -BESIDE * dist:
+        if d_f <= tol and float(way @ np.array(n_f)) > beside:
             return False
     return True
+
+
+def _widest(at, slit, cand):
+    """Of the rows `cand` (ascending): per point of `at` the first row with its largest slit - what the loop "a
+    larger slit replaces" kept (A4: a stable sort on the same floats). Returns (rows, their points)."""
+    if not len(cand):
+        return cand, at[cand]
+    order = np.lexsort((cand, -slit[cand], at[cand]))
+    v = at[cand][order]
+    first = np.r_[True, v[1:] != v[:-1]]
+    rows = cand[order][first]
+    return rows, at[rows]
 
 
 def _to_segments(p, a, b, chunk=2_000_000):
@@ -308,9 +318,9 @@ def _copy_parts(wm, lab, quads, shells, level):
     of a shell: the edges of its quads used once. The same points, quads and order as _shell_parts; the rim edges in
     another order and direction (only their nearest distance is read). None when the counts do not agree."""
     nf = len(wm.polygons)
-    ls = np.zeros(nf, np.int32); wm.polygons.foreach_get("loop_start", ls)
-    lt = np.zeros(nf, np.int32); wm.polygons.foreach_get("loop_total", lt)
-    lv = np.zeros(len(wm.loops), np.int32); wm.loops.foreach_get("vertex_index", lv)
+    ls = meshparts.fget(wm.polygons, "loop_start", nf, np.int32)
+    lt = meshparts.fget(wm.polygons, "loop_total", nf, np.int32)
+    lv = meshparts.corner_verts(wm, np.int32)
     many = np.where(lt == 4, 4 ** level, lt * 4 ** (level - 1))
     if int(many.sum()) != len(quads):
         return None
@@ -429,10 +439,8 @@ def close(work, wm, K, free, q, d, quality=None, hold=(), planes=None):
         if round_ == CONTACT_ROUNDS or not (slit > SLIT_MIN).any():
             break
         step, widest = np.zeros((n, 3)), np.zeros(n)
-        for i in np.nonzero(slit > SLIT_MIN)[0].tolist():
-            v = rows[i, 0]
-            if slit[i] > widest[v]:             # of several shells touched: towards the widest slit
-                step[v], widest[v] = target[i] - p[i], slit[i]
+        win, v = _widest(rows[:, 0], slit, np.nonzero(slit > SLIT_MIN)[0])    # of several shells: the widest slit
+        step[v], widest[v] = target[win] - p[win], slit[win]
         step[still] = 0.0                       # W24a: the points that stay apart
         if planes is not None:                  # W24b: a point keeps to the flat faces it lies on
             step = _in_planes(step, planes)
@@ -515,11 +523,10 @@ def snap(cp, K, level, ev, hold=(), on=None):
         else:
             e_at = n + erows[:, 0] * 3 + erows[:, 1]
         at, touched = np.r_[at, e_at], np.r_[touched, erows[:, 2]]
-    co = np.zeros(len(cp.vertices) * 3); cp.vertices.foreach_get("co", co)
-    co = co.reshape(-1, 3)
-    lv = np.zeros(len(cp.loops), np.int64); cp.loops.foreach_get("vertex_index", lv)
-    le = np.zeros(len(cp.loops), np.int64); cp.loops.foreach_get("edge_index", le)
-    e2 = np.zeros(len(cp.edges) * 2, np.int64); cp.edges.foreach_get("vertices", e2)
+    co = meshparts.positions(cp)
+    lv = meshparts.corner_verts(cp)
+    le = meshparts.corner_edges(cp)
+    e2 = meshparts.edge_verts(cp).ravel()
     if len(lv) % 4:
         return 0
     shells = sorted(set(touched.tolist()))
@@ -555,10 +562,8 @@ def snap(cp, K, level, ev, hold=(), on=None):
         target[rows_s] = loc
     new = co.copy()
     widest = np.zeros(len(co))
-    for i in np.nonzero((slit > SLIT_MIN) & (slit <= SNAP_MAX))[0].tolist():
-        v = at[i]
-        if slit[i] > widest[v]:                 # of several shells touched: onto the widest slit's
-            new[v], widest[v] = target[i], slit[i]
+    win, v = _widest(at, slit, np.nonzero((slit > SLIT_MIN) & (slit <= SNAP_MAX))[0])   # onto the widest slit's
+    new[v], widest[v] = target[win], slit[win]
     _chords(new, widest, at, touched, trees, e2, le, len(cp.edges), still)
     quads = lv.reshape(-1, 4)
     k_near = np.nonzero((widest[quads] > 0).any(axis=1))[0]
@@ -609,8 +614,8 @@ def _chords(new, widest, at, touched, trees, e2, le, n_edges, still):
     the way that place lacks, CHORD_ADD times - of several the longest. Neither end may be held (`still`). Moves
     `new` and raises `widest` in place."""
     shell_of = {}
-    for i in range(len(at)):
-        shell_of.setdefault(int(at[i]), set()).add(int(touched[i]))
+    for a_, t_ in zip(np.asarray(at).tolist(), np.asarray(touched).tolist(), strict=True):
+        shell_of.setdefault(a_, set()).add(t_)
     e_open = e2.reshape(-1, 2)[np.bincount(le, minlength=n_edges) == 1]
     # only the open edges both of whose ends snap looks at and neither is held (an array test first - the loop over
     # every open edge of a copy cost more than the edges it measures: 3028, a plate 6 x 16, 26,282 faces)
@@ -631,12 +636,14 @@ def _chords(new, widest, at, touched, trees, e2, le, n_edges, still):
                 loc, nrm, _f, dist = tree.find_nearest(mid_l, SNAP_MAX)
                 if loc is None or dist <= SLIT_MIN:
                     continue
-                depth = float((mid - np.array(loc)) @ np.array(nrm))
+                loc = np.array(loc)
+                depth = float((mid - loc) @ np.array(nrm))
                 if depth < 0.7 * dist:          # behind the face, or beside the shell's rim
                     continue
-                step = (np.array(loc) - mid) * CHORD_ADD
+                step = (loc - mid) * CHORD_ADD
+                ls = np.linalg.norm(step)
                 for v in (a, b):
-                    if np.linalg.norm(step) > np.linalg.norm(push[v]):
+                    if ls > np.linalg.norm(push[v]):
                         push[v] = step
     hit = np.linalg.norm(push, axis=1) > 0
     if hit.any():

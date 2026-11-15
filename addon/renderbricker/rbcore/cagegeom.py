@@ -17,6 +17,8 @@ import math
 
 import numpy as np
 
+from . import meshparts
+
 HARD = 0.99                 # an edge creased this much (or open, or with more than two faces) is hard
 FLAT_NORMAL_DEG = 2.0       # a face whose shading normals all lie this close to its own normal is meant flat
 FLAT_DEG = 1.0              # faces joined across edges bending less than this are one flat face; two flat planes at
@@ -31,14 +33,14 @@ def arrays(wm):
     lf face, cn (corners,3) shading normal; per face ls first corner, lt corners; ev (ne,2) edge points, cr edge
     creases, vcr point creases, efaces faces per edge."""
     n, nf, ne, nl = len(wm.vertices), len(wm.polygons), len(wm.edges), len(wm.loops)
-    co = np.zeros(n * 3); wm.vertices.foreach_get("co", co)
-    fn = np.zeros(nf * 3); wm.polygons.foreach_get("normal", fn)
-    lv = np.zeros(nl, np.int64); wm.loops.foreach_get("vertex_index", lv)
-    le = np.zeros(nl, np.int64); wm.loops.foreach_get("edge_index", le)
-    ls = np.zeros(nf, np.int64); wm.polygons.foreach_get("loop_start", ls)
-    lt = np.zeros(nf, np.int64); wm.polygons.foreach_get("loop_total", lt)
-    ev = np.zeros(ne * 2, np.int64); wm.edges.foreach_get("vertices", ev)
-    cn = np.zeros(nl * 3); wm.corner_normals.foreach_get("vector", cn)
+    co = meshparts.positions(wm).ravel()       # every read in Blender's own type, widened after (exact)
+    fn = meshparts.fget(wm.polygons, "normal", nf * 3)
+    lv = meshparts.corner_verts(wm)
+    le = meshparts.corner_edges(wm)
+    ls = meshparts.fget(wm.polygons, "loop_start", nf, np.int64)
+    lt = meshparts.fget(wm.polygons, "loop_total", nf, np.int64)
+    ev = meshparts.edge_verts(wm).ravel()
+    cn = meshparts.fget(wm.corner_normals, "vector", nl * 3)
     cr = np.zeros(ne, np.float32)
     at = wm.attributes.get("crease_edge")
     if at is not None:

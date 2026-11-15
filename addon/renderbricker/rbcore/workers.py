@@ -73,7 +73,7 @@ def _run_meshes(users, pick, weight, total_w, show_progress, wait=0, after=None,
         flushed = False
         while True:
             try:
-                memory.check_memory(me, max(config.VIEW_LEVEL, config.RENDER_LEVEL), memory.RESERVE_GB if wait else 0.0)
+                memory.check_memory(me, max(config.VIEW_LEVEL, config.RENDER_LEVEL), memory.reserve_gb() if wait else 0.0)
                 short = None
                 break
             except memory.MemoryShortage as e:
@@ -134,7 +134,7 @@ def _run_worker_meshes(users, pick, weight, ledger, after=None, flush=None):
         need = memory.memory_need_gb(copies.original_of(me), level)
         booked = False
         if need > memory.LEDGER_BIG_GB:
-            ok, others, free = ledger.take(need, memory.RESERVE_GB)
+            ok, others, free = ledger.take(need, memory.reserve_gb())
             if not ok:
                 queue.append(me)
                 if any(memory.memory_need_gb(copies.original_of(m), level) <= memory.LEDGER_BIG_GB for m in queue):
@@ -160,7 +160,7 @@ def _run_worker_meshes(users, pick, weight, ledger, after=None, flush=None):
             booked = True
         else:
             try:
-                memory.check_memory(me, level, memory.RESERVE_GB)
+                memory.check_memory(me, level, memory.reserve_gb())
             except memory.MemoryShortage as e:
                 queue.append(me)
                 if flush:
@@ -325,7 +325,7 @@ class SegmentWorkers:
                 if free is not None:
                     taking = sum(max(0.0, self.need.get(self.current[i], 0.0) + memory.SCENE_GB_BASE + memory.STEADY_GB
                                      - (memory.process_memory_of(self.procs[i].pid) or 0.0)) for i in running)
-                    if self._book(seg) + taking + memory.RESERVE_GB > free:
+                    if self._book(seg) + taking + memory.reserve_gb() > free:
                         k += 1
                         continue
             self.queue.pop(k)

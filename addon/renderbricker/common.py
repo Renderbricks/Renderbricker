@@ -105,6 +105,28 @@ def shader_too(context):
     return changed
 
 
+# ---------------------------------------------------------------- the problem list
+# A row names the part as well (UPDATES #63): Nicolas' importers name every object `part` and Blender counts them up,
+# so `part.7236` is the 7236th object of a scene, not a part number; the part is in the name of its mesh (2452.002).
+def part_name(me):
+    """The part a mesh is of: the name of its import without Blender's counter (2452.002 -> 2452)."""
+    import re
+    orig = core.original_of(me) or me
+    return re.sub(r"\.\d{3}$", "", orig.name)
+
+
+def add_problem(s, ob, me, info):
+    p = s.problems.add()
+    p.obj, p.part, p.info = ob.name, part_name(me), info
+    return p
+
+
+def problem_text(p):
+    """`part.7236 (2452): 2 folded faces left`; the part only when the object's name does not say it already."""
+    named = p.part and p.part != p.obj and not p.obj.startswith(p.part + ".")
+    return f"{p.obj} ({p.part}): {p.info}" if named else f"{p.obj}: {p.info}"
+
+
 # ---------------------------------------------------------------- what Convert headless does
 # One wording at every place - tooltip, the question before it starts, the guide, the console, the reference
 # (UPDATES #41: the maintainer had read "headless" as rendering without an open Blender; 2026-10-11: "Es muss

@@ -18,10 +18,12 @@ at the new point, from the same side of a sharp edge.
 
 Measures (run 221): 7052 L2/L3 line and corner like the import in Cycles and EEVEE, the EEVEE dent of 1.2.4 gone;
 3044 grain, head 3626, torso 3814, curved slope 93273 like the import."""
+import hashlib
+
 import bpy
 import numpy as np
 from mathutils.bvhtree import BVHTree
-from . import checks, config
+from . import checks, config, meshparts
 
 SHARP_DEG = 30.0      # a nearest point on a face turned further than this lies across a sharp edge: stay
 MIN_SLIDE = float(config.opt("--reparam-min", "2e-3"))   # relative to the part size: smaller slides stay - about one texel of the part's own texture
@@ -29,7 +31,7 @@ MIN_SLIDE = float(config.opt("--reparam-min", "2e-3"))   # relative to the part 
 
 
 def _arr(coll, attr, n, width, dtype=np.float64):
-    a = np.empty(n * width, dtype); coll.foreach_get(attr, a)
+    a = meshparts.fget(coll, attr, n * width, dtype)      # in Blender's own type, widened after (exact)
     return a.reshape(-1, width) if width > 1 else a
 
 
@@ -137,7 +139,7 @@ def _smaller_ties(new, moving, new0, moving0, quads, tied, n):
 
 def part_size(me):
     """The largest side of the bounding box of `me` - the scale of MIN_SLIDE."""
-    co = _arr(me.vertices, "co", len(me.vertices), 3)
+    co = meshparts.positions(me)
     return float(np.ptp(co, 0).max()) or 1.0
 
 
@@ -149,9 +151,9 @@ def mark(work):
     me = work.data
     if me.attributes.get(PARAM) is not None:
         return
-    lv = _arr(me.loops, "vertex_index", len(me.loops), 1, np.int64)
-    co = _arr(me.vertices, "co", len(me.vertices), 3)
-    me.attributes.new(PARAM, 'FLOAT_VECTOR', 'CORNER').data.foreach_set("vector", co[lv].ravel())
+    lv = meshparts.corner_verts(me)
+    co = meshparts.positions(me)
+    me.attributes.new(PARAM, 'FLOAT_VECTOR', 'CORNER').data.foreach_set("vector", co[lv].astype(np.float32).ravel())
     # boundary vertices, once per import instead of per copy (run 222): the subdivision keeps 1 along boundary edges
     lt = _arr(me.polygons, "loop_total", len(me.polygons), 1, np.int64)
     ls = np.cumsum(lt) - lt
@@ -161,7 +163,7 @@ def mark(work):
     rim = np.zeros(n, np.float32); rim[a_[lone]] = 1.0; rim[b_[lone]] = 1.0
     me.attributes.new(EDGE, 'FLOAT', 'POINT').data.foreach_set("value", rim)
     # connected shells (run 224: a point of a stud's fillet slid onto the plate surface 0.01 mm below - another shell)
-    ev = _arr(me.edges, "vertices", len(me.edges), 2, np.int64)
+    ev = meshparts.edge_verts(me)
     lab = np.arange(n)
     while len(ev):
         m = np.minimum(lab[ev[:, 0]], lab[ev[:, 1]])
@@ -180,7 +182,7 @@ def param_positions(cp):
     if a is None:
         return None
     v = _arr(a.data, "vector", len(cp.loops), 3)
-    lv = _arr(cp.loops, "vertex_index", len(cp.loops), 1, np.int64)
+    lv = meshparts.corner_verts(cp)
     P = np.empty((len(cp.vertices), 3)); P[lv] = v
     cp.attributes.remove(cp.attributes[PARAM])
     return P, lv
@@ -197,12 +199,12 @@ def uv_islands(me, layer):
     if key in _ISLANDS:
         return _ISLANDS[key]
     nl, nf = len(me.loops), len(me.polygons)
-    lv = _arr(me.loops, "vertex_index", nl, 1, np.int64)
+    lv = meshparts.corner_verts(me)
     lt = _arr(me.polygons, "loop_total", nf, 1, np.int64)
     ls = np.cumsum(lt) - lt
     face = np.repeat(np.arange(nf), lt)
     nxt = np.arange(nl) + 1; nxt[ls + lt - 1] = ls
-    uv = np.round(_arr(me.uv_layers[layer].data, "uv", nl, 2) * 1e6).astype(np.int64)
+    uv = np.round(meshparts.uvs(me, layer) * 1e6).astype(np.int64)
     a, b = lv, lv[nxt]; ua, ub = uv, uv[nxt]
     swap = a > b
     lo, hi = np.where(swap, b, a), np.where(swap, a, b)
@@ -223,13 +225,32 @@ def uv_islands(me, layer):
     return lab
 
 
+_TREES = {}           # A5: the island trees of the import fixed_uvs asked last - {"print": its points and triangles,
+                      # (layer, islands, island): (tree, triangles, centres)}; rebuilt per level and bake pass before
+
+
+def _island_tree(fp, layer_fp, kk, vco, tv, isl, tf):
+    """The tree of the triangles of UV island `kk` of the import, its triangles and their rounded centres - a pure
+    function of the import's points and triangles (`fp`) and of the islands of the layer (`layer_fp`): kept for the
+    import asked last."""
+    if _TREES.get("print") != fp:
+        _TREES.clear()
+        _TREES["print"] = fp
+    key = (layer_fp, int(kk))
+    if key not in _TREES:
+        tris = np.where(isl[tf] == kk)[0]
+        _TREES[key] = (BVHTree.FromPolygons(vco.tolist(), tv[tris].tolist()), tris,
+                       np.round(vco[tv[tris]].mean(1), 6))
+    return _TREES[key]
+
+
 def fixed_uvs(orig, cp, level, verts, P):
     """Surface-fixed UVs for the corners of `verts` (a vertex that could not slide to its import place, wholly or
     partly): the UV the import carries at the point nearest to the vertex's position P, within the UV island of the
     corner's original face - the texture stays at its import place there although the face did not get back."""
     lt0, own_face = checks.cage_faces(orig, cp)
     owner = np.repeat(own_face, lt0 * 4 ** (level - 1))
-    lv = _arr(cp.loops, "vertex_index", len(cp.loops), 1, np.int64)
+    lv = meshparts.corner_verts(cp)
     L = np.where(verts[lv])[0]
     if not len(L) or len(owner) * 4 != len(cp.loops):
         return 0
@@ -237,22 +258,23 @@ def fixed_uvs(orig, cp, level, verts, P):
     nt = len(orig.loop_triangles)
     tv = _arr(orig.loop_triangles, "vertices", nt, 3, np.int64)
     tl = _arr(orig.loop_triangles, "loops", nt, 3, np.int64)
-    tf = _arr(orig.loop_triangles, "polygon_index", nt, 1, np.int64)
-    vco = _arr(orig.vertices, "co", len(orig.vertices), 3)
+    tf = _arr(orig.loop_triangle_polygons, "value", nt, 1, np.int64)
+    vco = meshparts.positions(orig)
     cf = owner[L // 4]
     X = P[lv[L]]
+    fp = hashlib.blake2b(vco.tobytes() + tv.tobytes() + tf.tobytes(), digest_size=16).digest()
+    pair = lv[L] * len(orig.polygons) + cf          # a corner asks for its point and its import face only (A5)
     for layer in [u.name for u in orig.uv_layers]:
         if layer not in cp.uv_layers:
             continue
         isl = uv_islands(orig, layer)
-        uv0 = _arr(orig.uv_layers[layer].data, "uv", len(orig.loops), 2)
-        uvc = _arr(cp.uv_layers[layer].data, "uv", len(cp.loops), 2)
+        layer_fp = (layer, hashlib.blake2b(isl.tobytes(), digest_size=16).digest())
+        uv0 = meshparts.uvs(orig, layer)
+        uvc = meshparts.uvs(cp, layer)
         k = isl[cf]
         for kk in np.unique(k):
-            tris = np.where(isl[tf] == kk)[0]
-            bvh = BVHTree.FromPolygons(vco.tolist(), tv[tris].tolist())
+            bvh, tris, cen = _island_tree(fp, layer_fp, kk, vco, tv, isl, tf)
             j = np.where(k == kk)[0]
-            cen = np.round(vco[tv[tris]].mean(1), 6)
 
             def nearest(x, face):
                 """Of triangles at the same distance (within TIE): the one of the corner's own face, then the first
@@ -264,7 +286,10 @@ def fixed_uvs(orig, cp, level, verts, P):
                 if len(near) < 2:
                     return r
                 return min(near, key=lambda q: (tf[tris[q[2]]] != face, tuple(cen[q[2]])))
-            res = [nearest(x, f) for x, f in zip(X[j].tolist(), cf[j].tolist())]
+            # the corners of one point in one import face (up to four) ask the same: once each, the answer spread
+            _u, first, back = np.unique(pair[j], return_index=True, return_inverse=True)
+            once = [nearest(x, f) for x, f in zip(X[j[first]].tolist(), cf[j[first]].tolist(), strict=True)]
+            res = [once[b] for b in back.ravel().tolist()]
             got = np.array([r[2] is not None for r in res])
             if not got.any():
                 continue
@@ -273,7 +298,7 @@ def fixed_uvs(orig, cp, level, verts, P):
             T = tris[np.array([r[2] for r in res], np.int64)]
             W = _bary(loc, vco[tv[T, 0]], vco[tv[T, 1]], vco[tv[T, 2]])
             uvc[L[j]] = (W[:, :, None] * uv0[tl[T]]).sum(1)
-        cp.uv_layers[layer].data.foreach_set("uv", uvc.ravel())
+        cp.uv_layers[layer].data.foreach_set("uv", uvc.astype(np.float32).ravel())
     return len(L)
 
 
@@ -285,7 +310,7 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
     n = len(cp.vertices)
     if len(Pl) != n:
         return {"skipped": "topology"}
-    Ps = _arr(cp.vertices, "co", n, 3)
+    Ps = meshparts.positions(cp)
     nl, nf = len(cp.loops), len(cp.polygons)
     vn = _arr(cp.vertex_normals, "vector", n, 3)
 
@@ -449,17 +474,23 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
     tied0 = tied                                         # the smooth copy's own bow ties
 
     def fold_loop(new, moving, ties, sn=sn):
+        # only a quad with a moving point can put a point back (vb &= moving), and `moving` only shrinks: the tests
+        # on those quads alone, row by row the same arithmetic (run 306 perf_build, A3); `ref` does not change here
+        k = np.nonzero(moving[quads].any(1))[0]
+        qk = quads[k]
+        ref = sn[qk].sum(1); ref /= np.maximum(np.linalg.norm(ref, axis=1), 1e-30)[:, None]
+        on_k = on[k] if on is not None else None
+        free_k = ~tied[k] if ties else None
         for step in range(FOLD_STEPS + 1):
-            q = new[quads]
+            q = new[qk]
             qn = np.cross(q[:, 2] - q[:, 0], q[:, 3] - q[:, 1])
             qn /= np.maximum(np.linalg.norm(qn, axis=1), 1e-30)[:, None]
-            ref = sn[quads].sum(1); ref /= np.maximum(np.linalg.norm(ref, axis=1), 1e-30)[:, None]
             bad = (qn * ref).sum(1) < FOLD_COS
-            if on is not None:                           # nor turned against its original face (the fold check, W10b)
-                bad |= (qn * on).sum(1) < 0.0
+            if on_k is not None:                         # nor turned against its original face (the fold check, W10b)
+                bad |= (qn * on_k).sum(1) < 0.0
             if ties:                                     # W27: nor a bow tie the smooth copy did not have
-                bad |= bow_ties(q) & ~tied
-            vb = np.zeros(n, bool); vb[quads[bad].ravel()] = True
+                bad |= bow_ties(q) & free_k
+            vb = np.zeros(n, bool); vb[qk[bad].ravel()] = True
             vb &= moving
             if not vb.any():
                 break
@@ -485,7 +516,9 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
         went = np.linalg.norm(dt, axis=1) > 1e-6                 # has somewhere to go
         tc, lc, hc, rounds = [], [], [], 0
         for _ in range(COMPANY):
-            cand = np.unique(quads[bow_ties(raw_c[quads]) & ~tied0].ravel())
+            # a quad whose points all stand where the smooth copy has them is tied0's (A3): only the others asked
+            kq = np.nonzero((raw_c != Ps).any(1)[quads].any(1))[0]
+            cand = np.unique(quads[kq[bow_ties(raw_c[quads[kq]]) & ~tied0[kq]]].ravel())
             cand = cand[~asked[cand] & went[cand]]
             if not len(cand):
                 break
@@ -508,7 +541,8 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
     company = (0, 0, 0)
     if TIES and len(todo):
         slid = np.zeros(n, bool); slid[todo] = True
-        if (bow_ties(new[quads]) & slid[quads].any(1)).any():
+        ks = slid[quads].any(1)                          # (A3: the quads with a slid point only)
+        if bow_ties(new[quads[ks]]).any():
             tc, lc, hc, raw_c, rounds = companions()
             taken = 0
             if len(tc):
@@ -536,17 +570,21 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
     # final check, also after the snap back onto the surface: putting a vertex back can fold a quad whose other
     # vertices slid far (2552: 10 mm) - repeat until no quad with a slid vertex folds (each round puts at least one
     # vertex back, so it ends)
+    k = np.nonzero(moving[quads].any(1))[0]             # as fold_loop (A3): the quads with a moving point
+    qk = quads[k]
+    ref = sn[qk].sum(1); ref /= np.maximum(np.linalg.norm(ref, axis=1), 1e-30)[:, None]
+    on_k = on[k] if on is not None else None
+    free_k = ~tied[k] if TIES else None
     while True:
-        q = new[quads]
+        q = new[qk]
         qn = np.cross(q[:, 2] - q[:, 0], q[:, 3] - q[:, 1])
         qn /= np.maximum(np.linalg.norm(qn, axis=1), 1e-30)[:, None]
-        ref = sn[quads].sum(1); ref /= np.maximum(np.linalg.norm(ref, axis=1), 1e-30)[:, None]
         bad = (qn * ref).sum(1) < FOLD_COS
-        if on is not None:
-            bad |= (qn * on).sum(1) < 0.0
+        if on_k is not None:
+            bad |= (qn * on_k).sum(1) < 0.0
         if TIES:
-            bad |= bow_ties(q) & ~tied
-        vb = np.zeros(n, bool); vb[quads[bad].ravel()] = True
+            bad |= bow_ties(q) & free_k
+        vb = np.zeros(n, bool); vb[qk[bad].ravel()] = True
         vb &= moving
         if not vb.any():
             break
@@ -581,7 +619,7 @@ def slide(cp, Pl, lv, orig=None, level=None, stay=None):
     ln = cn
     ln[L] = nn
 
-    cp.vertices.foreach_set("co", new.ravel())
+    cp.vertices.foreach_set("co", new.astype(np.float32).ravel())
     if FREE_NORMALS:
         # free custom normals (a float vector per corner): 8x faster to set, but 12 instead of 4 bytes per corner -
         # Optimus 328 -> 508 MB and slower saving (run 222)

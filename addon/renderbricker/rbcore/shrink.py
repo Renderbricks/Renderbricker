@@ -41,10 +41,13 @@ SHRINK_FREE = "_shrink_free"        # report key: points of the cage that are le
 SHRINK_APART = "_shrink_apart"      # report key: points of the cage that stay apart (welding, stage 9; W24a)
 
 
-def _regions(wm):
+def _regions(wm, lv=None, lt=None):
     """The smooth regions of `wm`: faces joined by edges that are not fully creased. Returns a list of face index
-    arrays."""
+    arrays. (A6, run 306 perf_build: from the corner arrays - the edge keys in the order the faces' edge_keys gave
+    them, the same unions in the same order, so the same roots and the same order of the regions.)"""
     nf = len(wm.polygons)
+    if not nf:
+        return []
     parent = list(range(nf))
 
     def find(i):
@@ -57,33 +60,54 @@ def _regions(wm):
     crease = np.zeros(len(wm.edges), np.float32)
     if ce is not None:
         ce.data.foreach_get("value", crease)
-    key_index = {e.key: e.index for e in wm.edges}
-    edge_faces = {}
-    for p in wm.polygons:
-        for k in p.edge_keys:
-            edge_faces.setdefault(k, []).append(p.index)
-    for k, fs in edge_faces.items():
-        if len(fs) == 2 and crease[key_index[k]] < 0.99:
-            a, b = find(fs[0]), find(fs[1])
-            if a != b:
-                parent[a] = b
-    roots = np.array([find(i) for i in range(nf)])
-    return [np.nonzero(roots == r)[0] for r in np.unique(roots)]
+    nv = len(wm.vertices)
+    if lv is None:
+        lv = meshparts.corner_verts(wm)
+        lt = meshparts.fget(wm.polygons, "loop_total", nf, np.int64)
+    ls = np.cumsum(lt) - lt
+    nxt = np.arange(len(lv)) + 1
+    nxt[ls + lt - 1] = ls
+    a, b = lv, lv[nxt]
+    key = np.minimum(a, b) * nv + np.maximum(a, b)      # MeshPolygon.edge_keys: corner i to corner i + 1, sorted
+    face = np.repeat(np.arange(nf), lt)
+    ev = meshparts.edge_verts(wm)
+    ekey = ev.min(axis=1) * nv + ev.max(axis=1)
+    eorder = np.argsort(ekey, kind="stable")             # {e.key: e.index}: the last edge of a key wins
+    es = ekey[eorder]
+    last = np.r_[es[1:] != es[:-1], True]
+    ukey, uidx = es[last], eorder[last]
+    order = np.argsort(key, kind="stable")               # the faces of a key in the order they gave it
+    ks = key[order]
+    start = np.nonzero(np.r_[True, ks[1:] != ks[:-1]])[0]
+    count = np.diff(np.r_[start, len(ks)])
+    two = start[count == 2]                              # keys of two faces, in the order of their first corner
+    two = two[np.argsort(order[two], kind="stable")]
+    f0, f1 = face[order[two]], face[order[two + 1]]
+    soft = crease[uidx[np.searchsorted(ukey, ks[two])]] < 0.99
+    for fa, fb in zip(f0[soft].tolist(), f1[soft].tolist(), strict=True):
+        ra, rb = find(fa), find(fb)
+        if ra != rb:
+            parent[ra] = rb
+    roots = np.array([find(i) for i in range(nf)], np.int64)
+    by = np.argsort(roots, kind="stable")                # per root its faces ascending, the roots ascending
+    cut = np.nonzero(np.diff(roots[by]))[0] + 1
+    return np.split(by, cut) if nf else []
 
 
-def _cylinder(wm, faces, co):
-    """(point on the axis, axis) of the region `faces` if it is a whole cylinder, else None."""
+def _cylinder(wm, faces, co, fn_all=None, area_all=None, pts=None):
+    """(point on the axis, axis) of the region `faces` if it is a whole cylinder, else None. (A6: the face normals
+    and areas of all faces and the region's points can be given as arrays - the same values.)"""
     if len(faces) < 4:
         return None
-    fn = np.array([wm.polygons[i].normal[:] for i in faces])
-    area = np.array([wm.polygons[i].area for i in faces])
+    fn = fn_all[faces] if fn_all is not None else np.array([wm.polygons[i].normal[:] for i in faces])
+    area = area_all[faces] if area_all is not None else np.array([wm.polygons[i].area for i in faces])
     if area.sum() <= 0:
         return None
     _w, vec = np.linalg.eigh((fn * area[:, None]).T @ fn)
     axis = vec[:, 0]
     if np.abs(fn @ axis).max() > SHRINK_SQUARE:
         return None
-    pts = co[np.unique([v for i in faces for v in wm.polygons[i].vertices])]
+    pts = co[pts if pts is not None else np.unique([v for i in faces for v in wm.polygons[i].vertices])]
     u = np.cross(axis, [1.0, 0.0, 0.0] if abs(axis[0]) < 0.9 else [0.0, 1.0, 0.0])
     u /= np.linalg.norm(u)
     w = np.cross(axis, u)
@@ -114,37 +138,63 @@ def _limit_points(work, n):
         ev = work.evaluated_get(dg)
         me = ev.to_mesh()
         try:
-            co = np.zeros(len(me.vertices) * 3, np.float64)
-            me.vertices.foreach_get("co", co)
+            co = meshparts.positions(me)
         finally:
             ev.to_mesh_clear()
     finally:
         mod.levels = keep
-    return co.reshape(-1, 3)[:n]
+    return co[:n]
 
 
-def compensate_shrink(work, wm, free=()):
+def _cylinders(wm, target):
+    """The whole cylinders of the cage `wm` at the places `target`: per point the point on its axis and the axis
+    (the first cylinder that holds it), whether it is on one, and how many there are."""
+    n = len(wm.vertices)
+    centre, axis = np.zeros((n, 3)), np.zeros((n, 3))
+    on = np.zeros(n, bool)
+    found = 0
+    nf = len(wm.polygons)
+    lv = meshparts.corner_verts(wm)                     # A6: the faces' points, normals and areas as arrays
+    lt = meshparts.fget(wm.polygons, "loop_total", nf, np.int64)
+    fn_all = meshparts.fget(wm.polygons, "normal", nf * 3).reshape(-1, 3)
+    area_all = meshparts.fget(wm.polygons, "area", nf)
+    regs = _regions(wm, lv, lt)
+    freg = np.zeros(nf, np.int64)                       # the region of every face, the corners by region
+    if regs:
+        freg[np.concatenate(regs)] = np.repeat(np.arange(len(regs)), [len(f) for f in regs])
+    creg = np.repeat(freg, lt)
+    corder = np.argsort(creg, kind="stable")
+    cut = np.searchsorted(creg[corder], np.arange(len(regs) + 1))
+    for r, faces in enumerate(regs):
+        if len(faces) < 4:                              # (_cylinder's first test, before the points are asked)
+            continue
+        fpts = np.unique(lv[corder[cut[r]:cut[r + 1]]])
+        cyl = _cylinder(wm, faces, target, fn_all, area_all, fpts)
+        if cyl is None:
+            continue
+        found += 1
+        pts = fpts[~on[fpts]]
+        centre[pts], axis[pts], on[pts] = cyl[0], cyl[1], True
+    return centre, axis, on, found
+
+
+def compensate_shrink(work, wm, free=(), known=None):
     """Widen the whole cylinders of the cage `wm` (on the object `work` with its Subdivision modifier) square to
     their axes until the smooth surface has the import's distance from the axis again. `free`: indices of points
-    left as they are. Returns (points moved, largest move in mm, largest shrink left on them in mm, cylinders);
+    left as they are; `known` (a dict, B2): what this same cage gave before - its cylinders are read from it if there
+    and kept in it if not. Returns (points moved, largest move in mm, largest shrink left on them in mm, cylinders);
     keeps the old places for undo_shrink."""
     n = len(wm.vertices)
     if not n or not len(wm.polygons) or work.modifiers.get("Subdivision") is None:
         return 0, 0.0, 0.0, 0
-    target = np.zeros(n * 3, np.float64)
-    wm.vertices.foreach_get("co", target)
-    target = target.reshape(-1, 3)
-    centre, axis = np.zeros((n, 3)), np.zeros((n, 3))
-    on = np.zeros(n, bool)
-    found = 0
-    for faces in _regions(wm):
-        cyl = _cylinder(wm, faces, target)
-        if cyl is None:
-            continue
-        found += 1
-        pts = np.unique([v for i in faces for v in wm.polygons[i].vertices])
-        pts = pts[~on[pts]]
-        centre[pts], axis[pts], on[pts] = cyl[0], cyl[1], True
+    target = meshparts.positions(wm)
+    if known is not None and "cylinders" in known:      # B2: the same cage to the bit - the same cylinders
+        centre, axis, on, found = known["cylinders"]
+        on = on.copy()
+    else:
+        centre, axis, on, found = _cylinders(wm, target)
+        if known is not None:
+            known["cylinders"] = (centre, axis, on.copy(), found)
     on[list(free)] = False
     if not on.any():
         return 0, 0.0, 0.0, found
@@ -159,6 +209,7 @@ def compensate_shrink(work, wm, free=()):
     _ids, isl = np.unique(meshparts.point_islands(wm), return_inverse=True)
     k = len(_ids)
     co, best, best_left, reach = target.copy(), target.copy(), np.full(k, np.inf), None
+    best_out = np.zeros(n)                              # A6: the shrink left measured in each island's best round
     active = np.ones(k, bool)
     for round_ in range(SHRINK_ROUNDS + 1):
         out = ((target - _limit_points(work, n)) * radial).sum(axis=1)     # > 0: the surface lies nearer the axis
@@ -172,6 +223,7 @@ def compensate_shrink(work, wm, free=()):
         better = active & (left < best_left)
         take = better[isl]
         best[take], best_left[better] = co[take], left[better]
+        best_out[take] = out[take]
         if round_:
             active &= better                        # a round that leaves more than the one before ends the island
         active &= ~((round_ == SHRINK_ROUNDS) | (left < SHRINK_MIN))
@@ -191,7 +243,9 @@ def compensate_shrink(work, wm, free=()):
     moved = np.linalg.norm(co - target, axis=1)
     if not (moved > SHRINK_MIN).any():
         return 0, 0.0, 0.0, found
-    rest = np.maximum(((target - _limit_points(work, n)) * radial).sum(axis=1), 0.0)[on]
+    # the shrink left on the final cage: each island stands as in its best round, and an island's smooth surface
+    # depends on its own points only - the measure of that round (A6: one subdivision less)
+    rest = best_out[on]
     WAS[wm.name] = (target, normals)
     return (int((moved > SHRINK_MIN).sum()), round(float(moved.max()), 5),
             round(float(rest.max()) if len(rest) else 0.0, 5), found)
@@ -203,14 +257,12 @@ def undo_shrink(work, wm, faces=None):
     was = WAS.get(wm.name)
     if was is None or len(was[0]) != len(wm.vertices):
         return 0
-    co = np.zeros(len(wm.vertices) * 3, np.float64)
-    wm.vertices.foreach_get("co", co)
-    co = co.reshape(-1, 3)
+    co = meshparts.positions(wm)
     pick = np.ones(len(co), bool)
     if faces is not None:
         lab = meshparts.point_islands(wm)
-        lv = np.empty(len(wm.loops), np.int64); wm.loops.foreach_get("vertex_index", lv)
-        ls = np.empty(len(wm.polygons), np.int64); wm.polygons.foreach_get("loop_start", ls)
+        lv = meshparts.corner_verts(wm)
+        ls = meshparts.fget(wm.polygons, "loop_start", len(wm.polygons), np.int64)
         pick = np.isin(lab, lab[lv[ls[np.asarray(sorted(faces), np.int64)]]])
     back = pick & (np.abs(co - was[0]).max(axis=1) > 0)
     if faces is None or back.all() or pick.all():
@@ -504,6 +556,41 @@ def compensate(work, wm, free=(), quality=None, apart=(), still=()):
             mod.use_custom_normals = keep
 
 
+_KNOWN = {}                 # B2: what the last cage compensated gave that depends on its arrays and `free` only
+
+
+def _same(a, b, skip=()):
+    """The arrays of two cages (cagegeom.arrays) the same to the bit - but for the keys `skip`."""
+    if a.keys() != b.keys():
+        return False
+    for k, x in a.items():
+        if k in skip:
+            continue
+        y = b[k]
+        if isinstance(x, np.ndarray) or isinstance(y, np.ndarray):
+            x, y = np.asarray(x), np.asarray(y)
+            if x.dtype != y.dtype or x.shape != y.shape or x.tobytes() != y.tobytes():
+                return False
+        elif x != y:
+            return False
+    return True
+
+
+def _known(T, free, flat):
+    """B2 (run 306 perf_build): a refit (W25b, W25c) compensates the cage again from the import's places. classes,
+    contacts.find and W19's cylinders are pure functions of the cage's arrays, `free` and the flat faces; the shading
+    normals (T["cn"]) enter them only through `flat` (cagegeom.flat_faces) - undo_shrink encodes them again and they
+    change in the last bits (13765, 20595: up to 0.0005), so `flat` is made each time and compared instead. Kept for
+    the last cage: the same dict when the arrays but the shading normals, `free` and `flat` are the same to the bit."""
+    free = list(free)
+    if (_KNOWN.get("free") == free and "T" in _KNOWN and _same(_KNOWN["T"], T, skip=("cn",))
+            and np.array_equal(_KNOWN["flat"], flat)):
+        return _KNOWN
+    _KNOWN.clear()
+    _KNOWN.update({"T": T, "free": free, "flat": flat})
+    return _KNOWN
+
+
 def _compensate(work, wm, free, quality, apart=(), still=()):
     out = {"points": 0, "max": 0.0, "left": 0.0, "cylinders": 0, "chain_points": 0, "surface_points": 0,
            "coarse_left": 0, "contact_points": 0, "contact_moved": 0, "snap": None}
@@ -515,13 +602,14 @@ def _compensate(work, wm, free, quality, apart=(), still=()):
     normals = np.zeros(len(wm.loops) * 3, np.float32)
     wm.corner_normals.foreach_get("vector", normals)
     _roots, flat = cagegeom.flat_faces(T)
-    C = cagegeom.classes(T, free, flat)
-    K = contacts.find(wm, T, flat, C["planes"])     # W24: who touches whom, in the import's places
+    known = _known(T, free, flat)
+    if "C" not in known:
+        known["C"] = cagegeom.classes(T, free, flat)
+        known["K"] = contacts.find(wm, T, flat, known["C"]["planes"])     # W24: who touches whom, at the import's places
+    C, K = known["C"], known["K"]
     out["snap"] = (K, T["ev"], tuple(apart))        # W26 closes the copies' seams with it
-    _pts19, _max19, left19, out["cylinders"] = compensate_shrink(work, wm, free)
-    x = np.zeros(n * 3, np.float64)
-    wm.vertices.foreach_get("co", x)
-    x19 = x.reshape(-1, 3).copy()                   # the cage as W19 left it (with its normals set, if it moved any)
+    _pts19, _max19, left19, out["cylinders"] = compensate_shrink(work, wm, free, known)
+    x19 = meshparts.positions(wm)                   # the cage as W19 left it (with its normals set, if it moved any)
     d = x19 - q
     moved = np.linalg.norm(d, axis=1) > 1e-6        # W19's points: done, the others build on their places
     contact = np.zeros(n, bool)                     # W22k: the points with a contact row
@@ -543,9 +631,7 @@ def _compensate(work, wm, free, quality, apart=(), still=()):
         d, out["contact_moved"], _slit = contacts.close(work, wm, K, free, q, d, quality, hold=apart,
                                                         planes=C["planes"])
         _set_points(wm, q + d)
-    x = np.zeros(n * 3, np.float64)
-    wm.vertices.foreach_get("co", x)
-    x = x.reshape(-1, 3)
+    x = meshparts.positions(wm)
     if np.any(x != x19):        # the normals as they were, on the new places - only if W22 to W24 moved a point (an
         wm.normals_split_custom_set(normals.reshape(-1, 3))   # untouched cage gains no custom normals; review, Task 5)
     far = np.linalg.norm(x - q, axis=1)

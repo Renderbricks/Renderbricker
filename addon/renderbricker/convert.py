@@ -498,7 +498,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                 self.tpoints = getattr(self, "tpoints", 0) + rep.get("t_verts", 0)
                 if rep.get("flipped"):
                     self.folds += rep["flipped"]
-                    p = s.problems.add(); p.obj = obs[0].name; p.info = f"{rep['flipped']} folded faces left"
+                    common.add_problem(s, obs[0], me, f"{rep['flipped']} folded faces left")
                 self.done += 1
             t0 = time.time()
             if s.use_cache and bpy.data.filepath:    # straight into the cache, never loaded here (run 66)
@@ -520,11 +520,19 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
                 _reps, rest = self.workers.merge(on_mesh)
                 phase("loading the copies into the scene", t0)
             items = dict(self.items)
-            for me in rest:                  # a worker failed: these meshes are done here
+            short = []
+            for me in rest:                  # a worker failed or retired for memory: these meshes are done here
+                try:                         # with the guard (UPDATES #66: a part too large for the workers)
+                    core.check_memory(me, max(self.levels))
+                except core.MemoryShortage as e:
+                    short.append(str(e))
+                    self.workers.skipped.append(me.name)
+                    continue
                 on_mesh(me, items[me], core.process(me, items[me]))
             if self.workers.skipped:
                 sk = self.workers.skipped
-                self.error = f"{len(sk)} meshes skipped for memory ({', '.join(sk[:3])})"
+                self.error = f"{len(sk)} meshes skipped for memory ({', '.join(sk[:3])})" + (
+                    f" - {short[0]}" if short else "")
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -556,7 +564,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         self.tpoints = getattr(self, "tpoints", 0) + rep.get("t_verts", 0)
         if rep.get("flipped"):
             self.folds += rep["flipped"]
-            p = s.problems.add(); p.obj = obs[0].name; p.info = f"{rep['flipped']} folded faces left"
+            common.add_problem(s, obs[0], obs[0].data, f"{rep['flipped']} folded faces left")
         self.done += 1
 
     def finish(self, context):
@@ -631,8 +639,7 @@ class MECSUB_OT_check(_Stepped, bpy.types.Operator):
             gv, ge = common.seam_gaps(me, cp, lv)
         if f or gv > 1e-3 or ge > 1e-3:
             self.bad += 1
-            p = s.problems.add(); p.obj = obs[0].name
-            p.info = f"folds {f}, seam gap {max(gv, ge):.3f}"
+            common.add_problem(s, obs[0], me, f"folds {f}, seam gap {max(gv, ge):.3f}")
 
     def finish(self, context):
         s = context.scene.mecsub
