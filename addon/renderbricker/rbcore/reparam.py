@@ -18,6 +18,8 @@ at the new point, from the same side of a sharp edge.
 
 Measures (run 221): 7052 L2/L3 line and corner like the import in Cycles and EEVEE, the EEVEE dent of 1.2.4 gone;
 3044 grain, head 3626, torso 3814, curved slope 93273 like the import."""
+import hashlib
+
 import bpy
 import numpy as np
 from mathutils.bvhtree import BVHTree
@@ -223,6 +225,25 @@ def uv_islands(me, layer):
     return lab
 
 
+_TREES = {}           # A5: the island trees of the import fixed_uvs asked last - {"print": its points and triangles,
+                      # (layer, islands, island): (tree, triangles, centres)}; rebuilt per level and bake pass before
+
+
+def _island_tree(fp, layer_fp, kk, vco, tv, isl, tf):
+    """The tree of the triangles of UV island `kk` of the import, its triangles and their rounded centres - a pure
+    function of the import's points and triangles (`fp`) and of the islands of the layer (`layer_fp`): kept for the
+    import asked last."""
+    if _TREES.get("print") != fp:
+        _TREES.clear()
+        _TREES["print"] = fp
+    key = (layer_fp, int(kk))
+    if key not in _TREES:
+        tris = np.where(isl[tf] == kk)[0]
+        _TREES[key] = (BVHTree.FromPolygons(vco.tolist(), tv[tris].tolist()), tris,
+                       np.round(vco[tv[tris]].mean(1), 6))
+    return _TREES[key]
+
+
 def fixed_uvs(orig, cp, level, verts, P):
     """Surface-fixed UVs for the corners of `verts` (a vertex that could not slide to its import place, wholly or
     partly): the UV the import carries at the point nearest to the vertex's position P, within the UV island of the
@@ -241,18 +262,19 @@ def fixed_uvs(orig, cp, level, verts, P):
     vco = meshparts.positions(orig)
     cf = owner[L // 4]
     X = P[lv[L]]
+    fp = hashlib.blake2b(vco.tobytes() + tv.tobytes() + tf.tobytes(), digest_size=16).digest()
+    pair = lv[L] * len(orig.polygons) + cf          # a corner asks for its point and its import face only (A5)
     for layer in [u.name for u in orig.uv_layers]:
         if layer not in cp.uv_layers:
             continue
         isl = uv_islands(orig, layer)
+        layer_fp = (layer, hashlib.blake2b(isl.tobytes(), digest_size=16).digest())
         uv0 = meshparts.uvs(orig, layer)
         uvc = meshparts.uvs(cp, layer)
         k = isl[cf]
         for kk in np.unique(k):
-            tris = np.where(isl[tf] == kk)[0]
-            bvh = BVHTree.FromPolygons(vco.tolist(), tv[tris].tolist())
+            bvh, tris, cen = _island_tree(fp, layer_fp, kk, vco, tv, isl, tf)
             j = np.where(k == kk)[0]
-            cen = np.round(vco[tv[tris]].mean(1), 6)
 
             def nearest(x, face):
                 """Of triangles at the same distance (within TIE): the one of the corner's own face, then the first
@@ -264,7 +286,10 @@ def fixed_uvs(orig, cp, level, verts, P):
                 if len(near) < 2:
                     return r
                 return min(near, key=lambda q: (tf[tris[q[2]]] != face, tuple(cen[q[2]])))
-            res = [nearest(x, f) for x, f in zip(X[j].tolist(), cf[j].tolist())]
+            # the corners of one point in one import face (up to four) ask the same: once each, the answer spread
+            _u, first, back = np.unique(pair[j], return_index=True, return_inverse=True)
+            once = [nearest(x, f) for x, f in zip(X[j[first]].tolist(), cf[j[first]].tolist(), strict=True)]
+            res = [once[b] for b in back.ravel().tolist()]
             got = np.array([r[2] is not None for r in res])
             if not got.any():
                 continue
