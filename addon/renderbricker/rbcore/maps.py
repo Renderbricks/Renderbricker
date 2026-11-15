@@ -37,6 +37,10 @@ NODE = "rb_map_"                # names of the nodes of a switch
 IMAGE_OF, IMAGE_SRC = "rb_map_of", "rb_map_src"     # image: the importer's image it stands in for, the shape
 MAP_SCENE = "RB map scene"
 FRAME_TEXT = "Renderbricker: bevel map baked from the smooth copy"
+# the Physicalbricks library (UPDATES #59): its node groups and the mark on every node of its network in a
+# material. Names only - this module imports nothing of the library (workers and batch scripts run without it)
+LIBRARY_PREFIX = "rb_phys_"
+LIBRARY_NET = "rb_phys_net"
 
 SMOOTH_MAPS = config.opt("--smooth-maps", "0") == "1"     # set by the add-on or the command line
 # The map is as large as the importer's map (mostly 256 px): about a second a part. Twice and four times that size
@@ -113,8 +117,10 @@ def _slot_of(tree):
 
 
 def _trees_behind(tree, target):
-    """The node groups that feed the material outputs of one render engine (target 'EEVEE' or 'CYCLES'; an output
-    for all engines counts for both), with the groups inside them."""
+    """The node groups that feed the material output one render engine renders (target 'EEVEE' or 'CYCLES'), with
+    the groups inside them. The output is the one Blender picks, tree.get_output_node(target): the active output of
+    that target before one for all engines (node_shader_tree.cc, ntreeShaderOutputNode) - with Physicalbricks a Lite
+    material keeps its output for all engines beside the network's own two (UPDATES #59)."""
     found = set()
 
     def inside(t, depth):
@@ -123,7 +129,8 @@ def _trees_behind(tree, target):
                 found.add(n.node_tree)
                 inside(n.node_tree, depth + 1)
 
-    todo = [n for n in tree.nodes if n.type == 'OUTPUT_MATERIAL' and n.target in (target, 'ALL')]
+    out = tree.get_output_node(target)
+    todo = [] if out is None else [out]
     seen = set(todo)
     while todo:
         n = todo.pop()
@@ -164,12 +171,17 @@ def find_maps(orig):
 
 # ---------------------------------------------------------------- the part's bevel
 def find_bevel(orig):
-    """(Bevel node, the group nodes that lead to it from the material's tree) - the first one found, or None."""
+    """(Bevel node, the group nodes that lead to it from the material's tree) - the first one found, or None. The
+    Physicalbricks network is not the part's: its nodes (LIBRARY_NET) and its groups (LIBRARY_PREFIX, Bevel nodes of
+    the print and edge groups among them) are passed over, so the part's own Bevel node is found in both modes."""
     def walk(tree, stack):
         for n in tree.nodes:
-            if n.type == 'BEVEL' and not n.mute:
+            if n.type == 'BEVEL' and not n.mute and not n.get(LIBRARY_NET):
                 return n, stack
         for n in tree.nodes:
+            if n.get(LIBRARY_NET) or (n.type == 'GROUP' and n.node_tree is not None
+                                      and n.node_tree.name.startswith(LIBRARY_PREFIX)):
+                continue
             if n.type == 'GROUP' and n.node_tree is not None and len(stack) < 8 and n not in stack:
                 found = walk(n.node_tree, stack + [n])
                 if found:
