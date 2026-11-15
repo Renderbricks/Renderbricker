@@ -12,7 +12,7 @@ new run of this script on a Physicalbricks release (the maintainer's word).
           a worktree of it finds the same one)
 --commit  default: main
 --check   writes nothing; compares every vendored file byte for byte with the archive of the commit named in SOURCE
-          and prints VENDOR CHECK PASS, or the differing names and exits 1
+          (text files with LF line ends) and prints VENDOR CHECK PASS, or the differing names and exits 1
 """
 import argparse
 import io
@@ -27,6 +27,13 @@ TARGET = os.path.join(ROOT, "addon", "renderbricker", "physicalbricks")
 LIBRARY = "physicalbricks/blender/physicalbricks"
 SKIP_DIRS = {"__pycache__"}
 SKIP_ENDINGS = (".pyc", ".blend1")
+
+
+def text_lf(data):
+    """Text files with LF line ends: git's autocrlf turns them to CRLF in a Windows checkout and back in the
+    repository, and `git archive` follows the same setting - so files are written and compared with LF (binary
+    files, the .blend, as they are)."""
+    return data if b"\0" in data else data.replace(b"\r\n", b"\n")
 
 
 def git(repo, *args):
@@ -46,7 +53,7 @@ def archive(repo, commit):
     with tarfile.open(fileobj=io.BytesIO(data)) as tar:
         for member in tar.getmembers():
             if member.isfile():
-                files[member.name] = tar.extractfile(member).read()
+                files[member.name] = text_lf(tar.extractfile(member).read())
     return files
 
 
@@ -60,7 +67,7 @@ def on_disk():
                 continue
             full = os.path.join(dirpath, name)
             with open(full, "rb") as f:
-                files[os.path.relpath(full, TARGET).replace(os.sep, "/")] = f.read()
+                files[os.path.relpath(full, TARGET).replace(os.sep, "/")] = text_lf(f.read())
     return files
 
 
