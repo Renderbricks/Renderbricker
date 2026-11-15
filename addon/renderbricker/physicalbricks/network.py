@@ -152,12 +152,15 @@ def effect_value(key, value):
         return [max(v, 0.0) for v in from_acescg(value)] + [1.0]
     return value
 
-def build_network(material, with_surface=None, reading=None):
+def build_network(material, with_surface=None, reading=None, after=()):
     """Build the physical network of one material; False when the material lacks the Mecabricks nodes it reads, or
     when the colour of none of its base nodes is known (colour_id_of: no mb_colour_id and no id in the name) - such a
     material keeps its tree untouched and is counted as skipped, never coloured by a guess.
     with_surface: with the surface node (None: as the context scene's sliders say); reading: what the material's
-    importer built (readers.read; None: read it now) - a tree no reader knows is skipped."""
+    importer built (readers.read; None: read it now) - a tree no reader knows is skipped.
+    after: functions(material) that add the host's nodes (host.AFTER_NETWORK, from switch.set_material_system),
+    called on the built network before its layout, so it is placed once with them (speed profile run 261115: it was
+    placed here and again after them, 0.32 s on 136 materials)."""
     from . import records
     tree = material.node_tree
     nodes, links = tree.nodes, tree.links
@@ -465,8 +468,12 @@ def build_network(material, with_surface=None, reading=None):
                     phys.inputs[name].default_value = base.inputs[name].default_value
             volume = phys
         for name, key in EFFECT_INPUTS.items():           # pearl, metallic, chrome
-            if name in phys.inputs and key in record.get('effect', {}):
+            if name in phys.inputs and key in record.get('effect', {}):   # presence, never truthiness: coat 0
                 phys.inputs[name].default_value = effect_value(key, record['effect'][key])
+        if 'Flake Own Color' in phys.inputs:              # group version 43, as SSS Own Radius (39): the metallic
+            # share in the record's own Flake Color where it has one, else in the body colour, which arrives through a
+            # link and so cannot be copied into Flake Color
+            phys.inputs['Flake Own Color'].default_value = 1.0 if 'flake_acescg' in record.get('effect', {}) else 0.0
         for name in ('Shader',) + EEVEE_PARAMS:
             target = pmix.inputs.get(name + str(index))
             if target is None:
@@ -565,5 +572,7 @@ def build_network(material, with_surface=None, reading=None):
                 links.new(source, add.inputs[0])
             links.new(emit.outputs[0], add.inputs[1])
             links.new(add.outputs[0], out.inputs['Surface'])
+    for host_nodes in after:
+        host_nodes(material)
     layout(tree, made)                             # the steps and their frames: layout.network_columns
     return True

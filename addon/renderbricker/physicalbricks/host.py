@@ -6,7 +6,11 @@ nothing of the add-on itself.
                           yellowing, glow, parts jitter ...) or None
     parts_of(scene)       the objects that are Mecabricks parts (Parts Jitter moves them)
     AFTER_NETWORK         functions(material), called after the network of a material is built: an add-on adds nodes
-                          of its own (marked NET, so that the way back to Mecabricks removes them)
+                          of its own (marked NET, so that the way back to Mecabricks removes them). They run before
+                          the network's layout (network.build_network's after): no outer frame yet, the unused
+                          sockets not yet hidden, and their nodes placed with the network's in one go. A hook that
+                          raises leaves the network without its layout; the file's next opening lays it
+                          (switch.upgrade_on_load)
     SURFACE_BRANCH        None, or function(tree, normal, scale, new) -> node | None: an extra surface branch between
                           the bevel normal and the physical shaders (Renderbricks Dev's surface layers); its node has
                           the outputs Normal, Height and Roughness Factor, optionally Grease

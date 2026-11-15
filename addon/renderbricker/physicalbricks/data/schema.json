@@ -224,6 +224,27 @@
               "minItems": 3,
               "maxItems": 3,
               "description": "chrome: the metal's F82 tint, linear Rec.709 (Blender Specular Tint of a metallic Principled, OpenPBR specular_color; run 144)"
+            },
+            "coat_weight": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "pearlescent and metal: the weight of the clear ABS skin over the pigment (Blender rb_phys_pearl Coat Weight since group version 43, Arnold coat); 1 without it. 297 / 147 / 189: 0 (run 162, materials version 25)"
+            },
+            "flake_acescg": {
+              "type": "array",
+              "description": "pearlescent and metal: the colour of the metallic share - the effect pigment's face-on reflection, linear ACEScg (Blender rb_phys_pearl Flake Color since group version 43, Arnold a second shader for the metallic share); the body colour without it. 297 (run 162 step 14, C3b; materials version 25)",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "sss_mm": {
+              "type": "number",
+              "minimum": 0,
+              "description": "pearlescent and metal: a Burley subsurface depth of the pigment layer in mm, radius the colour at 75 % saturation (Blender rb_phys_pearl Pigment SSS Depth since group version 43, Arnold subsurface); none without it or at 0. 127 / 297 / 147 / 189: 5 (run 162, materials version 25)"
             }
           }
         },

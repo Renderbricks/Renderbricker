@@ -1,6 +1,6 @@
 {
- "version": 24,
- "built": "2026-11-08",
+ "version": 25,
+ "built": "2026-11-14",
  "decoration": {
   "ink_roughness": 0.25,
   "ink_height_mm": 0.01,
@@ -2235,16 +2235,16 @@
    "ior": 1.56,
    "colour": {
     "rgb": [
-     0.959569,
-     0.613825,
-     0.074679
+     0.80487,
+     0.513924,
+     0.046176
     ],
     "source": "photo-matched"
    },
    "roughness": 0.1,
    "sources": {
     "ior": "SAN matrix 1.566 (refractiveindex.info, Sultanova), composition rule 1.565-1.57 [derived]",
-    "colour": "matched to the photo in the view ACES 2.0 + gamut compression (run 142 fit_display.py: the displayed body colour against the photo's, run 104's measure; dE2000 6.33 -> 0.13, then the user's pick from a series); user 01.11.2026: „127 Gold kann noch etwas rot/oranger. – A (Hue 88°, Chroma 67, L* 84 der Reihe gold_red)“ [measured]",
+    "colour": "matched to the Brick Colorstream photo, read with its Adobe RGB profile and balanced on its plate, in the view ACES 2.0 + gamut compression (run 162 step 2, variant B, run_gold.py, gold.json variants 127 B; chapter 12's body measure: dE2000 2.5 -> 0.1, colour only 0.03; L* 75.5 / C* 40.0 / h 92.1° against the photo's 75.4 / 40.0 / 92.1°); maintainer: „Es ist glaube ich eher B.“ [02:49] (13.11.2026; ENTSCHEIDUNGEN.md 261113 10:30) [user]",
     "roughness": "clean moulded surface 0.05-0.15 (run 44 probes, Mueller) [fitted]",
     "metallic": "0.2 for all pearl and metal colours (user 04.10.2026: \"Metallic alle 0.2\"; colour matched at 0.2, run 67) [user]",
     "base_roughness": "flake tilt spread 10-15 deg -> GGX alpha ~ tan(12 deg) -> roughness ~0.45 [derived]",
@@ -2253,7 +2253,8 @@
     "flake_roughness": "the platelets' spread as roughness 0.30 (series 0.20 / 0.30 / 0.45, run 142 roughness_series.py); user 01.11.2026: „Ich würde zur Sicherheit auf 0,3 gehen, was Rauheiten betrifft.“ [user]",
     "thin_film_nm": "silver-white pearl: TiO2 layer ~40-60 nm (first order, no colour); 0 = aluminium flakes [tune]",
     "thin_film_ior": "TiO2 ~2.4 [derived]",
-    "coat_ior": "the clear ABS skin over the pigment (SAN matrix) [derived]"
+    "coat_ior": "the clear ABS skin over the pigment (SAN matrix) [derived]",
+    "sss_mm": "Burley subsurface 5 mm on the pigment layer (run 162 step 4 b, run_gold3.py: the neck hole's step from the outer face -15.1 L* against the photo's -14.6, its chroma 56.6 against 56.0); maintainer: „Ne, wir wollen es nicht übertreiben. Wir nehmen 5 mm B.“ [02:54] (13.11.2026; ENTSCHEIDUNGEN.md 261113 12:07) [user]"
    },
    "effect": {
     "metallic": 0.2,
@@ -2263,7 +2264,8 @@
     "flake_roughness": 0.3,
     "thin_film_nm": 0,
     "thin_film_ior": 2.4,
-    "coat_ior": 1.56
+    "coat_ior": 1.56,
+    "sss_mm": 5.0
    },
    "availability": {
     "status": "legacy",
@@ -2703,35 +2705,45 @@
    "ior": 1.56,
    "colour": {
     "rgb": [
-     0.185353,
-     0.131448,
-     0.018092
+     0.139732,
+     0.107451,
+     0.055708
     ],
     "source": "photo-matched"
    },
    "roughness": 0.1,
    "sources": {
     "ior": "SAN matrix 1.566 (refractiveindex.info, Sultanova), composition rule 1.565-1.57 [derived]",
-    "colour": "matched to the photo in the view ACES 2.0 + gamut compression (run 142 fit_display.py: the displayed body colour against the photo's, run 104's measure; dE2000 1.66 -> 0.05); user 01.11.2026: „Chrome Silver fand ich bisher gut. 127 Gold kann noch etwas rot/oranger. Der Rest ist OK.“ [measured]",
+    "colour": "matched to the photo in run 162 step 11, variant A (run_gold9.py, gold9.json 147 results A; raw render against raw photo, no post correction, studio light, the view ACES 2.0; record fitted to mid-tones and shadows, the tint to the highlights: mid-tones 37.2 / 21.9 / 87.8°, shadows 16.8 / 16.1 / 85.0°, highlights 51.1 / 23.9 / 89.2°, contrast 32.5, cost 39.7); kept as A in steps 13 / 14; maintainer: „Also wir halten mal A fest“ [01:18] (sheet 9, 14.11.2026; ENTSCHEIDUNGEN.md 261114 11:13); 147 A (14.11.2026; ENTSCHEIDUNGEN.md 261114 15:00) [user]",
     "roughness": "clean moulded surface 0.05-0.15 (run 44 probes, Mueller) [fitted]",
-    "metallic": "0.2 for all pearl and metal colours (user 04.10.2026: \"Metallic alle 0.2\"; colour matched at 0.2, run 67) [user]",
+    "metallic": "0.2 -> 0.35 for 297, 147 and 189 (run 162 steps 8-14, run_gold9.py METALLIC); maintainer: „Metallic 0,35, das würde vermutlich schon gut funktionieren.“ [04:12] (13.11.2026; ENTSCHEIDUNGEN.md 261113 14:59, Metallic 0,35 für 297/147/189) [user]",
     "base_roughness": "flake tilt spread 10-15 deg -> GGX alpha ~ tan(12 deg) -> roughness ~0.45 [derived]",
     "flake_mm": "aluminium / mica effect pigment 10-30 um, sparkle spacing from close-up photos pending [tune]",
     "flake_tilt_deg": "platelets tilted up to 9 deg against the mould wall, one tilt per 0.03 mm cell: tested at 0 / 6 / 9 / 12 deg on the Gold / Silver / Titanium heads and set 70814-1 (run 151, briefing 261108_1103; 12 deg was the dark grain of 31.10.2026); maintainer 08.11.2026: „9° passt.“ [user]",
     "flake_roughness": "the platelets' spread as roughness 0.30 (series 0.20 / 0.30 / 0.45, run 142 roughness_series.py); user 01.11.2026: „Ich würde zur Sicherheit auf 0,3 gehen, was Rauheiten betrifft.“ [user]",
     "thin_film_nm": "silver-white pearl: TiO2 layer ~40-60 nm (first order, no colour); 0 = aluminium flakes [tune]",
     "thin_film_ior": "TiO2 ~2.4 [derived]",
-    "coat_ior": "the clear ABS skin over the pigment (SAN matrix) [derived]"
+    "coat_ior": "the clear ABS skin over the pigment (SAN matrix) [derived]",
+    "specular_tint_acescg": "the pigment's highlight in the material's tone (run 162 step 11, A, gold9.json 147 results A tint; fitted to the highlight band's C* and hue); maintainer: „Spekular muss in die Tonalität des Originalmaterials übergehen“ [05:15] (13.11.2026; ENTSCHEIDUNGEN.md 261113 14:59) [user]",
+    "coat_weight": "no clear skin over the pigment: 0 for 297, 147 and 189 (run 162 steps 9-14, run_gold9.py SKIN); maintainer: „Die Originalmaterialien haben kein Coat, denken ich. Aber wenn es eine generelle Einstellung ist, dann lass sie drin.“ (sheet 7, 14.11.2026; ENTSCHEIDUNGEN.md 261114 11:13) [user]",
+    "sss_mm": "Burley subsurface 5 mm on the pigment layer, as 297 and 189 (run 162 steps 6-14); maintainer: „Also auch hier für diese Teile gilt Subsurface Scattering“ [00:00] (13.11.2026; ENTSCHEIDUNGEN.md 261113 12:32) [user]"
    },
    "effect": {
-    "metallic": 0.2,
+    "metallic": 0.35,
     "base_roughness": 0.45,
     "flake_mm": 0.03,
     "flake_tilt_deg": 9.0,
     "flake_roughness": 0.3,
     "thin_film_nm": 0,
     "thin_film_ior": 2.4,
-    "coat_ior": 1.56
+    "coat_ior": 1.56,
+    "specular_tint_acescg": [
+     1.0,
+     0.7067,
+     0.0
+    ],
+    "coat_weight": 0.0,
+    "sss_mm": 5.0
    },
    "availability": {
     "status": "legacy",
@@ -3763,35 +3775,51 @@
    "ior": 1.56,
    "colour": {
     "rgb": [
-     0.470138,
-     0.29249,
-     0.000281
+     0.469399,
+     0.217454,
+     0.003251
     ],
     "source": "photo-matched"
    },
    "roughness": 0.1,
    "sources": {
     "ior": "SAN matrix 1.566 (refractiveindex.info, Sultanova), composition rule 1.565-1.57 [derived]",
-    "colour": "matched to the photo in the view ACES 2.0 + gamut compression (run 142 fit_display.py: the displayed body colour against the photo's, run 104's measure; dE2000 2.74 -> 1.25); user 01.11.2026: „Chrome Silver fand ich bisher gut. 127 Gold kann noch etwas rot/oranger. Der Rest ist OK.“ [measured]",
+    "colour": "matched to the photo in run 162 step 14, variant C3b (run_gold12.py, gold12.json 297 rows C3b; raw render against raw photo, no post correction, studio light, the view ACES 2.0; record and metal colour fitted by block Gauss-Newton to the target of C2's hue and chroma lifted 2.5 L*, highlights the photo's 90.7° at C* 58.8: cost 0.34 - mid-tones 57.8 / 55.2 / 84.5°, shadows 53.3 / 53.0 / 83.4°, highlights 69.8 / 58.9 / 90.6°, contrast 8.4); maintainer: „C3b“ (session, on sheet 12, 14.11.2026; ENTSCHEIDUNGEN.md 261114 15:00) [user]",
     "roughness": "clean moulded surface 0.05-0.15 (run 44 probes, Mueller) [fitted]",
-    "metallic": "0.2 for all pearl and metal colours (user 04.10.2026: \"Metallic alle 0.2\"; colour matched at 0.2, run 67) [user]",
+    "metallic": "0.2 -> 0.35 for 297, 147 and 189 (run 162 steps 8-14, run_gold9.py METALLIC, the metal look after the photos' own LDraw parts); maintainer: „Metallic 0,35, das würde vermutlich schon gut funktionieren.“ [04:12] (13.11.2026; ENTSCHEIDUNGEN.md 261113 14:59) [user]",
     "base_roughness": "flake tilt spread 10-15 deg -> GGX alpha ~ tan(12 deg) -> roughness ~0.45 [derived]",
     "flake_mm": "aluminium / mica effect pigment 10-30 um, sparkle spacing from close-up photos pending [tune]",
     "flake_tilt_deg": "platelets tilted up to 9 deg against the mould wall, one tilt per 0.03 mm cell: tested at 0 / 6 / 9 / 12 deg on the Gold / Silver / Titanium heads and set 70814-1 (run 151, briefing 261108_1103; 12 deg was the dark grain of 31.10.2026); maintainer 08.11.2026: „9° passt.“ [user]",
     "flake_roughness": "the platelets' spread as roughness 0.30 (series 0.20 / 0.30 / 0.45, run 142 roughness_series.py); user 01.11.2026: „Ich würde zur Sicherheit auf 0,3 gehen, was Rauheiten betrifft.“ [user]",
     "thin_film_nm": "silver-white pearl: TiO2 layer ~40-60 nm (first order, no colour); 0 = aluminium flakes [tune]",
     "thin_film_ior": "TiO2 ~2.4 [derived]",
-    "coat_ior": "the clear ABS skin over the pigment (SAN matrix) [derived]"
+    "coat_ior": "the clear ABS skin over the pigment (SAN matrix) [derived]",
+    "specular_tint_acescg": "the pigment's highlight in the material's tone, C2's tint kept in C3b (run 162 step 13 / 14, gold12.json 297 c2_tint; fitted to the highlight band's C* and hue); maintainer: „Spekular muss in die Tonalität des Originalmaterials übergehen“ [05:15] (13.11.2026; ENTSCHEIDUNGEN.md 261113 14:59); „C3b“ (14.11.2026; ENTSCHEIDUNGEN.md 261114 15:00) [user]",
+    "flake_acescg": "the metallic share's own face-on colour, 8.4° yellower and 8.1 % less chroma than the body at its L* (run 162 step 14, C3b, gold12.json levers metal_split_acescg; the metallic lobe's face-on colour fills the highlight band, Cycles closure.h:278); maintainer: „C2 in den Highlights gelber.“ – „297“; on sheet 12: „C3b“ (session, 14.11.2026; ENTSCHEIDUNGEN.md 261114 15:00) [user]",
+    "coat_weight": "no clear skin over the pigment: 0 for 297, 147 and 189 (run 162 steps 9-14, K2's skin, run_gold9.py SKIN); maintainer: „Die Originalmaterialien haben kein Coat, denken ich. Aber wenn es eine generelle Einstellung ist, dann lass sie drin.“ (sheet 7, 14.11.2026; ENTSCHEIDUNGEN.md 261114 11:13) [user]",
+    "sss_mm": "Burley subsurface 5 mm on the pigment layer (run 162 step 4 c, the hole keeping its tone: chroma x 1.05, no visible glow; steps 9-14 at 5 mm); maintainer: „also 297 … 5 mm machen … Ja, ich würde 5 mm nehmen.“ [03:35–03:47] (13.11.2026; ENTSCHEIDUNGEN.md 261113 12:07) [user]"
    },
    "effect": {
-    "metallic": 0.2,
+    "metallic": 0.35,
     "base_roughness": 0.45,
     "flake_mm": 0.03,
     "flake_tilt_deg": 9.0,
     "flake_roughness": 0.3,
     "thin_film_nm": 0,
     "thin_film_ior": 2.4,
-    "coat_ior": 1.56
+    "coat_ior": 1.56,
+    "specular_tint_acescg": [
+     0.5665,
+     1.0,
+     0.0
+    ],
+    "flake_acescg": [
+     0.322648,
+     0.247211,
+     0.042822
+    ],
+    "coat_weight": 0.0,
+    "sss_mm": 5.0
    },
    "availability": {
     "status": "current",
@@ -3811,16 +3839,16 @@
    "ior": 1.56,
    "colour": {
     "rgb": [
-     0.770999,
-     0.565409,
-     0.000399
+     0.957326,
+     0.65738,
+     0.082282
     ],
-    "source": "user"
+    "source": "photo-matched"
    },
    "roughness": 0.03,
    "sources": {
     "ior": "SAN matrix 1.566 (refractiveindex.info, Sultanova), composition rule 1.565-1.57 [derived]",
-    "colour": "step E of run 142 steps_299.py - the photo fit (fit_v9.json round 1, dE2000 3.39) with chroma x 1.6 and L* -9, hue kept, at the Rec.709 edge (no blue); the metal effect of 82; user 02.11.2026: „299 ist noch zu flau. Die Goldvorlage ist gesättigter mit mehr Kontrast.“ – „E“ [user]",
+    "colour": "matched to the Brick Colorstream photo, read with its Adobe RGB profile and balanced on its plate, in the view ACES 2.0 + gamut compression (run 162 step 2, variant B, run_gold.py, gold.json variants 299 B; chapter 12's body measure: dE2000 6.5 -> 2.2, colour only 4.5 -> 0.02; 13 C* less saturated, 2.7° less yellow); the metal effect of 82 unchanged; maintainer: „da würde ich auch eher tendieren in Richtung B … Die anderen passen nicht.“ [03:02–03:42] (13.11.2026; ENTSCHEIDUNGEN.md 261113 10:30) [user]",
     "roughness": "82 Metallic_Gold's metal effect for the whole LDraw family „Metallic Paint Colours“ (materials version 9; run 142 steps_metal.py, briefing 02.11.2026 14:52; user: „82 für alle“) [user]",
     "metallic": "82 Metallic_Gold's metal effect for the whole LDraw family „Metallic Paint Colours“ (materials version 9; run 142 steps_metal.py, briefing 02.11.2026 14:52; user: „82 für alle“) [user]",
     "base_roughness": "82 Metallic_Gold's metal effect for the whole LDraw family „Metallic Paint Colours“ (materials version 9; run 142 steps_metal.py, briefing 02.11.2026 14:52; user: „82 für alle“) [user]",
@@ -4110,15 +4138,20 @@
    "colour": {
     "rgb": [
      1.0,
-     0.97,
-     0.64
+     0.925998,
+     0.374932
     ],
-    "source": "user"
+    "acescg": [
+     1.0,
+     0.93,
+     0.45
+    ],
+    "source": "photo-matched"
    },
    "roughness": 0.02,
    "sources": {
     "ior": "SAN matrix 1.566 (refractiveindex.info, Sultanova), composition rule 1.565-1.57 [derived]",
-    "colour": "user 05.10.2026 („310 ist farblich falsch“, „Champagner gelblicher“, „310 gelblicher 1“): lacquer tint over the aluminium, pale yellow champagne (run 86 B1) (research/colour_table/c1_user_choices.csv) [user]",
+    "colour": "the lacquer tint of 2000 Chrome Gold (310 = 2000): linear ACEScg 1.0 0.93 0.45, beyond Rec.709, rgb clipped to it for the viewport (run 162 step 3, variant E, run_gold2.py, gold2.json A variants E; 310 E against 2000 rendered from its own material: mean 0.08 of 255, 99 % within 1 code value); maintainer: „310, 2000, Tönung von 2000 passt.“ [10:17] (13.11.2026; ENTSCHEIDUNGEN.md 261113 14:59, replacing 261113 11:42's 310 C) [user]",
     "roughness": "clean moulded surface 0.05-0.15 (run 44 probes, Mueller) [fitted]",
     "metallic": "vacuum-metallised aluminium [derived]",
     "base_roughness": "evaporated aluminium on a polished part [tune]",
@@ -7426,33 +7459,43 @@
    "ior": 1.56,
    "colour": {
     "rgb": [
-     0.488657,
-     0.248078,
-     0.013108
+     0.506589,
+     0.205587,
+     0.01584
     ],
     "source": "photo-matched"
    },
    "roughness": 0.1,
    "effect": {
-    "metallic": 0.5,
+    "metallic": 0.35,
     "base_roughness": 0.45,
     "flake_mm": 0.03,
     "flake_tilt_deg": 9.0,
     "flake_roughness": 0.3,
     "thin_film_nm": 0,
     "thin_film_ior": 2.4,
-    "coat_ior": 1.56
+    "coat_ior": 1.56,
+    "specular_tint_acescg": [
+     0.8142,
+     1.0,
+     0.179
+    ],
+    "coat_weight": 0.0,
+    "sss_mm": 5.0
    },
    "sources": {
     "template": "297 Warm_Gold (class values copied, run 142)",
-    "colour": "step 3 of the series (run 142 steps_pearl.py); user 01.11.2026: „Stufe 3 sieht gut aus“ [user]",
+    "colour": "matched to the photo in run 162 step 13, variant C2 (run_gold11.py, gold11.json 189 rows C2; raw render against raw photo, no post correction, studio light, the view ACES 2.0; the maintainer's second guide Levels 47 / 1.03 / 230, saturation -20 as the target Z2, met in every band, cost 3.96 - mid-tones 58.1 / 52.7 / 75.4°, shadows 52.9 / 52.2 / 73.4°, highlights 61.7 / 52.4 / 77.1°, contrast 11.6); not refitted in step 14; maintainer: „C2 in den Highlights gelber.“ – „297“ (only 297 refitted, 189 stays C2; session 14.11.2026; ENTSCHEIDUNGEN.md 261114 15:00) [user]",
     "research": "Bohrok-Kal, Knights Kingdom II 2003-2006 (Colorstream).",
     "photo": "photos/118_189_Reddish_Gold_14948075737.jpg (CC BY 2.0)",
     "ior": "from 297: SAN matrix 1.566 (refractiveindex.info, Sultanova), composition rule 1.565-1.57 [derived]",
     "roughness": "from 297: clean moulded surface 0.05-0.15 (run 44 probes, Mueller) [fitted]",
-    "metallic": "0.2 -> 0.5: „ein bisschen mehr Kontrast“, step 3 (run 142 steps_pearl.py); user 01.11.2026 [user]",
+    "metallic": "0.5 -> 0.35 for 297, 147 and 189 (run 162 steps 8-14, run_gold9.py METALLIC); maintainer: „189 würde ich auch auf 0,35 machen.“ (13.11.2026; ENTSCHEIDUNGEN.md 261113 14:59) [user]",
     "flake_roughness": "the platelets' spread as roughness 0.30 (series 0.20 / 0.30 / 0.45, run 142 roughness_series.py); user 01.11.2026: „Ich würde zur Sicherheit auf 0,3 gehen, was Rauheiten betrifft.“ [user]",
-    "flake_tilt_deg": "platelets tilted up to 9 deg against the mould wall, one tilt per 0.03 mm cell: tested at 0 / 6 / 9 / 12 deg on the Gold / Silver / Titanium heads and set 70814-1 (run 151, briefing 261108_1103; 12 deg was the dark grain of 31.10.2026); maintainer 08.11.2026: „9° passt.“ [user]"
+    "flake_tilt_deg": "platelets tilted up to 9 deg against the mould wall, one tilt per 0.03 mm cell: tested at 0 / 6 / 9 / 12 deg on the Gold / Silver / Titanium heads and set 70814-1 (run 151, briefing 261108_1103; 12 deg was the dark grain of 31.10.2026); maintainer 08.11.2026: „9° passt.“ [user]",
+    "specular_tint_acescg": "the pigment's highlight in the material's tone (run 162 step 13, C2, gold11.json 189 rows C2 tint; fitted to the highlight band's C* and hue); maintainer: „Spekular muss in die Tonalität des Originalmaterials übergehen“ [05:15] (13.11.2026; ENTSCHEIDUNGEN.md 261113 14:59); C2 accepted for 189 (14.11.2026; ENTSCHEIDUNGEN.md 261114 15:00) [user]",
+    "coat_weight": "no clear skin over the pigment: 0 for 297, 147 and 189 (run 162 steps 9-14, run_gold9.py SKIN); maintainer: „Die Originalmaterialien haben kein Coat, denken ich. Aber wenn es eine generelle Einstellung ist, dann lass sie drin.“ (sheet 7, 14.11.2026; ENTSCHEIDUNGEN.md 261114 11:13) [user]",
+    "sss_mm": "Burley subsurface 5 mm on the pigment layer, as 297 and 147 (run 162 steps 6-14); maintainer: „hier muss auch 5mm das Subsurface Scattering drauf“ [01:41–02:07] (13.11.2026; ENTSCHEIDUNGEN.md 261113 12:32) [user]"
    },
    "availability": {
     "status": "legacy",

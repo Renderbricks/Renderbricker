@@ -457,8 +457,9 @@ def place(tree):
     wider frame; the step frames with the same top and bottom, FRAME_GAP apart - on the grid (rulings G1, G2). The
     frames carry no label: a step frame's title is its TITLE and its text's first line, the note follows; the outer
     frame's TITLE and text are FRAME_LABEL (ruling G3). Only nodes marked NET move; another node (a host's, a user's
-    shader or reroute) keeps its place and only its links count, as order.py reads them. Called after building, after
-    the host's AFTER_NETWORK, and again after the carrying add-on's layout watcher arranged the Mecabricks nodes.
+    shader or reroute) keeps its place and only its links count, as order.py reads them. Called after building (the
+    host's AFTER_NETWORK nodes already in: network.build_network's after), and again after the carrying add-on's
+    layout watcher arranged the Mecabricks nodes.
     Returns at once for a tree without a network, and below Blender 5.0. Never raises (_guarded): returns False when
     the layout failed (its line printed, the layout version taken off), else True."""
     return _guarded(tree, _place_network, tree)

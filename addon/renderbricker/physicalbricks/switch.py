@@ -9,7 +9,7 @@ import bpy
 from . import host
 from .constants import AVAILABLE, BOUNCES, BOUNCES_BEFORE, CLAMP_BEFORE, NET
 from .groups import groups_current, load_groups, rename_old_prefix
-from .layout import NOTE, current, place
+from .layout import NOTE, current
 from .network import build_network, remove_network, revert_v1
 from .readers import read
 from .scene import apply_cycles_bounces, forget_eevee_raytracing, set_subsurface_method
@@ -152,14 +152,11 @@ def set_material_system(mode, surface=None, settings=None):
         remove_network(material)
         if not physical:
             continue
-        if build_network(material, with_surface=with_surface):
+        # the hosts' own nodes go in before the layout, which places them in their steps too (layout.py)
+        if build_network(material, with_surface=with_surface, after=host.AFTER_NETWORK):
             built += 1
             surfaced = surfaced or (with_surface and any(n.label == 'Physical Surface'
                                                          for n in material.node_tree.nodes))
-            for after in host.AFTER_NETWORK:
-                after(material)
-            if host.AFTER_NETWORK:                     # the hosts' own nodes in their steps too (layout.py)
-                place(material.node_tree)
         else:
             skipped += 1
     # the step frames' notes are texts with a fake user (text.cc:289-292): those no frame uses any more go
@@ -179,10 +176,13 @@ def set_material_system(mode, surface=None, settings=None):
 
 def _older_models(scene, state):
     """Whether the scene already holds a model of an earlier import (a mesh outside this import's collection with an
-    mb: material) - an older file, in Mecabricks mode unless someone switched it."""
+    mb: material) - an older file, in Mecabricks mode unless someone switched it. The import's objects are taken
+    once from its collection: Object.users_collection tests every collection of the file per object
+    (_bpy_types.py:279-295), quadratic in the parts (speed profile run 261115: 0.21 s on 2710 parts)."""
     new = state.get('collection')
+    ours = set(new.objects) if new is not None else set()
     for obj in scene.objects:
-        if obj.type != 'MESH' or (new is not None and new in obj.users_collection):
+        if obj.type != 'MESH' or obj in ours:
             continue
         if any(s.material and s.material.name.startswith('mb:') for s in obj.material_slots):
             return True

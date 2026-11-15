@@ -46,11 +46,15 @@ CLASS_GROUPS = {'solid': 'rb_phys_solid', 'transparent': 'rb_phys_transparent', 
                 'pearlescent': 'rb_phys_pearl', 'metal': 'rb_phys_pearl', 'chrome': 'rb_phys_chrome'}
 
 # group input <- record 'effect' key; colours through network.effect_value (metal_rgb / metal_f82_rgb Rec.709,
-# *_acescg ACEScg). Metal Edge Tint (group version 37): the chrome's F82 tint of measured aluminium
+# *_acescg ACEScg). Metal Edge Tint (group version 37): the chrome's F82 tint of measured aluminium. Group version 43
+# (materials version 25): the pearl's Coat Weight, Flake Color (the metallic share's face-on colour) and Pigment SSS
+# Depth; a key the record lacks leaves the group's default (1, the body colour, no subsurface)
 EFFECT_INPUTS = {'Metallic': 'metallic', 'Base Roughness': 'base_roughness', 'Flake Size': 'flake_mm',
                  'Flake Tilt': 'flake_tilt_deg', 'Flake Roughness': 'flake_roughness', 'Thin Film': 'thin_film_nm',
                  'Thin Film IOR': 'thin_film_ior', 'Coat IOR': 'coat_ior', 'Metal Roughness': 'base_roughness',
-                 'Metal Color': 'metal_rgb', 'Metal Edge Tint': 'metal_f82_rgb', 'Specular Tint': 'specular_tint_acescg'}
+                 'Metal Color': 'metal_rgb', 'Metal Edge Tint': 'metal_f82_rgb',
+                 'Specular Tint': 'specular_tint_acescg', 'Coat Weight': 'coat_weight', 'Flake Color': 'flake_acescg',
+                 'Pigment SSS Depth': 'sss_mm'}
 
 # version of the class groups in physical.blend (scripts/build_physical_blend.py writes the same); a file holding older
 # groups gets them replaced. 13: glitter foil and fine fraction; 14: glitter in Eevee; 15: opal and speckle in Eevee;
@@ -98,7 +102,11 @@ EFFECT_INPUTS = {'Metallic': 'metallic', 'Base Roughness': 'base_roughness', 'Fl
 #     Physicalbricks muss komplett unabhängig sein.“ - „Sieht gut aus.“)
 # 42: direct links, the order – no reroutes, one Group Input per input in its consumer's column, frames in level stacks
 #     (library part 4c)
-PHYS_VERSION = 42
+# 44: rb_phys_eevee's thin glass reads the tint's saturation, body share 0.1 + 0.4 x saturation (run 161, correction C)
+# 43: rb_phys_pearl's inputs Coat Weight (the ABS skin, 1), Flake Color / Flake Own Color (the metallic share's
+#     face-on colour; 0 = the body colour) and Pigment SSS Depth (mm, 0 = none); the metallic share a second Principled
+#     mixed by Metallic (run 162 step 14, C3b; materials version 25; maintainer 14.11.2026: „A“)
+PHYS_VERSION = 44
 
 # Eevee refracts a LEGO part as a shell: the wall, in the part's space (mm), at the Eevee output's Thickness of glass -
 # 4 LDU, the wall of an LDraw brick (run 148)
