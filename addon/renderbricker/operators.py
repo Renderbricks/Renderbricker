@@ -48,6 +48,7 @@ class MECSUB_OT_toggle(convert._Phased, bpy.types.Operator):
     bl_description = "Switch the links between the subdivided copy and the original mesh (viewport and render)"
     bl_options = {'REGISTER', 'UNDO'}
     label = "Subdivision"
+    where = "toggle"
 
     def invoke(self, context, event):
         if bpy.app.background or context.window is None:
@@ -171,6 +172,7 @@ class MECSUB_OT_remove(convert._Phased, bpy.types.Operator):
     bl_label = "Remove"
     bl_options = {'REGISTER', 'UNDO'}
     label = "Remove"
+    where = "remove"
     # Remove All (UPDATES #33; up to 1.2.7 the scope All): the whole file, after a question - it reaches every
     # model in it
     whole: bpy.props.BoolProperty(default=False, options={'SKIP_SAVE'})
@@ -230,6 +232,7 @@ class MECSUB_OT_move_cache(convert._Phased, bpy.types.Operator):
                       "link and save the scene (after Save As under another name or in another folder). The "
                       "scene file the cache belonged to before then shows its original meshes")
     label = "Move cache"
+    where = "move_cache"
 
     @classmethod
     def poll(cls, context):

@@ -33,7 +33,7 @@ class MECSUB_PT_panel(bpy.types.Panel):
     def draw(self, context):
         s = context.scene.mecsub
         L = self.layout
-        if s.running:
+        if s.running and not s.progress_where:     # Apply, Check, levels, cache: on top; the others in their row
             box = L.box()
             if hasattr(box, "progress"):
                 box.progress(factor=s.progress, type='BAR', text=s.progress_text)
@@ -73,22 +73,43 @@ class MECSUB_PT_panel(bpy.types.Panel):
         body.prop(s, "use_cache")
         logfile.draw_log(body, s)
         camera_ui.draw_render_camera(body, context)
-        draw_cache_box(body)
-        row = body.row(align=True)
-        row.operator("mecsub.check", icon='VIEWZOOM')
+        # from here the rows that can hold a bar: drawn outside the greyed body, each enabled only for its own bar
+        draw_cache_box(L.column())
+        row = L.row(align=True)
+        check = row.row(align=True)
+        check.enabled = not s.running
+        check.operator("mecsub.check", icon='VIEWZOOM')
         state = s.subdiv_state
         label, icon = {"ON": ("Subdivision: ON", 'CHECKBOX_HLT'), "OFF": ("Subdivision: OFF", 'CHECKBOX_DEHLT'),
                        "MIXED": ("Subdivision: partly on", 'CHECKBOX_HLT')}.get(state, ("Subdivision: -", 'CHECKBOX_DEHLT'))
-        row.operator("mecsub.toggle", icon=icon, text=label, depress=(state == "ON"))
-        row = body.row(align=True)              # Remove: the scope; Remove All: the whole file (UPDATES #33)
-        row.operator("mecsub.remove", icon='X')
-        row.operator("mecsub.remove", text="Remove All", icon='TRASH').whole = True
+        if not progress_in(row, s, "toggle"):
+            row.operator("mecsub.toggle", icon=icon, text=label, depress=(state == "ON"))
+            row.enabled = not s.running
+        row = L.row(align=True)                 # Remove: the scope; Remove All: the whole file (UPDATES #33)
+        row.enabled = not s.running or s.progress_where == "remove"
+        if not progress_in(row, s, "remove"):
+            row.operator("mecsub.remove", icon='X')
+            row.operator("mecsub.remove", text="Remove All", icon='TRASH').whole = True
+        body = L.column()
+        body.enabled = not s.running
         body.separator()
         body.operator("mecsub.headless", icon='CONSOLE')
         body.operator("mecsub.render_scene", icon='RENDER_STILL')
         draw_help_links(body)
         widgets.draw_summary(L, s)
         wrapped(L, COPYRIGHT, context, center=True)     # centred under Documentation (user, 2026-09-29)
+
+
+def progress_in(L, s, where):
+    """The bar of a running operation in the row of its button, in place of the button (maintainer 2026-11-15: „Der
+    Balken kann ja im jeweiligen Button sein?“). True when drawn."""
+    if not (s.running and s.progress_where == where):
+        return False
+    if hasattr(L, "progress"):
+        L.progress(factor=s.progress, type='BAR', text=s.progress_text)
+    else:
+        L.label(text=f"{s.progress * 100:.0f} %  {s.progress_text}")
+    return True
 
 
 def draw_cache_box(L, only_trouble=False):
@@ -102,6 +123,8 @@ def draw_cache_box(L, only_trouble=False):
     if ok and only_trouble:
         return
     box = L.box()
+    running = bpy.context.scene.mecsub.running
+    box.enabled = not running or bpy.context.scene.mecsub.progress_where == "move_cache"
     col = box.column(align=True)        # two lines: at the default sidebar width one line was cut
     name = os.path.basename(st[1])      # (tutorial pictures, 2026-09-29)
     if not st[3]:
@@ -111,7 +134,8 @@ def draw_cache_box(L, only_trouble=False):
         col.label(text="Cache of another scene:", icon='ERROR')
         col.label(text=name, icon='BLANK1')
         sub = box.column(align=True)
-        sub.operator("mecsub.move_cache", icon='FILE_FOLDER', text="Move cache here")
+        if not progress_in(sub, bpy.context.scene.mecsub, "move_cache"):
+            sub.operator("mecsub.move_cache", icon='FILE_FOLDER', text="Move cache here")
         sub.operator("mecsub.copy_cache", icon='DUPLICATE', text="Copy cache here")
     else:
         col.label(text="Cache file:", icon='FILE_BLEND')

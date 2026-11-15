@@ -85,19 +85,37 @@ def move_cache_steps():
             os.replace(cur, want)            # want keeps the case of the scene name
         except OSError:                      # another drive: copy, then delete
             share, tmp = 0.8, want + ".moving"
-            total, done = max(1, os.path.getsize(cur)), 0
+            total = max(1, os.path.getsize(cur))
+            job = {"done": 0, "error": None, "stop": False}
+
+            def copy():                      # a plain file copy in a thread: it goes on while Blender redraws
+                try:
+                    with open(cur, "rb") as fi, open(tmp, "wb") as fo:
+                        while not job["stop"]:
+                            b = fi.read(MOVE_CHUNK)
+                            if not b:
+                                break
+                            fo.write(b)
+                            job["done"] += len(b)
+                except Exception as e:
+                    job["error"] = e
+
+            thread = threading.Thread(target=copy, daemon=True)
+            thread.start()
             try:
-                with open(cur, "rb") as fi, open(tmp, "wb") as fo:
-                    while True:
-                        b = fi.read(MOVE_CHUNK)
-                        if not b:
-                            break
-                        fo.write(b)
-                        done += len(b)
-                        yield share * done / total, f"moving the cache file {done / 1e9:.1f} / {total / 1e9:.1f} GB"
+                while thread.is_alive():
+                    done = job["done"]
+                    yield share * done / total, f"moving the cache file {done / 1e9:.1f} / {total / 1e9:.1f} GB"
+                    thread.join(0.02)
+                if job["error"] is not None:
+                    raise job["error"]
+                done = job["done"]
+                yield share, f"moving the cache file {done / 1e9:.1f} / {total / 1e9:.1f} GB"
                 shutil.copystat(cur, tmp)
                 os.replace(tmp, want)
             except BaseException:            # GeneratorExit too: no half file left
+                job["stop"] = True
+                thread.join()
                 if os.path.exists(tmp):
                     os.remove(tmp)
                 raise

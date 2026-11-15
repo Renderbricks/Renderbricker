@@ -594,6 +594,7 @@ class MECSUB_Settings(bpy.types.PropertyGroup):
     progress: bpy.props.FloatProperty(default=0.0, min=0.0, max=1.0, subtype='FACTOR')
     progress_text: StringProperty(default="")
     progress_esc: bpy.props.BoolProperty(default=True)     # the running operation stops with Esc (the panel says so)
+    progress_where: StringProperty(default="")      # the bar in this button's row (toggle, remove, move_cache), else on top
     # guide for new users (user, 2026-09-28): step card instead of the full panel
     wt_active: bpy.props.BoolProperty(default=False)
     wt_step: IntProperty(default=0, min=0)

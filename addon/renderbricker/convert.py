@@ -93,6 +93,7 @@ def write_cache(context):
     return f", {n} copies in {os.path.basename(path)} ({time.time() - t:.0f} s)" if n else ""
 
 
+FIRST_SLICE = 0.5   # seconds of work in the first tick of a _Phased operator
 REDRAW = 0.15       # seconds between two redraws of the bar at most (maintainer 2026-11-15: „... einen Statusbalken,
 #                     der aber nicht Performance klaut.“)
 
@@ -124,6 +125,7 @@ class _Phased:
     it only where `esc` is set; otherwise other input waits until it is done."""
     label = ""
     esc = False
+    where = ""          # the bar in the row of this button (panels.py), "" on top of the panel
     _timer = None
 
     def execute(self, context):
@@ -138,7 +140,7 @@ class _Phased:
         s = context.scene.mecsub
         self._gen, self._ticks, self._state = None, 0, {"shown": time.time()}
         s.running, s.progress, s.progress_text = True, 0.0, f"{self.label} ..."
-        s.progress_esc = self.esc
+        s.progress_esc, s.progress_where = self.esc, self.where
         context.workspace.status_text_set(f"Renderbricker {self.label} ...")
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.01, window=context.window)
@@ -164,9 +166,12 @@ class _Phased:
         if self._ticks < 2:                 # the bar is on screen before the work starts
             return {'RUNNING_MODAL'}
         try:
-            if self._gen is None:
-                self._gen = self.work(context)
-            done, st = drive(self._gen, work_budget(self), lambda x: self._show(context, x), self._state)
+            if self._gen is None:           # the first slice is long enough for most runs to need no second:
+                self._gen = self.work(context)      # every tick after a change costs a depsgraph update and
+                budget = FIRST_SLICE                # a viewport redraw (Italian Riviera: about 0.3 s each)
+            else:
+                budget = work_budget(self)
+            done, st = drive(self._gen, budget, lambda x: self._show(context, x), self._state)
         except Exception as e:              # never leave the panel locked (run 39)
             import traceback
             traceback.print_exc()
@@ -181,7 +186,7 @@ class _Phased:
         try:
             context.window_manager.event_timer_remove(self._timer)
         finally:
-            s.running, s.progress_esc = False, True
+            s.running, s.progress_esc, s.progress_where = False, True, ""
             context.workspace.status_text_set(None)
         if error:                           # what was done stays, one undo step takes it back
             s.summary = f"{self.label}: stopped by an error: {error}"
@@ -236,6 +241,7 @@ class _Stepped:
         self._prepared, self._pticks = False, 0
         s = context.scene.mecsub
         s.running, s.progress, s.progress_text, s.progress_esc = True, 0.0, "looking at the parts in scope ...", True
+        s.progress_where = ""
         context.workspace.status_text_set(f"Renderbricker {self.label}: looking at the parts in scope ...")
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.01, window=context.window)
