@@ -1,6 +1,6 @@
 """The conversion of one part: weld the islands in a work copy, set the creases (W rules), repair
 folds, bake the copies (process)."""
-import bpy, bmesh, copy, math, types
+import bpy, bmesh, contextlib, copy, math, types
 import numpy as np
 from mathutils import Vector
 from collections import defaultdict
@@ -1059,12 +1059,34 @@ def t_gaps(wm, cp, tv, level):
     return worst
 
 
+@contextlib.contextmanager
+def _points_only(work):
+    """The Subdivision modifier of `work` without its custom normals meanwhile: for evaluations that read points,
+    face normals or areas only (run 306 perf_build, A2 - the face normals and areas of the evaluated mesh are computed
+    from its points: rna_mesh.cc, rna_MeshPolygon_normal_get / _area_get; the custom normals do not move a point, as
+    shrink.compensate measured: the same to the bit, an evaluation costs a third). Back on at the end."""
+    mod = work.modifiers.get("Subdivision")
+    keep = mod.use_custom_normals if mod is not None else None
+    if mod is not None:
+        mod.use_custom_normals = False
+    try:
+        yield
+    finally:
+        if mod is not None:
+            mod.use_custom_normals = keep
+
+
 def bulge_check(work, wm, rungs):
     """Relief tips that bulge: after subdividing, the surface near a freed tip must stay
     within BULGE_MAX (times the step height) of the original. Returns the tips that bulge."""
-    from mathutils.bvhtree import BVHTree
     if not rungs:
         return []
+    with _points_only(work):
+        return _bulge_check(work, wm, rungs)
+
+
+def _bulge_check(work, wm, rungs):
+    from mathutils.bvhtree import BVHTree
     bvh = BVHTree.FromPolygons([v.co.copy() for v in wm.vertices], [tuple(p.vertices) for p in wm.polygons])
     dg = workscene.depsgraph_of(work)
     ev = work.evaluated_get(dg).to_mesh()
@@ -1082,7 +1104,13 @@ def bulge_check(work, wm, rungs):
 
 def repair_folds(work, wm, passes=None):
     """Fold repair as in the rules: edges of folding faces get crease 0.5, then 1.0, then
-    the neighbouring faces too. Returns the number of passes used."""
+    the neighbouring faces too. Returns the number of passes used. Its evaluations read face
+    normals and areas only: without the modifier's custom normals (_points_only)."""
+    with _points_only(work):
+        return _repair_folds(work, wm, passes)
+
+
+def _repair_folds(work, wm, passes=None):
     passes = passes or REPAIR_PASSES
     ce = wm.attributes["crease_edge"].data
     for n in range(passes):
@@ -1139,7 +1167,10 @@ def repair_work(orig, work, wm, tv, rep):
     # W13 fallback (run 58, Bugatti 35188): plane creases can leave folds the repair cannot
     # remove - weld again without the W13 edges at the folding faces. Folds can only be
     # left when the repair used all its passes (run 59: no extra evaluation otherwise).
-    left = checks.flipped_faces(work, me=wm) if PLANE_RATIO and passes >= REPAIR_PASSES else set()
+    left = set()
+    if PLANE_RATIO and passes >= REPAIR_PASSES:
+        with _points_only(work):
+            left = checks.flipped_faces(work, me=wm)
     if left:
         # the crease that makes a face fold may sit a face ring away (35188: 0.35 from it)
         for i in left:
