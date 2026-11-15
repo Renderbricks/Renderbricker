@@ -59,20 +59,62 @@ def relink_cache(lib, path):
 def move_cache():
     """The cache file next to the scene under the scene's name, the link updated (run 63: after
     Save As under another name or in another folder). Returns (old path, new path)."""
+    return run_steps(move_cache_steps())
+
+
+MOVE_CHUNK = 16 << 20       # bytes copied per step when the cache moves to another drive
+
+
+def move_cache_steps():
+    """move_cache as steps (fraction, text) for the bar (maintainer 2026-11-15: real progress instead of a fixed
+    50 %): on the same drive the file is renamed at once; to another drive it is copied in pieces - the bar follows
+    the bytes - and the old file goes after the copy; then the link (one call of Blender, the text says how long).
+    Returns (old path, new path)."""
     st = cache_state()
     if st is None:
         raise RuntimeError("no cache file linked")
     lib, cur, want, exists = st
     if cur == want:
         return cur, want
+    share = 0.0                              # of the bar for the copy
     if exists:
         if os.path.exists(want):
             os.remove(want)                  # the caller confirmed replacing it
-        shutil.move(cur, want)               # want keeps the case of the scene name
+        yield 0.0, "moving the cache file"
+        try:
+            os.replace(cur, want)            # want keeps the case of the scene name
+        except OSError:                      # another drive: copy, then delete
+            share, tmp = 0.8, want + ".moving"
+            total, done = max(1, os.path.getsize(cur)), 0
+            try:
+                with open(cur, "rb") as fi, open(tmp, "wb") as fo:
+                    while True:
+                        b = fi.read(MOVE_CHUNK)
+                        if not b:
+                            break
+                        fo.write(b)
+                        done += len(b)
+                        yield share * done / total, f"moving the cache file {done / 1e9:.1f} / {total / 1e9:.1f} GB"
+                shutil.copystat(cur, tmp)
+                os.replace(tmp, want)
+            except BaseException:            # GeneratorExit too: no half file left
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+                raise
+            os.remove(cur)
     elif not os.path.exists(want):
         raise RuntimeError(f"cache file not found: {cur}")
+    yield share, _link_text(want) + " ..."
     relink_cache(lib, want)
     return cur, want
+
+
+def _link_text(path):
+    try:
+        est = os.path.getsize(path) / LINK_RATE[0]
+    except OSError:
+        return "linking the cache file"
+    return f"linking the cache file (about {est:.0f} s)" if est >= 3 else "linking the cache file"
 
 
 def relink_cache_on_load():
@@ -412,9 +454,11 @@ def _merge_cache(job):
     print("MERGED", len(ids), flush=True)
 
 
-def drop_cache_links(orig):
-    """Remove: the objects take the materials from the mesh again, the cache hold is released."""
-    for ob in _users_of(orig):
+def drop_cache_links(orig, users=None):
+    """Remove: the objects take the materials from the mesh again, the cache hold is released. users: the objects
+    showing orig or one of its copies when the caller knows them (Remove of many parts: one pass over the objects
+    instead of one per part - 2.8 s of Italian Riviera's 26 s)."""
+    for ob in (_users_of(orig) if users is None else users):
         object_materials(ob, orig, False)
     for k in [k for k in orig.keys() if k.startswith(CACHE_KEEP)]:
         del orig[k]

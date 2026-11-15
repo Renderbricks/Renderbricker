@@ -6,19 +6,22 @@ from . import rbcore as core
 from . import common, convert, logfile, props, widgets
 
 
-class MECSUB_OT_toggle(bpy.types.Operator):
-    bl_idname = "mecsub.toggle"
-    bl_label = "Subdivision on/off"
-    bl_description = "Switch the links between the subdivided copy and the original mesh (viewport and render)"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        common.object_mode(context)
+def toggle_steps(context):
+    """Subdivision on/off as steps (fraction, text); returns (report text, level) or (warning, None). The copies are
+    looked up in the copy index: without it every part searched all meshes of the file (Italian Riviera: 1.25 of
+    1.7 s)."""
+    common.object_mode(context)
+    yield 0.0, "collecting the parts"
+    began = core._COPY_INDEX[0] is None
+    if began:
+        core.copy_index_begin()
+    try:
         groups = [(me, obs) for me, obs in common.by_mesh(common.targets(context)).items() if core.all_copies(me)]
         if not groups:
-            self.report({'WARNING'}, "No subdivided meshes in scope")
-            return {'CANCELLED'}
+            return "No subdivided meshes in scope", None
         on = any(o.get("rb_off") for _, obs in groups for o in obs)      # something is off: switch all on
+        total = sum(len(obs) for _, obs in groups)
+        n = 0
         for me, obs in groups:
             for o in obs:
                 if on:
@@ -28,17 +31,146 @@ class MECSUB_OT_toggle(bpy.types.Operator):
                 else:
                     o["rb_off"] = True
                     o.data = me
-        st = props.refresh_state(context)
-        self.report({'INFO'}, f"Renderbricker: subdivision {'on' if on else 'off'}"
-                              + (" (other objects outside the scope differ)" if st == "MIXED" else ""))
+                n += 1
+                if n % 200 == 0:
+                    yield n / total, f"subdivision {'on' if on else 'off'} {n} / {total}"
+    finally:
+        if began:
+            core.copy_index_end()
+    st = props.refresh_state(context)
+    return (f"Renderbricker: subdivision {'on' if on else 'off'}"
+            + (" (other objects outside the scope differ)" if st == "MIXED" else "")), 'INFO'
+
+
+class MECSUB_OT_toggle(convert._Phased, bpy.types.Operator):
+    bl_idname = "mecsub.toggle"
+    bl_label = "Subdivision on/off"
+    bl_description = "Switch the links between the subdivided copy and the original mesh (viewport and render)"
+    bl_options = {'REGISTER', 'UNDO'}
+    label = "Subdivision"
+
+    def invoke(self, context, event):
+        if bpy.app.background or context.window is None:
+            return self.execute(context)
+        return convert._Phased.invoke(self, context, event)
+
+    def work(self, context):
+        return toggle_steps(context)
+
+    def phased_end(self, context, result, cancelled=False):
+        if not result:
+            return {'CANCELLED'}
+        text, level = result
+        if level is None:
+            self.report({'WARNING'}, text)
+            return {'CANCELLED'}
+        self.report({'INFO'}, text)
         convert.redraw(context)
         return {'FINISHED'}
 
 
-class MECSUB_OT_remove(bpy.types.Operator):
+BATCH = 200         # copies deleted per call of batch_remove: one pass over the file's data-blocks each
+
+
+def remove_steps(context, whole):
+    """Remove (the parts in scope) or Remove All (whole: the file) as steps (fraction, text); returns the summary.
+    Faster than the loop before (Italian Riviera, 810 parts: 26 s): the copies go with bpy.data.batch_remove - every
+    single meshes.remove searched the whole file for users -, the objects and the copies are looked up once
+    (copy index, a map of the objects) instead of once per part."""
+    common.object_mode(context)
+    yield 0.0, "collecting the parts"
+    # the whole file (UPDATES #15, run 220): objects of every scene, and the copies of parts whose objects were
+    # deleted - before, they stayed with a fake user and kept the cache file linked
+    if whole:
+        obs = [o for o in bpy.data.objects if o.type == 'MESH' and o.data is not None and o.library is None
+               and not core.is_master(o) and o.name != core.WORK_NAME]
+    else:
+        obs = common.targets(context)
+    groups = common.by_mesh(obs)
+    n = 0
+    for me, gobs in groups.items():
+        for o in gobs:
+            core.unlink_instance(o)
+            o.pop("rb_off", None)
+            o.pop("rb_on", None)
+            o.data = me
+            n += 1
+            if n % 100 == 0:
+                yield 0.15 * n / len(obs), f"objects back to their import {n} / {len(obs)}"
+    originals = set(groups)
+    if whole:
+        for m in bpy.data.meshes:
+            if m.library is not None:
+                continue
+            if m.get("rb_original"):
+                o = bpy.data.meshes.get((m["rb_original"], None))
+                if o is not None:
+                    originals.add(o)
+            elif any(k.startswith("rb_") for k in m.keys()):
+                originals.add(m)
+    yield 0.15, "finding the copies"
+    users, used = {}, set()                 # original's name -> objects showing it or a copy; meshes objects show
+    for o in bpy.data.objects:
+        if o.type == 'MESH' and o.data is not None:
+            used.add(o.data)
+            users.setdefault(o.data.get("rb_original") or o.data.name, []).append(o)
+    began = core._COPY_INDEX[0] is None
+    if began:
+        core.copy_index_begin()
+    try:
+        todo = []
+        for me in originals:
+            copies = core.all_copies(me)
+            if not whole and any(c in used for c in copies):
+                continue            # still used by objects outside the scope
+            todo.append((me, copies))
+        doomed = []
+        for k, (me, copies) in enumerate(todo, 1):
+            core.drop_cache_links(me, [o for o in users.get(me.name, ())
+                                       if o.data == me or o.data.get("rb_original") == me.name])
+            doomed += copies
+            core.remove_master(me)
+            for a in ("crease_edge", "crease_vert"):
+                if me.attributes.get(a):
+                    me.attributes.remove(me.attributes[a])
+            if k % 50 == 0:
+                yield 0.15 + 0.25 * k / len(todo), f"parts back to their import {k} / {len(todo)}"
+        core.restore_shader_radius_of([me for me, _c in todo])     # the importer's own Bevel value (UPDATES #43)
+        for me, _c in todo:
+            for key in [key for key in me.keys() if key.startswith("rb_")]:
+                me.pop(key, None)
+            me.use_fake_user = False
+        removed = 0
+        for i in range(0, len(doomed), BATCH):
+            yield 0.4 + 0.55 * i / len(doomed), f"deleting the copies {i} / {len(doomed)}"
+            bpy.data.batch_remove(doomed[i:i + BATCH])
+            removed += len(doomed[i:i + BATCH])
+    finally:
+        if began:
+            core.copy_index_end()
+    yield 0.95, "cleaning up"
+    if whole:                          # copies whose original is gone, and the work scene
+        left_over = [m for m in bpy.data.meshes if m.library is None and m.get("rb_original")
+                     and m.users <= int(m.use_fake_user)]
+        if left_over:
+            bpy.data.batch_remove(left_over)
+            removed += len(left_over)
+        ws = bpy.data.scenes.get(core.WORK_SCENE)
+        if ws is not None and ws != context.scene:
+            core.remove_scene(ws)
+    core.drop_unused_maps()            # bevel maps baked for copies that are gone now (UPDATES #40)
+    core.drop_unused_switches()        # ... and the switches of bevelled copies (UPDATES #43)
+    core.cleanup_libraries()
+    left = sum(1 for m in bpy.data.meshes if m.get("rb_original"))
+    return (f"Removed from {len(obs)} objects" + (" in the whole file" if whole else "")
+            + f", {removed} copies deleted" + (f"; {left} copies stay (used outside the scope)" if left else ""))
+
+
+class MECSUB_OT_remove(convert._Phased, bpy.types.Operator):
     bl_idname = "mecsub.remove"
     bl_label = "Remove"
     bl_options = {'REGISTER', 'UNDO'}
+    label = "Remove"
     # Remove All (UPDATES #33; up to 1.2.7 the scope All): the whole file, after a question - it reaches every
     # model in it
     whole: bpy.props.BoolProperty(default=False, options={'SKIP_SAVE'})
@@ -57,78 +189,47 @@ class MECSUB_OT_remove(bpy.types.Operator):
                 self, event, title="Remove All",
                 message="Take every converted part of this file back to its import - all models, in every scene?",
                 confirm_text="Remove All", icon='WARNING')
-        return self.execute(context)
+        return self.start(context)
 
     def execute(self, context):
-        common.object_mode(context)
-        # the whole file (UPDATES #15, run 220): objects of every scene, and the copies of parts whose objects were
-        # deleted - before, they stayed with a fake user and kept the cache file linked
-        whole = self.whole
-        if whole:
-            obs = [o for o in bpy.data.objects if o.type == 'MESH' and o.data is not None and o.library is None
-                   and not core.is_master(o) and o.name != core.WORK_NAME]
-        else:
-            obs = common.targets(context)
-        groups = common.by_mesh(obs)
-        for me, gobs in groups.items():
-            for o in gobs:
-                core.unlink_instance(o)
-                o.pop("rb_off", None)
-                o.pop("rb_on", None)
-                o.data = me
-        originals = set(groups)
-        if whole:
-            for m in bpy.data.meshes:
-                if m.library is not None:
-                    continue
-                if m.get("rb_original"):
-                    o = bpy.data.meshes.get((m["rb_original"], None))
-                    if o is not None:
-                        originals.add(o)
-                elif any(k.startswith("rb_") for k in m.keys()):
-                    originals.add(m)
-        removed = 0
-        for me in originals:
-            copies = core.all_copies(me)
-            if not whole and any(o.data in copies for o in bpy.data.objects if o.type == 'MESH'):
-                continue            # still used by objects outside the scope
-            core.drop_cache_links(me)      # object materials back to the mesh, cache hold released
-            core.restore_shader_radius(me)         # the importer's own Bevel value again (UPDATES #43)
-            for c in copies:
-                bpy.data.meshes.remove(c)
-                removed += 1
-            core.remove_master(me)
-            for a in ("crease_edge", "crease_vert"):
-                if me.attributes.get(a):
-                    me.attributes.remove(me.attributes[a])
-            for k in [k for k in me.keys() if k.startswith("rb_")]:
-                me.pop(k, None)
-            me.use_fake_user = False
-        if whole:                          # copies whose original is gone, and the work scene
-            for m in [m for m in bpy.data.meshes if m.library is None and m.get("rb_original") and m.users <= int(m.use_fake_user)]:
-                bpy.data.meshes.remove(m)
-                removed += 1
-            ws = bpy.data.scenes.get(core.WORK_SCENE)
-            if ws is not None and ws != context.scene:
-                core.remove_scene(ws)
-        core.drop_unused_maps()            # bevel maps baked for copies that are gone now (UPDATES #40)
-        core.drop_unused_switches()        # ... and the switches of bevelled copies (UPDATES #43)
-        core.cleanup_libraries()
-        left = sum(1 for m in bpy.data.meshes if m.get("rb_original"))
-        context.scene.mecsub.summary = (f"Removed from {len(obs)} objects" + (" in the whole file" if whole else "")
-                                        + f", {removed} copies deleted"
-                                        + (f"; {left} copies stay (used outside the scope)" if left else ""))
-        context.scene.mecsub.problems.clear()
+        if context.window is not None and not bpy.app.background and self.whole:
+            return self.start(context)          # Remove All after its question: with the bar
+        return convert._Phased.execute(self, context)
+
+    def start(self, context):
+        if bpy.app.background or context.window is None:
+            return convert._Phased.execute(self, context)
+        self.label = "Remove All" if self.whole else "Remove"
+        return convert._Phased.invoke(self, context, None)
+
+    def work(self, context):
+        return remove_steps(context, self.whole)
+
+    def phased_end(self, context, result, cancelled=False):
+        s = context.scene.mecsub
+        if result is not None:
+            s.summary = result
+        s.problems.clear()
         props.refresh_state(context)
         return {'FINISHED'}
 
 
-class MECSUB_OT_move_cache(bpy.types.Operator):
+def move_cache_steps(context):
+    """Move cache: the file and the link (core.move_cache_steps), then the scene is saved. Returns the summary."""
+    import os
+    old, new = yield from core.move_cache_steps()
+    yield 0.9, "saving the scene"
+    bpy.ops.wm.save_mainfile()
+    return f"Cache moved: {os.path.basename(old)} -> {os.path.basename(new)}, scene saved"
+
+
+class MECSUB_OT_move_cache(convert._Phased, bpy.types.Operator):
     bl_idname = "mecsub.move_cache"
     bl_label = "Move cache to this scene"
     bl_description = ("Move the cache file next to this scene and rename it <scene>_rbcache.blend, update the "
                       "link and save the scene (after Save As under another name or in another folder). The "
                       "scene file the cache belonged to before then shows its original meshes")
+    label = "Move cache"
 
     @classmethod
     def poll(cls, context):
@@ -145,44 +246,25 @@ class MECSUB_OT_move_cache(bpy.types.Operator):
         return self.execute(context)
 
     def execute(self, context):
-        s = context.scene.mecsub
         if bpy.app.background or context.window is None:     # scripts: no timer, straight through
-            self.ticks = 1
-            self._timer = None
-            return self.modal(context, type("E", (), {"type": 'TIMER'})())
-        st = core.cache_state()
-        s.running, s.progress = True, 0.5
-        s.progress_text = f"moving the cache, {convert.link_text(st[1] if st[3] else st[2])} ..."
-        context.workspace.status_text_set(f"Renderbricker: {s.progress_text}")
-        convert.redraw(context)
-        self.ticks = 0
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.1, window=context.window)
-        wm.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+            try:
+                return convert._Phased.execute(self, context)
+            except Exception as e:
+                return self.phased_end(context, None, error=str(e))
+        return convert._Phased.invoke(self, context, None)
 
-    def modal(self, context, event):
-        import os
-        if event.type != 'TIMER':
-            return {'RUNNING_MODAL'}
-        self.ticks += 1
-        if self.ticks < 2:                     # the text is on screen first
-            return {'RUNNING_MODAL'}
+    def work(self, context):
+        return move_cache_steps(context)
+
+    def phased_end(self, context, result, cancelled=False, error=None):
         s = context.scene.mecsub
-        if self._timer is not None:
-            context.window_manager.event_timer_remove(self._timer)
-        try:
-            old, new = core.move_cache()
-            bpy.ops.wm.save_mainfile()
-            s.summary = f"Cache moved: {os.path.basename(old)} -> {os.path.basename(new)}, scene saved"
-            err = False
-        except Exception as e:
-            s.summary, err = f"Moving the cache failed: {e}", True
-        s.running = False
-        context.workspace.status_text_set(None)
-        self.report({'ERROR'} if err else {'INFO'}, "Renderbricker: " + s.summary)
-        convert.redraw(context)
-        return {'CANCELLED'} if err else {'FINISHED'}
+        if error is not None:
+            s.summary = f"Moving the cache failed: {error}"
+            self.report({'ERROR'}, "Renderbricker: " + s.summary)
+            return {'CANCELLED'}
+        s.summary = result
+        self.report({'INFO'}, "Renderbricker: " + s.summary)
+        return {'FINISHED'}
 
 
 # ---------------------------------------------------------------- the cache after Save As (UPDATES #41)

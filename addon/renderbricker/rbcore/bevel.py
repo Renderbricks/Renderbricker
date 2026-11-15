@@ -736,8 +736,18 @@ def _set_radius(nodes, radius):
 
 
 def restore_shader_radius(orig):
+    return _restore_radius(_radius_nodes(orig))
+
+
+def restore_shader_radius_of(origs):
+    """restore_shader_radius for several parts, every material once (Remove of Italian Riviera: 0.75 s -> one pass)."""
+    materials = {mt for orig in origs for mt in orig.materials if mt is not None}
+    return _restore_radius(n for mt in materials for n in _material_radius_nodes(mt))
+
+
+def _restore_radius(nodes):
     changed = 0
-    for n in _radius_nodes(orig):
+    for n in nodes:
         if RADIUS_WAS in n:
             n.inputs["Bevel"].default_value = n[RADIUS_WAS]
             del n[RADIUS_WAS]

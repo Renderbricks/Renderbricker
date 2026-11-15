@@ -93,6 +93,110 @@ def write_cache(context):
     return f", {n} copies in {os.path.basename(path)} ({time.time() - t:.0f} s)" if n else ""
 
 
+REDRAW = 0.15       # seconds between two redraws of the bar at most (maintainer 2026-11-15: „... einen Statusbalken,
+#                     der aber nicht Performance klaut.“)
+
+
+def drive(gen, budget, show, state):
+    """Advance a step generator (yields (fraction, text)) for about `budget` seconds. show(step) is called at most every
+    REDRAW seconds (state["shown"]: when it last was) and with the last step of the slice. Returns (finished, result
+    or last step)."""
+    t = time.time()
+    last = None
+    while True:
+        try:
+            last = next(gen)
+        except StopIteration as e:
+            return True, e.value
+        now = time.time()
+        if now - state.get("shown", 0.0) >= REDRAW:
+            state["shown"] = now
+            show(last)
+        if now - t >= budget:
+            return False, last
+
+
+class _Phased:
+    """An operator whose work is a step generator work(context) (yields (fraction, text), returns the summary or None,
+    UPDATES of 15.11.2026: Remove, Remove All, Subdivision on/off). From the panel (invoke) it runs modal on a timer:
+    the bar in the panel's box and the status bar, redrawn at most every REDRAW s, the first tick only draws it. From
+    scripts (execute) straight through. Undo: one step, pushed when the operator finishes (bl_options UNDO). Esc stops
+    it only where `esc` is set; otherwise other input waits until it is done."""
+    label = ""
+    esc = False
+    _timer = None
+
+    def execute(self, context):
+        gen = self.work(context)
+        while True:
+            try:
+                next(gen)
+            except StopIteration as e:
+                return self.phased_end(context, e.value)
+
+    def invoke(self, context, event):
+        s = context.scene.mecsub
+        self._gen, self._ticks, self._state = None, 0, {"shown": time.time()}
+        s.running, s.progress, s.progress_text = True, 0.0, f"{self.label} ..."
+        s.progress_esc = self.esc
+        context.workspace.status_text_set(f"Renderbricker {self.label} ...")
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.01, window=context.window)
+        wm.modal_handler_add(self)
+        redraw(context)
+        return {'RUNNING_MODAL'}
+
+    def _show(self, context, st):
+        s = context.scene.mecsub
+        s.progress = max(0.0, min(1.0, st[0]))
+        s.progress_text = st[1]
+        context.workspace.status_text_set(f"Renderbricker {self.label}: {st[1]}   {100 * s.progress:.0f} %"
+                                          + ("   (Esc: cancel)" if self.esc else ""))
+        redraw(context)
+
+    def modal(self, context, event):
+        if event.type == 'ESC' and self.esc and self._gen is not None:
+            self._gen.close()
+            return self._modal_end(context, None, cancelled=True)
+        if event.type != 'TIMER':
+            return {'RUNNING_MODAL'}
+        self._ticks += 1
+        if self._ticks < 2:                 # the bar is on screen before the work starts
+            return {'RUNNING_MODAL'}
+        try:
+            if self._gen is None:
+                self._gen = self.work(context)
+            done, st = drive(self._gen, work_budget(self), lambda x: self._show(context, x), self._state)
+        except Exception as e:              # never leave the panel locked (run 39)
+            import traceback
+            traceback.print_exc()
+            return self._modal_end(context, None, error=f"{type(e).__name__}: {e}")
+        tick_done(self)
+        if done:
+            return self._modal_end(context, st)
+        return {'RUNNING_MODAL'}
+
+    def _modal_end(self, context, result, cancelled=False, error=None):
+        s = context.scene.mecsub
+        try:
+            context.window_manager.event_timer_remove(self._timer)
+        finally:
+            s.running, s.progress_esc = False, True
+            context.workspace.status_text_set(None)
+        if error:                           # what was done stays, one undo step takes it back
+            s.summary = f"{self.label}: stopped by an error: {error}"
+            self.report({'ERROR'}, "Renderbricker " + s.summary)
+            props.refresh_state(context)
+            r = {'FINISHED'}
+        else:
+            r = self.phased_end(context, result, cancelled)
+        redraw(context)
+        return r
+
+    def phased_end(self, context, result, cancelled=False):
+        return {'FINISHED'}
+
+
 class _Stepped:
     """Work in small steps. From the panel (invoke) it runs modal on a timer so
     the progress bar can redraw and Esc cancels; from scripts (execute) it runs
@@ -126,9 +230,37 @@ class _Stepped:
         return {'FINISHED'}
 
     def invoke(self, context, event):
+        """The bar at once (maintainer 2026-11-15, „Einbauen“): prepare() looks at every part in scope - 1.5 s on
+        Italian Riviera when all are up to date - and runs on the second timer tick; the first draws the bar."""
         self.cancelled = False
+        self._prepared, self._pticks = False, 0
+        s = context.scene.mecsub
+        s.running, s.progress, s.progress_text, s.progress_esc = True, 0.0, "looking at the parts in scope ...", True
+        context.workspace.status_text_set(f"Renderbricker {self.label}: looking at the parts in scope ...")
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.01, window=context.window)
+        wm.modal_handler_add(self)
+        redraw(context)
+        return {'RUNNING_MODAL'}
+
+    def _abort(self, context):
+        """prepare() found nothing to do (or Esc before it ran): as before the bar, no undo step."""
+        try:
+            context.window_manager.event_timer_remove(self._timer)
+        finally:
+            context.scene.mecsub.running = False
+            context.workspace.status_text_set(None)
+        redraw(context)
+        return {'CANCELLED'}
+
+    def _begin(self, context):
+        """The second tick: prepare() and the weights of the bar. None: the steps follow; else what modal returns."""
         if not self.prepare(context):
-            return {'CANCELLED'}
+            return self._abort(context)
+        self._weights(context)
+        return None
+
+    def _weights(self, context):
         self.i = 0
         # time estimate weighted by mesh size (a large panel takes far longer than a plate)
         w = [len(it[0].polygons) + 50 if isinstance(it, tuple) and hasattr(it[0], "polygons") else 1
@@ -138,14 +270,21 @@ class _Stepped:
             self.cum.append(self.cum[-1] + x)
         self.t_start = time.time()
         s = context.scene.mecsub
-        s.running, s.progress, s.progress_text = True, 0.0, f"0 / {len(self.items)}"
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.01, window=context.window)
-        wm.modal_handler_add(self)
+        s.progress, s.progress_text = 0.0, f"0 / {len(self.items)}"
         redraw(context)
-        return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
+        if not getattr(self, "_prepared", True):
+            if event.type == 'ESC':
+                return self._abort(context)
+            if event.type != 'TIMER':
+                return {'RUNNING_MODAL'}
+            self._pticks += 1
+            if self._pticks < 2:                    # the bar is on screen first
+                return {'RUNNING_MODAL'}
+            self._prepared = True
+            r = self._begin(context)
+            return {'RUNNING_MODAL'} if r is None else r
         if event.type == 'ESC':
             self.cancelled = True
             self._close_part()
@@ -412,25 +551,36 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         self.workers = None
         if event.shift:
             self.force = True
-        if s.use_cores and not bpy.app.background:
+        if s.use_cores and not bpy.app.background and not bpy.data.filepath:   # the question first, as before
             common.object_mode(context)
             todo = self.collect(context)[0]
             jobs = core.resolve_jobs("auto", len(todo), [me for me, _obs in todo], low_memory=s.low_memory.lower())
             if jobs > 1:
-                if not bpy.data.filepath:
-                    self.report({'INFO'}, "Save the scene first: Apply with several Blender processes opens it "
-                                          "from disk - Apply continues after saving")
-                    widgets.continue_after_save(context, "mecsub.apply")
-                    bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT', filepath=widgets.save_as_name(context))
-                    return {'CANCELLED'}
-                return self._start_workers(context, jobs)
+                self.report({'INFO'}, "Save the scene first: Apply with several Blender processes opens it "
+                                      "from disk - Apply continues after saving")
+                widgets.continue_after_save(context, "mecsub.apply")
+                bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT', filepath=widgets.save_as_name(context))
+                return {'CANCELLED'}
         return _Stepped.invoke(self, context, event)
 
-    def _start_workers(self, context, jobs):
-        s = context.scene.mecsub
-        self.cancelled = False
+    def _begin(self, context):
+        """The second tick (bar on screen): prepare() once - before, the parts were looked at twice when several
+        Blenders were possible - then several Blenders or the steps here."""
         if not self.prepare(context):
-            return {'CANCELLED'}
+            return self._abort(context)
+        s = context.scene.mecsub
+        if s.use_cores and not bpy.app.background:
+            jobs = core.resolve_jobs("auto", len(self.items), [me for me, _obs in self.items],
+                                     low_memory=s.low_memory.lower())
+            if jobs > 1:
+                context.window_manager.event_timer_remove(self._timer)
+                return self._launch_workers(context, jobs)
+        self._weights(context)
+        return None
+
+    def _launch_workers(self, context, jobs):
+        """Several Blenders bake (run 60) - from the modal tick, its handler stays; the timer is a slower one."""
+        s = context.scene.mecsub
         for _me, obs in self.items:
             for ob in obs:
                 ob.pop("rb_off", None)
@@ -444,9 +594,7 @@ class MECSUB_OT_apply(_Stepped, bpy.types.Operator):
         self.workers = core.Workers(dict(self.items), jobs, opts, [me.name for me, _ in self.items])
         self.jobs, self.merging, self.t_start = jobs, False, time.time()
         s.running, s.progress, s.progress_text = True, 0.0, f"0 / {len(self.items)}   starting {jobs} Blenders"
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.25, window=context.window)
-        wm.modal_handler_add(self)
+        self._timer = context.window_manager.event_timer_add(0.25, window=context.window)
         redraw(context)
         return {'RUNNING_MODAL'}
 

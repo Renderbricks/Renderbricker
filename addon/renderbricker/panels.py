@@ -39,7 +39,8 @@ class MECSUB_PT_panel(bpy.types.Panel):
                 box.progress(factor=s.progress, type='BAR', text=s.progress_text)
             else:
                 box.label(text=f"{s.progress * 100:.0f} %  {s.progress_text}")
-            box.label(text="Esc: cancel", icon='CANCEL')
+            if s.progress_esc:
+                box.label(text="Esc: cancel", icon='CANCEL')
         if s.wt_active:
             guide.draw_guide(L, context)
             return
