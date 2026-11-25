@@ -353,6 +353,49 @@
             }
           }
         },
+        "surface_film": {
+          "type": "object",
+          "description": "a thin high-index film on the part's own surface (the opal colours, materials version 32, run 172; 158 Transparent Fluorescent Red and 293 Transparent Light Royal Blue, version 35, run 174): thickness in nm and the film's IOR - Blender rb_phys_transparent Surface Film / Surface Film IOR since group version 46 (the Thin Film of the glass surface: what it reflects in interference colours the transmission loses, no light added); none without it or at film_nm 0. Arnold: not mapped yet",
+          "required": [
+            "film_nm",
+            "film_ior"
+          ],
+          "properties": {
+            "film_nm": {
+              "type": "number",
+              "minimum": 0
+            },
+            "film_ior": {
+              "type": "number",
+              "minimum": 1
+            }
+          }
+        },
+        "diffuse": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "the diffuse share of a glass surface (Blender: Diffuse Fac of the class group). Where a record has it, it wins over the value typed on the Mecabricks node (materials version 32: the eight opal colours 0.1 - the Mecabricks palette gives 360 0.7; materials version 35: six transparent colours 0.05 / 0.025); without it the Mecabricks value stays. Arnold: not mapped yet"
+        },
+        "surface_tint": {
+          "type": "object",
+          "description": "the tint of a glass surface itself, linear ACEScg (six transparent colours, materials version 35, run 174): what going into and out of the surface once lets through, whatever the part's thickness (Cycles tints each interface by its square root) - Blender rb_phys_transparent Surface Tint since group version 47 (the Base Color of the glass surface). The volume's tint is transmittance / colour as before; none (white) without it. Arnold: not mapped yet",
+          "required": [
+            "acescg"
+          ],
+          "properties": {
+            "acescg": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "minItems": 3,
+              "maxItems": 3
+            }
+          }
+        },
         "particles": {
           "type": "object",
           "description": "speckle particles (stage C2); three fleck layers since UPDATES #84 (size_large_mm ... edge_soft)",

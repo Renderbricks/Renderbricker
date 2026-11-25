@@ -10,10 +10,19 @@ from . import host
 SETTINGS_GROUP = 'rb_phys_surface_settings'
 
 # property of the scene's settings (host.settings_of) -> Value node of the group: the print's ink (rb_phys_decoration
-# reads them) and Yellowing. The carrying add-on adds its own values (host.SETTINGS_VALUES: Dev's surface layers).
+# reads them), Yellowing and the SSS Factor (group version 45: rb_phys_solid and rb_phys_pearl multiply their subsurface
+# depth by it). The carrying add-on adds its own values (host.SETTINGS_VALUES: Dev's surface layers).
 VALUES = {'surface_ink_relief': 'Ink Relief', 'surface_ink_grain': 'Ink Grain', 'surface_ink_contour': 'Ink Contour',
           'surface_ink_wear': 'Ink Wear', 'surface_ink_wear_rims': 'Ink Rim Wear', 'surface_ink_seed': 'Ink Seed',
-          'yellowing': 'Yellowing'}
+          'yellowing': 'Yellowing', 'sss_factor': 'SSS Factor'}
+
+# a value a host's settings object does not have: its rest value instead of 0 (a host without the SSS factor -
+# Renderbricks Dev until it gets the slider - keeps the records' depths, never 0)
+MISSING = {'sss_factor': 1.0}
+
+# the SSS factor's range (maintainer 16.11.2026: „Der SSS Faktor darf nicht übertrieben werden. Vermutlich ist eine
+# Verdoppelung ausreichend.“): RbPhysSettings.sss_factor's soft limits, which a host's slider takes over
+SSS_FACTOR_RANGE = (1.0, 2.0)
 
 # The networks belong to the file, not to a scene: whether they were built with the surface node is kept on the
 # library's own settings group (SETTINGS_GROUP), which every file with a physical network has. Until library 1.3.1
@@ -74,7 +83,7 @@ def apply_surface(settings=None):
         node = group.nodes.get(name)
         if node is None:
             continue
-        value = float(getattr(settings, prop, 0.0))
+        value = float(getattr(settings, prop, MISSING.get(prop, 0.0)))
         if abs(node.outputs[0].default_value - value) >= 1e-7:
             node.outputs[0].default_value = value
             written += 1

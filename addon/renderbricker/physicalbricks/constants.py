@@ -17,6 +17,10 @@ GLASS = ('transparent', 'milky', 'opal', 'glitter')
 IRIDESCENCE_INPUTS = {'Iridescence Size': 'size_mm', 'Iridescence Density': 'density', 'Film Thickness': 'film_nm',
                       'Film IOR': 'film_ior', 'Iridescence Tilt': 'tilt_deg'}
 
+# a thin film on the glass surface itself (group version 46, materials version 32): group input -> record field of
+# record['surface_film']
+SURFACE_FILM_INPUTS = {'Surface Film': 'film_nm', 'Surface Film IOR': 'film_ior'}
+
 # glitter foil flakes: group input -> record field of record['flakes']
 FLAKE_INPUTS = {'Flake Size': 'size_mm', 'Flake Density': 'density_mm3', 'Flake Depth': 'depth_mm',
                 'Flake Tilt': 'tilt_deg', 'Flake Roughness': 'roughness', 'Flake Foil': 'foil',
@@ -106,7 +110,17 @@ EFFECT_INPUTS = {'Metallic': 'metallic', 'Base Roughness': 'base_roughness', 'Fl
 # 43: rb_phys_pearl's inputs Coat Weight (the ABS skin, 1), Flake Color / Flake Own Color (the metallic share's
 #     face-on colour; 0 = the body colour) and Pigment SSS Depth (mm, 0 = none); the metallic share a second Principled
 #     mixed by Metallic (run 162 step 14, C3b; materials version 25; maintainer 14.11.2026: „A“)
-PHYS_VERSION = 44
+# 45: the settings group's value SSS Factor (default 1) multiplies the subsurface depth of rb_phys_solid (with the
+#     groups that nest it) and rb_phys_pearl, Cycles and Eevee; Weight and Radius stay the record's (maintainer
+#     15.11.2026: „den gesamten SSS-Look aller Shader verstärken“; 16.11.2026: „Vermutlich ist eine Verdoppelung
+#     ausreichend.“ - the slider's range SSS_FACTOR_RANGE)
+# 46: rb_phys_transparent's inputs Surface Film (nm, 0 = none) and Surface Film IOR - the glass surface's own thin
+#     film, passed on by the opal and glitter groups (materials version 32, the opal colours; run 172)
+# 47: rb_phys_transparent's input Surface Tint (colour, white = none) on its glass Principled's Base Color - the glass
+#     surface's own tint, passed on by the opal and glitter groups (materials version 35, six transparents; run 174)
+# 48: rb_phys_rubber's inputs Scale (0 = none) and SSS Depth (mm) and outputs Subsurface, SSS Radius, SSS Scale - the
+#     solid's Burley subsurface for rubber, Cycles and Eevee (materials version 36, every rubber colour 3 mm; run 178)
+PHYS_VERSION = 48
 
 # Eevee refracts a LEGO part as a shell: the wall, in the part's space (mm), at the Eevee output's Thickness of glass -
 # 4 LDU, the wall of an LDraw brick (run 148)

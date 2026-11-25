@@ -17,6 +17,7 @@ from .constants import (
     GLASS,
     GLITTER_OPAQUE,
     IRIDESCENCE_INPUTS,
+    SURFACE_FILM_INPUTS,
     MARK,
     NET,
     OLD_TRACES,
@@ -429,6 +430,9 @@ def build_network(material, with_surface=None, reading=None, after=()):
             if own and 'SSS Own Radius' in phys.inputs:  # its own scatter radius per channel (group version 39, 358)
                 phys.inputs['SSS Radius'].default_value = own
                 phys.inputs['SSS Own Radius'].default_value = 1.0
+        if kind == 'rubber' and 'SSS Depth' in phys.inputs:    # group version 48, materials version 36: the solids'
+            # subsurface; a rubber record without sss: depth 0 = none, as until version 35
+            phys.inputs['SSS Depth'].default_value = record.get('sss', {}).get('depth_mm', 0.0)
         if kind == 'speckle' and 'particles' in record:  # particles from the record
             for name, key in PARTICLE_INPUTS.items():
                 phys.inputs[name].default_value = record['particles'].get(key, PARTICLE_DEFAULTS.get(key))
@@ -463,9 +467,18 @@ def build_network(material, with_surface=None, reading=None, after=()):
             for name, key in IRIDESCENCE_INPUTS.items():     # opal: platelets from the record
                 if name in phys.inputs and 'iridescence' in record:
                     phys.inputs[name].default_value = record['iridescence'][key]
+            for name, key in SURFACE_FILM_INPUTS.items():    # opal: the film on the glass surface (group version 46)
+                if name in phys.inputs and 'surface_film' in record:
+                    phys.inputs[name].default_value = record['surface_film'][key]
+            if 'Surface Tint' in phys.inputs:                # group version 47: the glass surface's own tint
+                tint = record.get('surface_tint')            # (materials version 35); a record without one: white
+                phys.inputs['Surface Tint'].default_value = (
+                    [max(v, 0.0) for v in from_acescg(tint['acescg'])] if tint else [1.0, 1.0, 1.0]) + [1.0]
             for name in ('Diffuse Fac', 'Emission'):      # neon and glow colours: typed on the Mecabricks node
                 if name in base.inputs and name in phys.inputs and not base.inputs[name].is_linked:
                     phys.inputs[name].default_value = base.inputs[name].default_value
+            if 'diffuse' in record and 'Diffuse Fac' in phys.inputs:   # materials version 32: the record's own share
+                phys.inputs['Diffuse Fac'].default_value = record['diffuse']   # before the Mecabricks value (360: 0.7)
             volume = phys
         for name, key in EFFECT_INPUTS.items():           # pearl, metallic, chrome
             if name in phys.inputs and key in record.get('effect', {}):   # presence, never truthiness: coat 0

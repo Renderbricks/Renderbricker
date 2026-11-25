@@ -3,11 +3,11 @@
 (Renderbricker beside Nicolas' Lite or Advanced). The library reads it through host.settings_of, whose default is
 getattr(scene, 'rb_phys', None) - a host that has its own settings object supplies settings_of instead.
 
-    RbPhysSettings      the 16 values the library reads: material system, subsurface, Yellowing, glow, the print's
-                        ink, Parts Jitter - names, types, limits, defaults, labels and tooltips as Renderbricks Dev's
-                        panel has them (except a sentence on an import option only Dev has); each update calls the
-                        library and does nothing below Blender 5.0 (constants.AVAILABLE) - except Parts Jitter's,
-                        which acts there too
+    RbPhysSettings      the 17 values the library reads: material system, subsurface, SSS factor, Yellowing, glow,
+                        the print's ink, Parts Jitter - names, types, limits, defaults, labels and tooltips as
+                        Renderbricks Dev's panel has them (except a sentence on an import option only Dev has);
+                        each update calls the library and does nothing below Blender 5.0 (constants.AVAILABLE) -
+                        except Parts Jitter's, which acts there too
     register_pointer()  the class and bpy.types.Scene.rb_phys - only the acting copy (registry.elect) holds them
     unregister_pointer()  both again; either may run when there is nothing to do
     from_file(scene, mode)  scene.rb_phys in line with the file each time a file opens (registry._load_work)
@@ -105,6 +105,13 @@ class RbPhysSettings(bpy.types.PropertyGroup):
         soft_max=10.0,
         default=0.1,
         update=update_glow,
+    )
+    sss_factor: FloatProperty(
+        name="SSS Factor",
+        description="How far light travels inside the plastic, for every colour at once: 1 as the colour has it, "
+                    "2 twice as far - thin parts glow more in back light and the shading gets softer",
+        min=0.0, soft_min=surface.SSS_FACTOR_RANGE[0], soft_max=surface.SSS_FACTOR_RANGE[1], default=1.0,
+        update=update_surface,
     )
     yellowing: FloatProperty(
         name="Yellowing",
@@ -227,7 +234,7 @@ def _cast(prop, value):
 
 
 def _node_values():
-    """What the file's node data holds of the settings, in mode Physical: the seven values of surface.VALUES from the
+    """What the file's node data holds of the settings, in mode Physical: the eight values of surface.VALUES from the
     Value nodes of rb_phys_surface_settings, the subsurface method of rb_phys_solid, and from the first afterglow
     emission Glow in the dark (its Strength above 0) - and Glow strength only then (with glow off the emission is 0,
     scene.afterglow_strength). Parts Jitter is not in the node data."""
