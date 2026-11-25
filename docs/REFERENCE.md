@@ -25,7 +25,7 @@ time, the line turns red and says which one imports.
 
 Below *Import from Mecabricks* stands **Mate­ri­als**, and below it, in a row of their own, two buttons that switch
 every Mecabricks mate­rial of the file: **Mecabricks** – the orig­i­nal Mecabricks mate­ri­als – and **Phys­i­cal­bricks** –
-phys­i­cally based LEGO mate­ri­als (Phys­i­cal­bricks 1.3.3): ABS with sub­sur­face scat­ter­ing, glass with absorp­tion in the volume,
+phys­i­cally based LEGO mate­ri­als (Phys­i­cal­bricks 1.4.4): ABS with sub­sur­face scat­ter­ing, glass with absorp­tion in the volume,
 rubber, pearl, metal, glitter, speckle, opal. The button of the current mode is pressed. Phys­i­cal­bricks works for
 models imported with Mecabricks Lite or Advanced, in Cycles and EEVEE, and needs Blender 5.0 or newer.
 Ren­der­bricker itself runs from Blender 4.5 LTS; there the two buttons are greyed out with the note
@@ -50,6 +50,8 @@ In Phys­i­cal­bricks, below the two buttons:
 - **Yel­low­ing** (0) – how yellow uncoloured plastic has turned with age and light (20 Nature): 0 the cast of a fresh
   part, 1 an old one. A model with a 20 Nature part starts at the record's value (0.38) the first time it is
   switched; a value set by hand stays.
+- **SSS Factor** (1) – how far light travels inside the plastic, for every colour at once: 1 as the colour has it,
+  2 twice as far – thin parts glow more in back light and the shading gets softer.
 
 The sub-panel **Print** (closed at first, only in Phys­i­cal­bricks) sets the ink of printed parts:
 

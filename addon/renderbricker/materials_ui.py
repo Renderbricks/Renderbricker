@@ -106,6 +106,8 @@ def draw_materials(L, context):
     strength.prop(s, "glow_strength", text="Strength")
     strength.enabled = s.glow_in_dark
     col.row().prop(s, "yellowing")
+    if hasattr(s, "sss_factor"):        # the library's SSS Factor (Physicalbricks 1.4.4): its label, tooltip, range
+        col.row().prop(s, "sss_factor")
     skipped = context.scene.get("rb_phys_skipped", 0)
     if skipped:
         col.label(text=f"{skipped} edited materials left as they are", icon='ERROR')
