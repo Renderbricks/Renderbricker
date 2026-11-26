@@ -1,6 +1,6 @@
 {
- "version": 36,
- "built": "2026-11-25",
+ "version": 37,
+ "built": "2026-11-26",
  "decoration": {
   "ink_roughness": 0.25,
   "ink_height_mm": 0.01,
@@ -1933,7 +1933,7 @@
     "ior": "Terlux 2802 datasheet, ISO 489 [measured]",
     "colour": "Mecabricks palette (Nicolas' colour, not yet matched to a photo) [tune]",
     "roughness": "clean moulded surface 0.05-0.15 (run 44 probes, Mueller) [fitted]",
-    "transmittance": "resin = matched transparent 113 Transparent_Medium_Reddish_Violet (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; own resin for 114 from the rebuild (113's resin, blue x0.9, density ^1.3, purple at 80 % saturation); 07.10.2026 lighter walls (UPDATES #70, user: „Glas heller Fein 12“): resin ^0.85, fine fraction 12 % (research/colour_table/special_matched_v1_acescg.csv) [fitted]",
+    "transmittance": "accepted on the glitter sheets of run 179 (photo-114 rebuild, ACES 2.0 + RGC beside the photo; variant H: transmittance ^[1 1 1.2]; confirmation at full resolution sheet_final_114.jpg); maintainer: „Intensität wie H“, „H und D2“ (25.11.2026) (debriefings 261125_2053 / 261125_2203), „Abgenommen.“ (26.11.2026) [user] | earlier: resin = matched transparent 113 Transparent_Medium_Reddish_Violet (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; own resin for 114 from the rebuild (113's resin, blue x0.9, density ^1.3, purple at 80 % saturation); 07.10.2026 lighter walls (UPDATES #70, user: „Glas heller Fein 12“): resin ^0.85, fine fraction 12 % (research/colour_table/special_matched_v1_acescg.csv) [fitted]",
     "haze": "resin = matched transparent 113 Transparent_Medium_Reddish_Violet (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; own resin for 114 from the rebuild (113's resin, blue x0.9, density ^1.3, purple at 80 % saturation); 07.10.2026 lighter walls (UPDATES #70, user: „Glas heller Fein 12“): resin ^0.85, fine fraction 12 % [tune]",
     "flakes": "resin = matched transparent 113 Transparent_Medium_Reddish_Violet (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; own resin for 114 from the rebuild (113's resin, blue x0.9, density ^1.3, purple at 80 % saturation); 07.10.2026 lighter walls (UPDATES #70, user: „Glas heller Fein 12“): resin ^0.85, fine fraction 12 % [tune] Record: size 0.35 mm, density 1.6 per mm³ [fitted] (size run 88, density the class value of run 88g); measured on photos: 0.19–0.26 mm median equivalent diameter, ≈ 2 per mm³ (RESEARCH_glitter_measurement §1).",
     "abbe": "38: the MABS optics every transmitting record renders with (n_d 1.540, Terlux 2802, ISO 489). No datasheet gives an Abbe number (INEOS Styrolution, run 144); mixing rule for n and dispersive power (n_d - 1) / V_d between PMMA and polystyrene at n_d 1.540 (styrene share 0.49): V_d 37.2 (Sultanova: PMMA 1.4906 / 53.2, PS 1.5916 / 29.5) to 39.2 (PMMA 1.4928 / 55.0, PS 1.5892 / 31.3), RESEARCH_lego_plastics_optics 2 [derived]"
@@ -1942,7 +1942,7 @@
     "acescg": [
      0.379075,
      0.104817,
-     0.382241
+     0.315359
     ],
     "depth_mm": 4.0
    },
@@ -4053,24 +4053,24 @@
     "ior": "Terlux 2802 datasheet, ISO 489 [measured]",
     "colour": "Mecabricks palette (Nicolas' colour, not yet matched to a photo) [tune]",
     "roughness": "clean moulded surface 0.05-0.15 (run 44 probes, Mueller) [fitted]",
-    "transmittance": "resin = matched transparent 42 Transparent_Light_Blue (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; run 88g colour tuning 06.10.2026 (UPDATES #69) – 302: resin saturation 60 %, denser ^1.3, fine fraction 4 % (user: „302 Variante mit Feinanteil 4 %“) (research/colour_table/special_matched_v1_acescg.csv) [fitted]",
-    "haze": "resin = matched transparent 42 Transparent_Light_Blue (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; run 88g colour tuning 06.10.2026 (UPDATES #69) – 302: resin saturation 60 %, denser ^1.3, fine fraction 4 % (user: „302 Variante mit Feinanteil 4 %“) [tune]",
+    "transmittance": "accepted on the glitter sheets of run 179 (photo-114 rebuild, ACES 2.0 + RGC beside the photo; variant D2: transmittance ^1.6, haze x2.5; confirmation at full resolution sheet_final_302.jpg); maintainer: „eigentlich D … leicht gesättigter“, „H und D2“ (25.11.2026) (debriefings 261125_2053 / 261125_2203), „Abgenommen.“ (26.11.2026) [user] | earlier: resin = matched transparent 42 Transparent_Light_Blue (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; run 88g colour tuning 06.10.2026 (UPDATES #69) – 302: resin saturation 60 %, denser ^1.3, fine fraction 4 % (user: „302 Variante mit Feinanteil 4 %“) (research/colour_table/special_matched_v1_acescg.csv) [fitted]",
+    "haze": "accepted on the glitter sheets of run 179 (photo-114 rebuild, ACES 2.0 + RGC beside the photo; variant D2: transmittance ^1.6, haze x2.5; confirmation at full resolution sheet_final_302.jpg); maintainer: „eigentlich D … leicht gesättigter“, „H und D2“ (25.11.2026) (debriefings 261125_2053 / 261125_2203), „Abgenommen.“ (26.11.2026) [user] | earlier: resin = matched transparent 42 Transparent_Light_Blue (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; run 88g colour tuning 06.10.2026 (UPDATES #69) – 302: resin saturation 60 %, denser ^1.3, fine fraction 4 % (user: „302 Variante mit Feinanteil 4 %“) [tune]",
     "flakes": "resin = matched transparent 42 Transparent_Light_Blue (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; run 88g colour tuning 06.10.2026 (UPDATES #69) – 302: resin saturation 60 %, denser ^1.3, fine fraction 4 % (user: „302 Variante mit Feinanteil 4 %“) [tune] Record: size 0.35 mm, density 1.6 per mm³ [fitted] (size run 88, density the class value of run 88g); measured on photos: 0.19–0.26 mm median equivalent diameter, ≈ 2 per mm³ (RESEARCH_glitter_measurement §1).",
     "abbe": "38: the MABS optics every transmitting record renders with (n_d 1.540, Terlux 2802, ISO 489). No datasheet gives an Abbe number (INEOS Styrolution, run 144); mixing rule for n and dispersive power (n_d - 1) / V_d between PMMA and polystyrene at n_d 1.540 (styrene share 0.49): V_d 37.2 (Sultanova: PMMA 1.4906 / 53.2, PS 1.5916 / 29.5) to 39.2 (PMMA 1.4928 / 55.0, PS 1.5892 / 31.3), RESEARCH_lego_plastics_optics 2 [derived]"
    },
    "transmittance": {
     "acescg": [
-     0.544454,
-     0.674538,
-     0.727019
+     0.37804,
+     0.532611,
+     0.600445
     ],
     "depth_mm": 4.0
    },
    "haze": {
     "sigma_mm": [
-     0.003,
-     0.006,
-     0.012
+     0.0075,
+     0.015,
+     0.03
     ],
     "anisotropy": 0.4
    },
@@ -4968,24 +4968,24 @@
     "ior": "Terlux 2802 datasheet, ISO 489 [measured]",
     "colour": "Mecabricks palette (Nicolas' colour, not yet matched to a photo) [tune]",
     "roughness": "clean moulded surface 0.05-0.15 (run 44 probes, Mueller) [fitted]",
-    "transmittance": "resin = matched transparent 182 Trans_Bright_Orange (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; run 88g colour tuning 06.10.2026 (UPDATES #69) – 341: resin much yellower, saturation 85 % (user: „341 much yellower“) (research/colour_table/special_matched_v1_acescg.csv) [fitted]",
-    "haze": "resin = matched transparent 182 Trans_Bright_Orange (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; run 88g colour tuning 06.10.2026 (UPDATES #69) – 341: resin much yellower, saturation 85 % (user: „341 much yellower“) [tune]",
+    "transmittance": "accepted on the glitter sheets of run 179 (photo-114 rebuild, ACES 2.0 + RGC beside the photo; variant E: transmittance ^[1.5 2 1.5], haze x2.5; confirmation at full resolution sheet_final_341.jpg); maintainer: „Ja, also E.“ (25.11.2026) (debriefings 261125_2053 / 261125_2203), „Abgenommen.“ (26.11.2026) [user] | earlier: resin = matched transparent 182 Trans_Bright_Orange (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; run 88g colour tuning 06.10.2026 (UPDATES #69) – 341: resin much yellower, saturation 85 % (user: „341 much yellower“) (research/colour_table/special_matched_v1_acescg.csv) [fitted]",
+    "haze": "accepted on the glitter sheets of run 179 (photo-114 rebuild, ACES 2.0 + RGC beside the photo; variant E: transmittance ^[1.5 2 1.5], haze x2.5; confirmation at full resolution sheet_final_341.jpg); maintainer: „Ja, also E.“ (25.11.2026) (debriefings 261125_2053 / 261125_2203), „Abgenommen.“ (26.11.2026) [user] | earlier: resin = matched transparent 182 Trans_Bright_Orange (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; run 88g colour tuning 06.10.2026 (UPDATES #69) – 341: resin much yellower, saturation 85 % (user: „341 much yellower“) [tune]",
     "flakes": "resin = matched transparent 182 Trans_Bright_Orange (run 72-79); foil flakes 0.35 mm, 1 per mm3, tilt 35 deg, roughness 0.35, whole wall 1.4 mm (run 88, user: „Ja, Dichte 1“); run 88g photo rebuild of 114 (06.10.2026, user: „Letzte Spalte“ … „80%“, „Glitter musst Du auf alle anderen Materialien anpassen“): class values for every glitter colour – density 1.6 per mm3, foil reflectance 0.45, fine fraction 8 %; run 88g colour tuning 06.10.2026 (UPDATES #69) – 341: resin much yellower, saturation 85 % (user: „341 much yellower“) [tune] Record: size 0.35 mm, density 1.6 per mm³ [fitted] (size run 88, density the class value of run 88g); measured on photos: 0.19–0.26 mm median equivalent diameter, ≈ 2 per mm³ (RESEARCH_glitter_measurement §1).",
     "abbe": "38: the MABS optics every transmitting record renders with (n_d 1.540, Terlux 2802, ISO 489). No datasheet gives an Abbe number (INEOS Styrolution, run 144); mixing rule for n and dispersive power (n_d - 1) / V_d between PMMA and polystyrene at n_d 1.540 (styrene share 0.49): V_d 37.2 (Sultanova: PMMA 1.4906 / 53.2, PS 1.5916 / 29.5) to 39.2 (PMMA 1.4928 / 55.0, PS 1.5892 / 31.3), RESEARCH_lego_plastics_optics 2 [derived]"
    },
    "transmittance": {
     "acescg": [
-     0.741057,
-     0.579645,
-     0.032996
+     0.637936,
+     0.335988,
+     0.005994
     ],
     "depth_mm": 4.0
    },
    "haze": {
     "sigma_mm": [
-     0.003,
-     0.006,
-     0.012
+     0.0075,
+     0.015,
+     0.03
     ],
     "anisotropy": 0.4
    },
